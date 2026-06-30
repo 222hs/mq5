@@ -57,6 +57,11 @@ def check_api_key():
     return key == API_KEY
 
 
+@app.route("/", methods=["GET"])
+def index():
+    return jsonify({"status": "ok", "message": "MT5 Dashboard API is running"})
+
+
 @app.route("/api/update", methods=["POST"])
 def update_data():
     """يستقبل البيانات من الـ Agent"""
