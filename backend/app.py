@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 from threading import Lock
 
-app = Flask(__name__, static_folder="static", static_url_path="/assets")
+app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app)
 
 # ============== الإعدادات ==============
