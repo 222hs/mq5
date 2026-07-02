@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
@@ -35,6 +35,8 @@ export default function Dashboard() {
 
   return (
     <div>
+      <TradingSessions />
+
       <div style={styles.statusRow}>
         <span style={{ ...styles.dot, background: is_online ? "#4ADE80" : "#F87171" }} />
         <span style={styles.statusText}>
@@ -133,6 +135,88 @@ function Table({ headers, rows, empty }) {
     </div>
   );
 }
+
+// ── Trading Sessions Widget ──────────────────────────────────────
+const SESSIONS = [
+  { name: "طوكيو",        open: 0,  close: 9,  color: "#818CF8", quality: "ضعيف للذهب" },
+  { name: "لندن",         open: 8,  close: 17, color: "#34D399", quality: "جيد" },
+  { name: "نيويورك",      open: 13, close: 22, color: "#F59E0B", quality: "جيد" },
+  { name: "تداخل L+NY",  open: 13, close: 17, color: "#F97316", quality: "الأفضل للذهب" },
+];
+
+function TradingSessions() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  const utcH = now.getUTCHours() + now.getUTCMinutes() / 60;
+
+  const isActive = (open, close) => {
+    if (open < close) return utcH >= open && utcH < close;
+    return utcH >= open || utcH < close;
+  };
+
+  const nextOpen = (open) => {
+    const diff = open > utcH ? open - utcH : 24 - utcH + open;
+    const h = Math.floor(diff);
+    const m = Math.round((diff - h) * 60);
+    return h > 0 ? `${h}س ${m}د` : `${m}د`;
+  };
+
+  const utcStr = `${String(now.getUTCHours()).padStart(2,"0")}:${String(now.getUTCMinutes()).padStart(2,"0")} UTC`;
+
+  return (
+    <div style={ss.wrap}>
+      <div style={ss.header}>
+        <span style={ss.title}>أوقات التداول</span>
+        <span style={ss.clock}>{utcStr}</span>
+      </div>
+      <div style={ss.grid}>
+        {SESSIONS.map((s) => {
+          const active = isActive(s.open, s.close);
+          return (
+            <div key={s.name} style={{ ...ss.card, borderColor: active ? s.color : "#2A2A33" }}>
+              <div style={ss.cardTop}>
+                <span style={{ ...ss.dot2, background: active ? s.color : "#374151" }} />
+                <span style={{ ...ss.name, color: active ? s.color : "#9CA3AF" }}>{s.name}</span>
+              </div>
+              <div style={ss.time}>
+                {String(s.open).padStart(2,"0")}:00 – {String(s.close).padStart(2,"0")}:00
+              </div>
+              <div style={{ ...ss.badge, background: active ? s.color + "22" : "#16161D",
+                            color: active ? s.color : "#6B7280" }}>
+                {active ? `نشط · ${s.quality}` : `يفتح بعد ${nextOpen(s.open)}`}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={ss.hint}>
+        الأوقات بتوقيت UTC · أفضل وقت للذهب: <span style={{color:"#F97316",fontWeight:600}}>13:00–17:00 UTC</span>
+      </div>
+    </div>
+  );
+}
+
+const ss = {
+  wrap:   { background:"#0F0F16", border:"0.5px solid #2A2A33", borderRadius:14,
+            padding:"1rem 1.25rem", marginBottom:"1.5rem" },
+  header: { display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"0.75rem" },
+  title:  { fontSize:14, fontWeight:600, color:"#fff" },
+  clock:  { fontSize:12, color:"#6B7280", fontVariantNumeric:"tabular-nums" },
+  grid:   { display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:10 },
+  card:   { background:"#16161D", borderRadius:10, padding:"0.75rem",
+            border:"1px solid #2A2A33", transition:"border-color .3s" },
+  cardTop:{ display:"flex", alignItems:"center", gap:6, marginBottom:4 },
+  dot2:   { width:7, height:7, borderRadius:"50%", flexShrink:0 },
+  name:   { fontSize:13, fontWeight:500 },
+  time:   { fontSize:11, color:"#6B7280", marginBottom:6, fontVariantNumeric:"tabular-nums" },
+  badge:  { fontSize:11, borderRadius:6, padding:"2px 8px", display:"inline-block" },
+  hint:   { fontSize:11, color:"#6B7280", marginTop:"0.75rem", textAlign:"center" },
+};
+// ─────────────────────────────────────────────────────────────────
 
 function StatPill({ label, value, color = "#fff" }) {
   return (
