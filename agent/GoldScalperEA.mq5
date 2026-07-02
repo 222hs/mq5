@@ -4,7 +4,7 @@
 //|  Gold scalper — bar-gated, closed-bar signals, smart filters     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.03"
+#property version   "9.04"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = true;     // London+NY sessions only
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.03"
+#define EA_VERSION    "9.04"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -173,31 +173,29 @@ double MyFloatingPL()
   }
 
 //+------------------------------------------------------------------+
-//| Strong bull: body>=55%, close in top 25%, ATR range sane         |
+//| Bull candle: body>=35%, not a doji, range sane                   |
 //+------------------------------------------------------------------+
 bool StrongBull(double o, double c, double h, double l, double atr)
   {
    double range = h - l;
    if(range < 1e-10 || atr < 1e-10) return false;
    return (c > o)
-       && ((c-o)/range >= 0.45)
-       && ((h-c)/range <= 0.35)
-       && (range >= 0.3*atr)
-       && (range <= 4.0*atr);
+       && ((c-o)/range >= 0.35)
+       && (range >= 0.2*atr)
+       && (range <= 5.0*atr);
   }
 
 //+------------------------------------------------------------------+
-//| Strong bear: body>=45%, close in bottom 35%, ATR range sane      |
+//| Bear candle: body>=35%, not a doji, range sane                   |
 //+------------------------------------------------------------------+
 bool StrongBear(double o, double c, double h, double l, double atr)
   {
    double range = h - l;
    if(range < 1e-10 || atr < 1e-10) return false;
    return (c < o)
-       && ((o-c)/range >= 0.45)
-       && ((c-l)/range <= 0.35)
-       && (range >= 0.3*atr)
-       && (range <= 4.0*atr);
+       && ((o-c)/range >= 0.35)
+       && (range >= 0.2*atr)
+       && (range <= 5.0*atr);
   }
 
 //+------------------------------------------------------------------+
@@ -249,15 +247,13 @@ void OnTick()
    bool priceAboveEMA = c[1] > ema91;
    bool priceBelowEMA = c[1] < ema91;
 
-   // RSI momentum: directional + non-overlapping
-   bool rsiBuy  = (rsi1 >= 45.0 && rsi1 <= 78.0 && rsi1 > rsi2); // rising momentum
-   bool rsiSell = (rsi1 >= 22.0 && rsi1 <= 55.0 && rsi1 < rsi2); // falling momentum
+   // RSI zone filter only (no direction req — too noisy on M1)
+   bool rsiBuy  = (rsi1 >= 50.0 && rsi1 <= 80.0);
+   bool rsiSell = (rsi1 >= 20.0 && rsi1 <= 50.0);
 
-   // 2-bar candle confirmation (bar[1] AND bar[2] agree)
-   bool bullBar = StrongBull(o[1],c[1],h[1],l[1],atr1)
-               && c[1] > c[2]; // close higher than prior close
-   bool bearBar = StrongBear(o[1],c[1],h[1],l[1],atr1)
-               && c[1] < c[2]; // close lower than prior close
+   // single-bar candle confirmation
+   bool bullBar = StrongBull(o[1],c[1],h[1],l[1],atr1);
+   bool bearBar = StrongBear(o[1],c[1],h[1],l[1],atr1);
 
    // manage exits (also on closed-bar signals)
    ManagePositions(rsi1, crossUp, crossDn, atr1);
