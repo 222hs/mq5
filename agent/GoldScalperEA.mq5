@@ -95,12 +95,15 @@ double ReadJsonValue(const string key, const double fallback)
   }
 
 //+------------------------------------------------------------------+
+bool     g_botRunning = true;
+
 void LoadSettings()
   {
-   g_lot          = ReadJsonValue("LotSize",      LotSize);
-   g_maxSpread    = ReadJsonValue("MaxSpread",    (double)MaxSpread);
-   g_maxPositions = (int)ReadJsonValue("MaxPositions", (double)MaxPositions);
-   g_cooldownSecs = (int)ReadJsonValue("CooldownSecs", (double)CooldownSecs);
+   g_lot        = ReadJsonValue("LotSize",      LotSize);
+   g_maxSpread  = ReadJsonValue("MaxSpread",    (double)MaxSpread);
+   g_maxPositions=(int)ReadJsonValue("MaxPositions",(double)MaxPositions);
+   g_cooldownSecs=(int)ReadJsonValue("CooldownSecs",(double)CooldownSecs);
+   g_botRunning = (ReadJsonValue("BotRunning",  1.0) > 0.5);
   }
 
 //+------------------------------------------------------------------+
@@ -275,7 +278,7 @@ void OnTick()
    // spread must allow TP to make sense
    bool tpOK = (atr1 * 2.0 > 3.0 * spread * SymbolInfoDouble(_Symbol,SYMBOL_POINT));
 
-   if(signal != 0 && allOK && tpOK)
+   if(signal != 0 && allOK && tpOK && g_botRunning)
      {
       if(signal == 1) OpenTrade(ORDER_TYPE_BUY,  atr1);
       else            OpenTrade(ORDER_TYPE_SELL, atr1);
