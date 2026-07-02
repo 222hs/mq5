@@ -158,18 +158,37 @@ function HistoryTable({ history }) {
         ))}
       </div>
       <Table
-        headers={["الرمز", "النوع", "الحجم", "التاريخ", "الربح/الخسارة"]}
-        rows={filtered.slice(0, 20).map((h) => [
-          h.symbol,
-          <span style={{ color: h.type === "BUY" ? "#34D399" : "#F87171" }}>
-            {h.type === "BUY" ? "شراء ▲" : "بيع ▼"}
-          </span>,
-          h.volume,
-          new Date(h.time).toLocaleDateString("ar"),
-          <span style={{ color: h.profit > 0 ? "#4ADE80" : "#F87171", fontWeight: 500 }}>
-            {h.profit > 0 ? "+" : ""}${h.profit?.toFixed(2)}
-          </span>,
-        ])}
+        headers={["الرمز", "النوع", "التوقيت", "الجلسة", "الربح/الخسارة"]}
+        rows={filtered.slice(0, 20).map((h) => {
+          const d = new Date(h.time);
+          const dateStr = d.toLocaleDateString("ar");
+          const timeStr = d.toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" });
+          const utcH = d.getUTCHours();
+          const session =
+            utcH >= 13 && utcH < 17 ? { label: "L+NY", color: "#F97316" } :
+            utcH >= 13 && utcH < 22 ? { label: "NY",   color: "#F59E0B" } :
+            utcH >=  8 && utcH < 17 ? { label: "لندن", color: "#34D399" } :
+            utcH >=  0 && utcH <  9 ? { label: "طوكيو",color: "#818CF8" } :
+                                       { label: "—",    color: "#6B7280" };
+          return [
+            h.symbol,
+            <span style={{ color: h.type === "BUY" ? "#34D399" : "#F87171" }}>
+              {h.type === "BUY" ? "▲ شراء" : "▼ بيع"}
+            </span>,
+            <span style={{ fontSize: 11 }}>
+              <span style={{ color: "#fff" }}>{dateStr}</span>
+              <br />
+              <span style={{ color: "#9CA3AF" }}>{timeStr}</span>
+            </span>,
+            <span style={{ background: session.color + "22", color: session.color,
+                           borderRadius: 5, padding: "2px 6px", fontSize: 11 }}>
+              {session.label}
+            </span>,
+            <span style={{ color: h.profit > 0 ? "#4ADE80" : "#F87171", fontWeight: 500 }}>
+              {h.profit > 0 ? "+" : ""}${h.profit?.toFixed(2)}
+            </span>,
+          ];
+        })}
         empty="لا توجد صفقات"
       />
       <div style={ht.count}>
@@ -290,7 +309,7 @@ const styles = {
   metricValue: { fontSize: 24, fontWeight: 500, margin: 0 },
   sectionTitle:{ fontSize: 15, fontWeight: 500, margin: "1.5rem 0 8px" },
   tableWrap:   { border: "0.5px solid #2A2A33", borderRadius: 12, overflow: "hidden" },
-  tableRow:    { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", padding: "10px 14px", fontSize: 13, borderTop: "0.5px solid #2A2A33", alignItems: "center" },
+  tableRow:    { display: "grid", gridTemplateColumns: "1fr 1fr 1.4fr 0.8fr 1fr", padding: "10px 14px", fontSize: 13, borderTop: "0.5px solid #2A2A33", alignItems: "center" },
   tableHeader: { background: "#16161D", fontSize: 12, color: "#9CA3AF", borderTop: "none" },
   emptyRow:    { padding: "1.5rem", textAlign: "center", color: "#6B7280", fontSize: 13 },
   statsRow:    { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginTop: "1.5rem" },
