@@ -4,7 +4,7 @@
 //|  Gold scalper — bar-gated, closed-bar signals, smart filters     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.11"
+#property version   "9.12"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.11"
+#define EA_VERSION    "9.12"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -108,6 +108,8 @@ void LoadSettings()
    g_tpUSD      = ReadJsonValue("TP_USD",       3.0);
    g_slUSD      = ReadJsonValue("SL_USD",       2.0);
    g_botRunning = (ReadJsonValue("BotRunning",  1.0) > 0.5);
+   Print(EA_NAME," settings: lot=",g_lot," TP$=",g_tpUSD," SL$=",g_slUSD,
+         " maxPos=",g_maxPositions," spread=",g_maxSpread);
   }
 
 //+------------------------------------------------------------------+
@@ -258,8 +260,12 @@ void OnTick()
 
    if(signal != 0 && allOK && g_botRunning)
      {
-      if(signal == 1) OpenTrade(ORDER_TYPE_BUY,  atr1);
-      else            OpenTrade(ORDER_TYPE_SELL, atr1);
+      int slots = g_maxPositions - CountMyPositions();
+      for(int i = 0; i < slots; i++)
+        {
+         if(signal == 1) OpenTrade(ORDER_TYPE_BUY,  atr1);
+         else            OpenTrade(ORDER_TYPE_SELL, atr1);
+        }
      }
 
    int cdLeft = (int)MathMax(0, g_cooldownSecs-(TimeCurrent()-g_lastEntryTime));
@@ -315,19 +321,25 @@ double NormalizeLot(double lot)
 //+------------------------------------------------------------------+
 void ManagePositions()
   {
+   datetime now = TimeCurrent();
    for(int i=PositionsTotal()-1;i>=0;i--)
      {
       if(!posInfo.SelectByIndex(i)) continue;
       if(posInfo.Symbol()!=_Symbol||posInfo.Magic()!=g_magic) continue;
-      ulong  tk     = posInfo.Ticket();
-      double profit = posInfo.Profit() + posInfo.Swap() + posInfo.Commission();
+      ulong    tk      = posInfo.Ticket();
+      datetime openAt  = (datetime)posInfo.Time();
+      double   profit  = posInfo.Profit() + posInfo.Swap() + posInfo.Commission();
+      int      ageSeconds = (int)(now - openAt);
 
+      // TP: check immediately
       if(profit >= g_tpUSD)
         { trade.PositionClose(tk);
-          Print(EA_NAME,": TP $",DoubleToString(profit,2)); continue; }
-      if(profit <= -g_slUSD)
+          Print(EA_NAME,": TP $",DoubleToString(profit,2)," age=",ageSeconds,"s"); continue; }
+
+      // SL: wait 60s first (spread cost needs time to recover)
+      if(ageSeconds >= 60 && profit <= -g_slUSD)
         { trade.PositionClose(tk);
-          Print(EA_NAME,": SL $",DoubleToString(profit,2)); continue; }
+          Print(EA_NAME,": SL $",DoubleToString(profit,2)," age=",ageSeconds,"s"); continue; }
      }
   }
 
