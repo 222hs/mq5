@@ -123,12 +123,17 @@ def fetch_and_apply_settings():
         settings = response.json()
 
         changed = []
+        gv_get = getattr(mt5, "globalVariableGet", None) or getattr(mt5, "global_variable_get", None)
+        gv_set = getattr(mt5, "globalVariableSet", None) or getattr(mt5, "global_variable_set", None)
+        if not gv_get or not gv_set:
+            print("⚠️ مكتبة MT5 لا تدعم Global Variables — حدّث المكتبة: pip install --upgrade MetaTrader5")
+            return
         for key, value in settings.items():
             gv_name  = GV_PREFIX + key
             new_val  = float(value)
-            current  = mt5.global_variable_get(gv_name)
+            current  = gv_get(gv_name)
             if current is False or current is None or abs(current - new_val) > 1e-9:
-                mt5.global_variable_set(gv_name, new_val)
+                gv_set(gv_name, new_val)
                 changed.append(f"{key}={value}")
 
         if changed:
