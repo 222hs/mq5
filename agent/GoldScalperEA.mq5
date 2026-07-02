@@ -4,7 +4,7 @@
 //|  Gold scalper — bar-gated, closed-bar signals, smart filters     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.02"
+#property version   "9.03"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -15,12 +15,12 @@ input double          LotSize      = 0.5;      // Lot size
 input ENUM_TIMEFRAMES TF           = PERIOD_M1;// Working timeframe
 input int             MaxPositions = 5;        // Max open positions
 input int             CooldownSecs = 30;       // Cooldown between entries (sec)
-input int             MaxSpread    = 200;      // Max spread in points
+input int             MaxSpread    = 350;      // Max spread in points
 input bool            UseSession   = true;     // London+NY sessions only
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.02"
+#define EA_VERSION    "9.03"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -238,8 +238,8 @@ void OnTick()
    bool emaUp   = ema91 > ema211;
    bool emaDown = ema91 < ema211;
 
-   // EMA separation filter: ignore chop (< 0.3 * ATR)
-   bool emaSep  = MathAbs(ema91 - ema211) >= 0.3 * atr1;
+   // EMA separation filter: ignore chop (< 0.15 * ATR)
+   bool emaSep  = MathAbs(ema91 - ema211) >= 0.15 * atr1;
 
    // EMA crossover on closed bars (bar[2]→bar[1])
    bool crossUp = (ema92 <= ema212 && ema91 > ema211);
@@ -275,8 +275,9 @@ void OnTick()
    bool sessOK    = InTradingSession();
    bool allOK     = spreadOK && coolOK && slotsOK && sessOK && atr1 > 0.0;
 
-   // spread must allow TP to make sense
-   bool tpOK = (atr1 * 2.0 > 3.0 * spread * SymbolInfoDouble(_Symbol,SYMBOL_POINT));
+   // spread must be less than ATR so there's still edge after paying spread
+   double spreadVal = spread * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   bool tpOK = (atr1 > spreadVal);
 
    if(signal != 0 && allOK && tpOK && g_botRunning)
      {
@@ -499,7 +500,7 @@ void UpdateDashboard(const int trend,const double rsi,
 
    DLabel("V_TRADES",string(g_totalTrades),xV,y,CLR_NEUTRAL); y+=ROW_H+8;
 
-   color spClr=spreadPts>30?CLR_BAD:CLR_NEUTRAL;
+   color spClr=spreadPts>(long)g_maxSpread?CLR_BAD:spreadPts>200?clrOrange:CLR_NEUTRAL;
    DLabel("V_SPREAD",string(spreadPts)+" pts",xV,y,spClr); y+=ROW_H;
 
    DLabel("V_ATR",DoubleToString(atrVal,_Digits),xV,y,CLR_HILITE);

@@ -35,7 +35,7 @@ DEFAULT_SETTINGS = {
     "LotSize":      0.01,
     "TP":           30,
     "SL":           40,
-    "MaxSpread":    500,
+    "MaxSpread":    350,
     "MaxPositions": 3,
     "RSI_Period":   7,
     "EMA_Fast":     8,
