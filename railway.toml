@@ -1,0 +1,6 @@
+[deploy]
+startCommand = "gunicorn --bind 0.0.0.0:$PORT app:app"
+healthcheckPath = "/api/health"
+
+[variables]
+DB_FILE = "/data/mt5_data.db"
