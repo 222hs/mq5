@@ -4,7 +4,7 @@
 //|  Gold scalper — bar-gated, closed-bar signals, smart filters     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.07"
+#property version   "9.08"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -13,14 +13,14 @@
 //--- inputs
 input double          LotSize      = 0.5;      // Lot size
 input ENUM_TIMEFRAMES TF           = PERIOD_M1;// Working timeframe
-input int             MaxPositions = 5;        // Max open positions
-input int             CooldownSecs = 30;       // Cooldown between entries (sec)
+input int             MaxPositions = 10;       // Max open positions
+input int             CooldownSecs = 0;        // Cooldown between entries (sec)
 input int             MaxSpread    = 350;      // Max spread in points
-input bool            UseSession   = true;     // London+NY sessions only
+input bool            UseSession   = false;    // Session filter (false=trade 24h)
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.07"
+#define EA_VERSION    "9.08"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -271,8 +271,8 @@ void OnTick()
    int sellScore = (emaSep?1:0) + (rsiSell?1:0) + (bearBar?1:0) + (priceBelowEMA?1:0);
 
    int signal = 0;
-   if(emaUp   && buyScore  >= 3) signal =  1; // BUY
-   else if(emaDown && sellScore >= 3) signal = -1; // SELL
+   if(emaUp   && buyScore  >= 2) signal =  1; // BUY
+   else if(emaDown && sellScore >= 2) signal = -1; // SELL
 
    // filters
    long spread    = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);

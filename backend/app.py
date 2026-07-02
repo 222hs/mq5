@@ -36,8 +36,8 @@ DEFAULT_SETTINGS = {
     "TP_USD":       3.0,
     "SL_USD":       2.0,
     "MaxSpread":    350,
-    "MaxPositions": 5,
-    "CooldownSecs": 30,
+    "MaxPositions": 10,
+    "CooldownSecs": 0,
     "BotRunning":   1,
 }
 
