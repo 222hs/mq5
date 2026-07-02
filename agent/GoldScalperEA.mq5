@@ -1,346 +1,366 @@
 //+------------------------------------------------------------------+
-//|                                        GoldScalperX_v6.mq5       |
-//|            Fast Multi-Symbol Scalping EA - Aggressive Mode        |
+//|                                                GoldScalperEA.mq5 |
+//|                                        GoldScalperX version 7.00 |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "6.00"
+#property version   "7.00"
 #property strict
 
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
 
-input double          LotSize       = 0.01;
-input int             MaxSpread     = 500;
-input int             RSI_Period    = 7;
-input int             EMA_Fast      = 8;
-input int             EMA_Slow      = 21;
-input int             ATR_Period    = 14;
-input double          ATR_SL_Mult   = 1.5;
-input double          ATR_TP_Mult   = 2.5;
-input bool            UseTrailing   = true;
-input double          TrailATR_Mult = 1.0;
-input int             MaxPositions  = 3;
-input int             CooldownSecs  = 15;
-input ENUM_TIMEFRAMES TF            = PERIOD_M5;
+//--- inputs
+input double          LotSize      = 0.5;        // Lot size
+input ENUM_TIMEFRAMES TF           = PERIOD_M1;  // Working timeframe
+input int             MaxPositions = 3;          // Max open positions
+input int             CooldownSecs = 10;         // Cooldown between entries (sec)
+input int             MaxSpread    = 500;        // Max spread (points)
 
-#define BOT_NAME    "GoldScalperX"
-#define DASH_PREFIX "GSX_D_"
+//--- constants
+#define EA_NAME     "GoldScalperX"
+#define EA_VERSION  "7.00"
 #define GV_PREFIX   "GSX_"
+#define DASH_PREFIX "GSX_D_"
 
-int      g_magic = 0;
-CTrade        trade;
-CPositionInfo posInfo;
+//--- globals
+CTrade         trade;
+CPositionInfo  posInfo;
 
-int hRSI=INVALID_HANDLE, hEMAFast=INVALID_HANDLE;
-int hEMASlow=INVALID_HANDLE, hATR=INVALID_HANDLE;
+long     g_magic         = 0;
+int      hRSI = INVALID_HANDLE, hEMA8 = INVALID_HANDLE, hEMA21 = INVALID_HANDLE, hATR = INVALID_HANDLE;
+datetime g_lastEntryTime = 0;
+int      g_totalTrades   = 0;
 
-double g_rsi=50, g_emaFast=0, g_emaSlow=0, g_atr=0;
-double g_LotSize=0.01, g_slMult=1.5, g_tpMult=2.5, g_trailMult=1.0;
-int    g_MaxSpread=500, g_MaxPos=3, g_cooldown=15;
-
-string   g_lastSignal="NONE";
-datetime g_lastSignalTime=0, g_lastTradeTime=0;
-int      g_totalTrades=0;
-bool     g_running=false;
+double   g_lot;
+int      g_maxPositions;
+int      g_cooldownSecs;
+double   g_maxSpread;
 
 //+------------------------------------------------------------------+
-int MagicFromSymbol(string sym)
+//| Magic number from symbol name hash (djb2)                        |
+//+------------------------------------------------------------------+
+long MagicFromSymbol(const string sym)
   {
-   int h=100000;
-   for(int i=0;i<StringLen(sym);i++) h=h*31+(int)StringGetCharacter(sym,i);
-   return MathAbs(h)%900000+100000;
+   ulong h = 5381;
+   int len = StringLen(sym);
+   for(int i = 0; i < len; i++)
+      h = ((h << 5) + h) + (ulong)StringGetCharacter(sym, i);
+   return (long)(100000 + (h % 900000));
   }
 
-double GV(string key,double fb)
-  { return GlobalVariableCheck(GV_PREFIX+key)?GlobalVariableGet(GV_PREFIX+key):fb; }
+//+------------------------------------------------------------------+
+//| Read setting from MT5 Global Variable with fallback              |
+//+------------------------------------------------------------------+
+double GVOrDefault(const string name, const double fallback)
+  {
+   string gv = GV_PREFIX + name;
+   if(GlobalVariableCheck(gv))
+      return GlobalVariableGet(gv);
+   return fallback;
+  }
 
+//+------------------------------------------------------------------+
 void LoadSettings()
   {
-   g_LotSize   = GV("LotSize",      LotSize);
-   g_MaxSpread = (int)GV("MaxSpread",    MaxSpread);
-   g_MaxPos    = (int)GV("MaxPositions", MaxPositions);
-   g_slMult    = GV("ATR_SL_Mult",  ATR_SL_Mult);
-   g_tpMult    = GV("ATR_TP_Mult",  ATR_TP_Mult);
-   g_trailMult = GV("TrailATR_Mult",TrailATR_Mult);
-   g_cooldown  = (int)GV("CooldownSecs",CooldownSecs);
+   g_lot          = GVOrDefault("LotSize",      LotSize);
+   g_maxSpread    = GVOrDefault("MaxSpread",    (double)MaxSpread);
+   g_maxPositions = (int)GVOrDefault("MaxPositions", (double)MaxPositions);
+   g_cooldownSecs = (int)GVOrDefault("CooldownSecs", (double)CooldownSecs);
   }
 
 //+------------------------------------------------------------------+
 int OnInit()
   {
-   g_magic=MagicFromSymbol(_Symbol);
+   g_magic = MagicFromSymbol(_Symbol);
+
    trade.SetExpertMagicNumber(g_magic);
    trade.SetDeviationInPoints(50);
    trade.SetTypeFillingBySymbol(_Symbol);
 
-   hRSI     = iRSI(_Symbol,TF,RSI_Period,PRICE_CLOSE);
-   hEMAFast = iMA(_Symbol,TF,EMA_Fast,0,MODE_EMA,PRICE_CLOSE);
-   hEMASlow = iMA(_Symbol,TF,EMA_Slow,0,MODE_EMA,PRICE_CLOSE);
-   hATR     = iATR(_Symbol,TF,ATR_Period);
+   hRSI   = iRSI(_Symbol, TF, 7, PRICE_CLOSE);
+   hEMA8  = iMA(_Symbol, TF, 8,  0, MODE_EMA, PRICE_CLOSE);
+   hEMA21 = iMA(_Symbol, TF, 21, 0, MODE_EMA, PRICE_CLOSE);
+   hATR   = iATR(_Symbol, TF, 14);
 
-   if(hRSI==INVALID_HANDLE||hEMAFast==INVALID_HANDLE||
-      hEMASlow==INVALID_HANDLE||hATR==INVALID_HANDLE)
-     { Print(BOT_NAME,"[",_Symbol,"]: FAILED handles"); return(INIT_FAILED); }
+   if(hRSI == INVALID_HANDLE || hEMA8 == INVALID_HANDLE ||
+      hEMA21 == INVALID_HANDLE || hATR == INVALID_HANDLE)
+     {
+      Print(EA_NAME, ": failed to create indicator handles");
+      return(INIT_FAILED);
+     }
 
    LoadSettings();
-   g_running=true;
    CreateDashboard();
-   Print(BOT_NAME,"[",_Symbol,"]: INIT v6 | Magic=",g_magic,
-         " TF=",EnumToString(TF)," SLx",ATR_SL_Mult," TPx",ATR_TP_Mult);
    return(INIT_SUCCEEDED);
   }
 
+//+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
-   g_running=false;
-   IndicatorRelease(hRSI); IndicatorRelease(hEMAFast);
-   IndicatorRelease(hEMASlow); IndicatorRelease(hATR);
-   ObjectsDeleteAll(0,DASH_PREFIX);
+   if(hRSI   != INVALID_HANDLE) IndicatorRelease(hRSI);
+   if(hEMA8  != INVALID_HANDLE) IndicatorRelease(hEMA8);
+   if(hEMA21 != INVALID_HANDLE) IndicatorRelease(hEMA21);
+   if(hATR   != INVALID_HANDLE) IndicatorRelease(hATR);
+   ObjectsDeleteAll(0, DASH_PREFIX);
    ChartRedraw();
+  }
+
+//+------------------------------------------------------------------+
+//| Count positions of this EA on this symbol                        |
+//+------------------------------------------------------------------+
+int CountMyPositions()
+  {
+   int cnt = 0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+      if(posInfo.SelectByIndex(i))
+         if(posInfo.Symbol() == _Symbol && posInfo.Magic() == g_magic)
+            cnt++;
+   return cnt;
+  }
+
+//+------------------------------------------------------------------+
+double MyFloatingPL()
+  {
+   double pl = 0.0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+      if(posInfo.SelectByIndex(i))
+         if(posInfo.Symbol() == _Symbol && posInfo.Magic() == g_magic)
+            pl += posInfo.Profit() + posInfo.Swap();
+   return pl;
   }
 
 //+------------------------------------------------------------------+
 void OnTick()
   {
-   if(!UpdateIndicators()) return;
    LoadSettings();
-   if(UseTrailing) ManageTrailing();
 
-   long spread=SymbolInfoInteger(_Symbol,SYMBOL_SPREAD);
-   if(spread > g_MaxSpread) { UpdateDashboard(); return; }
-   if(TimeCurrent()-g_lastTradeTime < g_cooldown) { UpdateDashboard(); return; }
-   if(OpenPositionsCount() >= g_MaxPos) { UpdateDashboard(); return; }
+   //--- indicator buffers (series orientation: index 0 = current)
+   double rsi[], ema8[], ema21[], atr[], close[];
+   ArraySetAsSeries(rsi,   true);
+   ArraySetAsSeries(ema8,  true);
+   ArraySetAsSeries(ema21, true);
+   ArraySetAsSeries(atr,   true);
+   ArraySetAsSeries(close, true);
 
-   bool trendUp   = g_emaFast > g_emaSlow;
-   bool trendDown = g_emaFast < g_emaSlow;
+   if(CopyBuffer(hRSI,   0, 0, 3, rsi)   < 3) return;
+   if(CopyBuffer(hEMA8,  0, 0, 3, ema8)  < 3) return;
+   if(CopyBuffer(hEMA21, 0, 0, 3, ema21) < 3) return;
+   if(CopyBuffer(hATR,   0, 0, 2, atr)   < 2) return;
+   if(CopyClose(_Symbol, TF, 0, 3, close) < 3) return;
 
-   bool buySignal  = trendUp   && g_rsi > 40.0 && g_rsi < 70.0;
-   bool sellSignal = trendDown && g_rsi > 30.0 && g_rsi < 60.0;
+   double curRSI  = rsi[0];
+   double curATR  = atr[0];
+   bool   emaUp   = ema8[0] > ema21[0];
+   bool   emaDown = ema8[0] < ema21[0];
+   bool   crossDn = (ema8[1] >= ema21[1] && ema8[0] < ema21[0]);
+   bool   crossUp = (ema8[1] <= ema21[1] && ema8[0] > ema21[0]);
+   bool   momUp   = close[0] > close[1];
+   bool   momDown = close[0] < close[1];
 
-   bool hasBuy=false, hasSell=false;
-   for(int i=PositionsTotal()-1;i>=0;i--)
+   //--- smart exits + trailing
+   ManagePositions(curRSI, crossUp, crossDn, curATR);
+
+   //--- entry signal
+   string signal = "NONE";
+   if(emaUp && curRSI >= 45.0 && curRSI <= 75.0 && momUp)
+      signal = "BUY";
+   else if(emaDown && curRSI >= 25.0 && curRSI <= 55.0 && momDown)
+      signal = "SELL";
+
+   //--- entry filters
+   long spread     = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+   bool spreadOK   = (spread <= (long)g_maxSpread);
+   bool cooldownOK = (TimeCurrent() - g_lastEntryTime >= g_cooldownSecs);
+   bool slotsOK    = (CountMyPositions() < g_maxPositions);
+
+   if(signal != "NONE" && spreadOK && cooldownOK && slotsOK && curATR > 0.0)
      {
-      if(posInfo.SelectByIndex(i)&&posInfo.Symbol()==_Symbol&&posInfo.Magic()==g_magic)
-        {
-         if(posInfo.PositionType()==POSITION_TYPE_BUY)  hasBuy=true;
-         if(posInfo.PositionType()==POSITION_TYPE_SELL) hasSell=true;
-        }
-     }
-
-   if(buySignal && !hasBuy)
-     {
-      if(hasSell) CloseAllPositions(POSITION_TYPE_SELL);
-      OpenPosition(ORDER_TYPE_BUY);
-     }
-   else if(sellSignal && !hasSell)
-     {
-      if(hasBuy) CloseAllPositions(POSITION_TYPE_BUY);
-      OpenPosition(ORDER_TYPE_SELL);
-     }
-
-   UpdateDashboard();
-  }
-
-//+------------------------------------------------------------------+
-bool UpdateIndicators()
-  {
-   double r[1],f[1],s[1],a[1];
-   if(CopyBuffer(hRSI,    0,0,1,r)<1) return false;
-   if(CopyBuffer(hEMAFast,0,0,1,f)<1) return false;
-   if(CopyBuffer(hEMASlow,0,0,1,s)<1) return false;
-   if(CopyBuffer(hATR,    0,1,1,a)<1) return false;
-   g_rsi=r[0]; g_emaFast=f[0]; g_emaSlow=s[0]; g_atr=a[0];
-   return true;
-  }
-
-//+------------------------------------------------------------------+
-void OpenPosition(ENUM_ORDER_TYPE type)
-  {
-   if(g_atr <= 0) return;
-   double point   = SymbolInfoDouble(_Symbol,SYMBOL_POINT);
-   long   stopLvl = SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL);
-   double minDist = (stopLvl+5)*point;
-   double slDist  = MathMax(g_atr*g_slMult, minDist);
-   double tpDist  = MathMax(g_atr*g_tpMult, minDist);
-
-   double price,sl,tp;
-   if(type==ORDER_TYPE_BUY)
-     {
-      price = SymbolInfoDouble(_Symbol,SYMBOL_ASK);
-      sl    = NormalizeDouble(price-slDist,_Digits);
-      tp    = NormalizeDouble(price+tpDist,_Digits);
-      if(trade.Buy(g_LotSize,_Symbol,price,sl,tp,BOT_NAME))
-        {
-         g_totalTrades++; g_lastSignal="BUY";
-         g_lastSignalTime=TimeCurrent(); g_lastTradeTime=TimeCurrent();
-         Print(BOT_NAME,"[",_Symbol,"]: BUY @",DoubleToString(price,_Digits),
-               " SL=",DoubleToString(sl,_Digits)," TP=",DoubleToString(tp,_Digits));
-        }
+      if(signal == "BUY")
+         OpenTrade(ORDER_TYPE_BUY, curATR);
       else
-         Print(BOT_NAME,"[",_Symbol,"]: BUY FAILED | ",trade.ResultRetcode(),
-               " ",trade.ResultRetcodeDescription());
+         OpenTrade(ORDER_TYPE_SELL, curATR);
+     }
+
+   UpdateDashboard(emaUp, emaDown, curRSI, signal, spreadOK && cooldownOK && slotsOK);
+  }
+
+//+------------------------------------------------------------------+
+void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal)
+  {
+   double ask    = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid    = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double point  = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   int    digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   long   stopsLevel = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   double minDist = stopsLevel * point;
+
+   double slDist = MathMax(atrVal * 1.5, minDist);
+   double tpDist = MathMax(atrVal * 2.5, minDist);
+
+   double lot = NormalizeLot(g_lot);
+   double sl, tp;
+   bool   ok;
+
+   if(type == ORDER_TYPE_BUY)
+     {
+      sl = NormalizeDouble(ask - slDist, digits);
+      tp = NormalizeDouble(ask + tpDist, digits);
+      ok = trade.Buy(lot, _Symbol, ask, sl, tp, EA_NAME);
      }
    else
      {
-      price = SymbolInfoDouble(_Symbol,SYMBOL_BID);
-      sl    = NormalizeDouble(price+slDist,_Digits);
-      tp    = NormalizeDouble(price-tpDist,_Digits);
-      if(trade.Sell(g_LotSize,_Symbol,price,sl,tp,BOT_NAME))
-        {
-         g_totalTrades++; g_lastSignal="SELL";
-         g_lastSignalTime=TimeCurrent(); g_lastTradeTime=TimeCurrent();
-         Print(BOT_NAME,"[",_Symbol,"]: SELL @",DoubleToString(price,_Digits),
-               " SL=",DoubleToString(sl,_Digits)," TP=",DoubleToString(tp,_Digits));
-        }
-      else
-         Print(BOT_NAME,"[",_Symbol,"]: SELL FAILED | ",trade.ResultRetcode(),
-               " ",trade.ResultRetcodeDescription());
+      sl = NormalizeDouble(bid + slDist, digits);
+      tp = NormalizeDouble(bid - tpDist, digits);
+      ok = trade.Sell(lot, _Symbol, bid, sl, tp, EA_NAME);
      }
-  }
 
-//+------------------------------------------------------------------+
-void ManageTrailing()
-  {
-   if(g_atr <= 0) return;
-   double point   = SymbolInfoDouble(_Symbol,SYMBOL_POINT);
-   long   stopLvl = SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL);
-   double minDist = (stopLvl+5)*point;
-   double trail   = MathMax(g_atr*g_trailMult, minDist);
-
-   for(int i=PositionsTotal()-1;i>=0;i--)
+   if(ok)
      {
-      if(!posInfo.SelectByIndex(i)) continue;
-      if(posInfo.Symbol()!=_Symbol || posInfo.Magic()!=g_magic) continue;
-      ulong  ticket = posInfo.Ticket();
-      double curSL  = posInfo.StopLoss();
-      if(posInfo.PositionType()==POSITION_TYPE_BUY)
-        {
-         double bid   = SymbolInfoDouble(_Symbol,SYMBOL_BID);
-         double newSL = NormalizeDouble(bid-trail,_Digits);
-         if(newSL > curSL+point)
-            trade.PositionModify(ticket,newSL,posInfo.TakeProfit());
-        }
-      else
-        {
-         double ask   = SymbolInfoDouble(_Symbol,SYMBOL_ASK);
-         double newSL = NormalizeDouble(ask+trail,_Digits);
-         if(curSL==0 || newSL < curSL-point)
-            trade.PositionModify(ticket,newSL,posInfo.TakeProfit());
-        }
+      g_lastEntryTime = TimeCurrent();
+      g_totalTrades++;
      }
   }
 
 //+------------------------------------------------------------------+
-void CloseAllPositions(ENUM_POSITION_TYPE type)
+double NormalizeLot(double lot)
   {
-   for(int i=PositionsTotal()-1;i>=0;i--)
+   double minLot  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double maxLot  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   if(lotStep > 0.0)
+      lot = MathFloor(lot / lotStep) * lotStep;
+   lot = MathMax(minLot, MathMin(maxLot, lot));
+   return lot;
+  }
+
+//+------------------------------------------------------------------+
+//| Smart exits and ATR trailing stop                                |
+//+------------------------------------------------------------------+
+void ManagePositions(const double curRSI, const bool crossUp,
+                     const bool crossDn, const double atrVal)
+  {
+   double point  = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   int    digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   long   stopsLevel = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   double minDist = stopsLevel * point;
+   double trail   = MathMax(atrVal * 1.0, minDist);
+
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
-      if(posInfo.SelectByIndex(i) && posInfo.Symbol()==_Symbol &&
-         posInfo.Magic()==g_magic  && posInfo.PositionType()==type)
+      if(!posInfo.SelectByIndex(i))
+         continue;
+      if(posInfo.Symbol() != _Symbol || posInfo.Magic() != g_magic)
+         continue;
+
+      ulong  ticket    = posInfo.Ticket();
+      double openPrice = posInfo.PriceOpen();
+      double curPrice  = posInfo.PriceCurrent();
+      double sl        = posInfo.StopLoss();
+      double tp        = posInfo.TakeProfit();
+
+      if(posInfo.PositionType() == POSITION_TYPE_BUY)
         {
-         ulong t=posInfo.Ticket(); double p=posInfo.Profit();
-         if(trade.PositionClose(t))
-            Print(BOT_NAME,"[",_Symbol,"]: CLOSED #",t," P=",DoubleToString(p,2),"$");
+         double priceGain = curPrice - openPrice;
+         //--- smart close
+         if(curRSI > 75.0 || crossDn || (atrVal > 0.0 && priceGain >= atrVal * 1.5))
+           {
+            trade.PositionClose(ticket);
+            continue;
+           }
+         //--- trailing stop
+         if(atrVal > 0.0 && priceGain > trail)
+           {
+            double newSL = NormalizeDouble(curPrice - trail, digits);
+            if(newSL > sl + point && curPrice - newSL >= minDist)
+               trade.PositionModify(ticket, newSL, tp);
+           }
+        }
+      else // SELL
+        {
+         double priceGain = openPrice - curPrice;
+         if(curRSI < 25.0 || crossUp || (atrVal > 0.0 && priceGain >= atrVal * 1.5))
+           {
+            trade.PositionClose(ticket);
+            continue;
+           }
+         if(atrVal > 0.0 && priceGain > trail)
+           {
+            double newSL = NormalizeDouble(curPrice + trail, digits);
+            if((sl == 0.0 || newSL < sl - point) && newSL - curPrice >= minDist)
+               trade.PositionModify(ticket, newSL, tp);
+           }
         }
      }
   }
 
-int OpenPositionsCount()
-  {
-   int c=0;
-   for(int i=PositionsTotal()-1;i>=0;i--)
-      if(posInfo.SelectByIndex(i)&&posInfo.Symbol()==_Symbol&&posInfo.Magic()==g_magic) c++;
-   return c;
-  }
-
-double FloatingProfit()
-  {
-   double p=0;
-   for(int i=PositionsTotal()-1;i>=0;i--)
-      if(posInfo.SelectByIndex(i)&&posInfo.Symbol()==_Symbol&&posInfo.Magic()==g_magic)
-         p+=posInfo.Profit()+posInfo.Swap();
-   return p;
-  }
-
 //+------------------------------------------------------------------+
-void CreatePanel(string name,int x,int y,int w,int h)
-  {
-   ObjectCreate(0,name,OBJ_RECTANGLE_LABEL,0,0,0);
-   ObjectSetInteger(0,name,OBJPROP_CORNER,    CORNER_LEFT_UPPER);
-   ObjectSetInteger(0,name,OBJPROP_XDISTANCE, x);
-   ObjectSetInteger(0,name,OBJPROP_YDISTANCE, y);
-   ObjectSetInteger(0,name,OBJPROP_XSIZE,     w);
-   ObjectSetInteger(0,name,OBJPROP_YSIZE,     h);
-   ObjectSetInteger(0,name,OBJPROP_BGCOLOR,   C'15,15,25');
-   ObjectSetInteger(0,name,OBJPROP_BORDER_COLOR,clrDimGray);
-   ObjectSetInteger(0,name,OBJPROP_BORDER_TYPE, BORDER_FLAT);
-   ObjectSetInteger(0,name,OBJPROP_BACK,      false);
-   ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
-   ObjectSetInteger(0,name,OBJPROP_HIDDEN,    true);
-  }
-
-void CreateLbl(string name,int x,int y)
-  {
-   ObjectCreate(0,name,OBJ_LABEL,0,0,0);
-   ObjectSetInteger(0,name,OBJPROP_CORNER,    CORNER_LEFT_UPPER);
-   ObjectSetInteger(0,name,OBJPROP_XDISTANCE, x);
-   ObjectSetInteger(0,name,OBJPROP_YDISTANCE, y);
-   ObjectSetInteger(0,name,OBJPROP_FONTSIZE,  9);
-   ObjectSetString(0,name,OBJPROP_FONT,       "Consolas");
-   ObjectSetInteger(0,name,OBJPROP_COLOR,     clrWhite);
-   ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
-   ObjectSetInteger(0,name,OBJPROP_HIDDEN,    true);
-  }
-
-void SetLbl(int idx,string text,color clr)
-  {
-   string name=DASH_PREFIX+"L"+IntegerToString(idx);
-   ObjectSetString(0,name,OBJPROP_TEXT,text);
-   ObjectSetInteger(0,name,OBJPROP_COLOR,clr);
-  }
-
+//| Dashboard                                                        |
+//+------------------------------------------------------------------+
 void CreateDashboard()
   {
-   CreatePanel(DASH_PREFIX+"BG",10,20,290,260);
-   for(int i=0;i<13;i++) CreateLbl(DASH_PREFIX+"L"+IntegerToString(i),18,30+i*19);
-   UpdateDashboard();
+   string bg = DASH_PREFIX + "BG";
+   ObjectCreate(0, bg, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, bg, OBJPROP_CORNER,      CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, bg, OBJPROP_XDISTANCE,   10);
+   ObjectSetInteger(0, bg, OBJPROP_YDISTANCE,   20);
+   ObjectSetInteger(0, bg, OBJPROP_XSIZE,       250);
+   ObjectSetInteger(0, bg, OBJPROP_YSIZE,       205);
+   ObjectSetInteger(0, bg, OBJPROP_BGCOLOR,     C'15,15,25');
+   ObjectSetInteger(0, bg, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSetInteger(0, bg, OBJPROP_COLOR,       clrDimGray);
+   ObjectSetInteger(0, bg, OBJPROP_BACK,        false);
+   ObjectSetInteger(0, bg, OBJPROP_SELECTABLE,  false);
+   ObjectSetInteger(0, bg, OBJPROP_HIDDEN,      true);
+
+   string labels[9] = {"TITLE","MAGIC","TREND","RSI","SIGNAL","ENTRY","POS","PL","TRADES"};
+   for(int i = 0; i < 9; i++)
+     {
+      string name = DASH_PREFIX + labels[i];
+      ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+      ObjectSetInteger(0, name, OBJPROP_CORNER,     CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, name, OBJPROP_XDISTANCE,  20);
+      ObjectSetInteger(0, name, OBJPROP_YDISTANCE,  28 + i * 20);
+      ObjectSetInteger(0, name, OBJPROP_FONTSIZE,   9);
+      ObjectSetString (0, name, OBJPROP_FONT,       "Consolas");
+      ObjectSetInteger(0, name, OBJPROP_COLOR,      clrWhite);
+      ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, name, OBJPROP_HIDDEN,     true);
+     }
   }
 
-void UpdateDashboard()
+//+------------------------------------------------------------------+
+void SetLabel(const string suffix, const string text, const color clr)
   {
-   long   spread  = SymbolInfoInteger(_Symbol,SYMBOL_SPREAD);
-   double profit  = FloatingProfit();
-   int    openCnt = OpenPositionsCount();
-   bool   usingGV = GlobalVariableCheck(GV_PREFIX+"LotSize");
+   string name = DASH_PREFIX + suffix;
+   ObjectSetString (0, name, OBJPROP_TEXT,  text);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+  }
 
-   string trend; color trendClr;
-   if(g_emaFast>g_emaSlow)      { trend="UP  "; trendClr=clrLime; }
-   else if(g_emaFast<g_emaSlow) { trend="DOWN"; trendClr=clrRed;  }
-   else                         { trend="FLAT"; trendClr=clrWhite; }
+//+------------------------------------------------------------------+
+void UpdateDashboard(const bool emaUp, const bool emaDown, const double rsiVal,
+                     const string signal, const bool ready)
+  {
+   string trend = emaUp ? "UP" : (emaDown ? "DOWN" : "FLAT");
+   color  trClr = emaUp ? clrLime : (emaDown ? clrOrangeRed : clrSilver);
 
-   color profClr = profit>0?clrLime:profit<0?clrRed:clrWhite;
-   color sprdClr = spread>g_MaxSpread?clrRed:clrLime;
-   color rsiClr  = (g_rsi>70||g_rsi<30)?clrOrange:clrDeepSkyBlue;
+   int    posCount = CountMyPositions();
+   double floatPL  = MyFloatingPL();
+   long   cdLeft   = (long)g_cooldownSecs - (long)(TimeCurrent() - g_lastEntryTime);
 
-   long coolLeft = (long)g_cooldown-(long)(TimeCurrent()-g_lastTradeTime);
-   string readyStr = coolLeft>0?("Wait "+IntegerToString((int)coolLeft)+"s"):"READY";
-   color  readyClr = coolLeft>0?clrOrange:clrLime;
+   SetLabel("TITLE",  EA_NAME + " v" + EA_VERSION + "  " + _Symbol, clrGold);
+   SetLabel("MAGIC",  "Magic   : " + (string)g_magic, clrSilver);
+   SetLabel("TREND",  "Trend   : " + trend, trClr);
+   SetLabel("RSI",    "RSI(7)  : " + DoubleToString(rsiVal, 2), clrDeepSkyBlue);
+   SetLabel("SIGNAL", "Signal  : " + signal,
+            signal == "BUY" ? clrLime : (signal == "SELL" ? clrOrangeRed : clrSilver));
+   SetLabel("ENTRY",  "Entry   : " + (ready ? "READY" :
+            (cdLeft > 0 ? "COOLDOWN " + (string)cdLeft + "s" : "BLOCKED")),
+            ready ? clrLime : clrYellow);
+   SetLabel("POS",    "Open Pos: " + (string)posCount + " / " + (string)g_maxPositions, clrWhite);
+   SetLabel("PL",     "Float PL: " + DoubleToString(floatPL, 2),
+            floatPL >= 0.0 ? clrLime : clrOrangeRed);
+   SetLabel("TRADES", "Trades  : " + (string)g_totalTrades, clrSilver);
 
-   SetLbl(0,  "GoldScalperX v6  ["+_Symbol+"]",              clrGold);
-   SetLbl(1,  "TF:"+EnumToString(TF)+"  Magic:"+IntegerToString(g_magic), clrSilver);
-   SetLbl(2,  "-------------------------",                    clrDimGray);
-   SetLbl(3,  "Trend:"+trend+"  RSI:"+DoubleToString(g_rsi,1), trendClr);
-   SetLbl(4,  "ATR  :"+DoubleToString(g_atr,_Digits),        rsiClr);
-   SetLbl(5,  "Sprd :"+IntegerToString((int)spread),          sprdClr);
-   SetLbl(6,  "-------------------------",                    clrDimGray);
-   SetLbl(7,  "Signal:"+g_lastSignal,                         g_lastSignal=="BUY"?clrLime:g_lastSignal=="SELL"?clrRed:clrWhite);
-   SetLbl(8,  "Entry :"+readyStr,                             readyClr);
-   SetLbl(9,  "Cfg   :"+(usingGV?"Dashboard":"Local"),        usingGV?clrLime:clrYellow);
-   SetLbl(10, "-------------------------",                    clrDimGray);
-   SetLbl(11, "Open:"+IntegerToString(openCnt)+"/"+IntegerToString(g_MaxPos)
-              +"  P/L:"+DoubleToString(profit,2)+"$",         profClr);
-   SetLbl(12, "Trades:"+IntegerToString(g_totalTrades)
-              +"  Lot:"+DoubleToString(g_LotSize,2),          clrWhite);
    ChartRedraw();
   }
 //+------------------------------------------------------------------+
