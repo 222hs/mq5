@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
-const API_KEY = "mysecretkey123";
+const API_KEY = "mysecretkey123"; // v2
 
 const FIELDS = [
   { key: "LotSize",      label: "حجم اللوت",          min: 0.01, max: 1,    step: 0.01, decimals: 2 },
