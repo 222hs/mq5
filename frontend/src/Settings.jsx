@@ -74,7 +74,7 @@ export default function Settings() {
                   min={f.min} max={f.max} step={f.step}
                   value={val}
                   onChange={(e) => handleChange(f.key, parseFloat(e.target.value))}
-                  style={s.range}
+                  style={{ ...s.range, direction: "ltr" }}
                 />
               </div>
               <input
@@ -112,7 +112,7 @@ const s = {
                background: "#1e2a3a", borderRadius: 6, padding: "2px 10px" },
   inputRow:  { display: "flex", alignItems: "center", gap: 12 },
   trackWrap: { flex: 1, position: "relative", height: 6, borderRadius: 3,
-               background: "#2A2A33" },
+               background: "#2A2A33", direction: "ltr" },
   trackFill: { position: "absolute", top: 0, left: 0, height: "100%",
                background: "#3B82F6", borderRadius: 3, pointerEvents: "none" },
   range:     { position: "absolute", top: -5, left: 0, width: "100%",
