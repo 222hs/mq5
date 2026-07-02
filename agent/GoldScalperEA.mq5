@@ -13,9 +13,9 @@
 //--- inputs
 input double          LotSize      = 0.5;      // Lot size
 input ENUM_TIMEFRAMES TF           = PERIOD_M1;// Working timeframe
-input int             MaxPositions = 3;        // Max open positions
-input int             CooldownSecs = 60;       // Cooldown between entries (sec)
-input int             MaxSpread    = 40;       // Max spread in points (~4 pips)
+input int             MaxPositions = 5;        // Max open positions
+input int             CooldownSecs = 30;       // Cooldown between entries (sec)
+input int             MaxSpread    = 200;      // Max spread in points
 input bool            UseSession   = true;     // London+NY sessions only
 
 //--- constants
@@ -177,24 +177,24 @@ bool StrongBull(double o, double c, double h, double l, double atr)
    double range = h - l;
    if(range < 1e-10 || atr < 1e-10) return false;
    return (c > o)
-       && ((c-o)/range >= 0.55)
-       && ((h-c)/range <= 0.25)
-       && (range >= 0.5*atr)
-       && (range <= 3.0*atr);
+       && ((c-o)/range >= 0.45)
+       && ((h-c)/range <= 0.35)
+       && (range >= 0.3*atr)
+       && (range <= 4.0*atr);
   }
 
 //+------------------------------------------------------------------+
-//| Strong bear: body>=55%, close in bottom 25%, ATR range sane      |
+//| Strong bear: body>=45%, close in bottom 35%, ATR range sane      |
 //+------------------------------------------------------------------+
 bool StrongBear(double o, double c, double h, double l, double atr)
   {
    double range = h - l;
    if(range < 1e-10 || atr < 1e-10) return false;
    return (c < o)
-       && ((o-c)/range >= 0.55)
-       && ((c-l)/range <= 0.25)
-       && (range >= 0.5*atr)
-       && (range <= 3.0*atr);
+       && ((o-c)/range >= 0.45)
+       && ((c-l)/range <= 0.35)
+       && (range >= 0.3*atr)
+       && (range <= 4.0*atr);
   }
 
 //+------------------------------------------------------------------+
@@ -247,8 +247,8 @@ void OnTick()
    bool priceBelowEMA = c[1] < ema91;
 
    // RSI momentum: directional + non-overlapping
-   bool rsiBuy  = (rsi1 >= 50.0 && rsi1 <= 75.0 && rsi1 > rsi2); // rising momentum
-   bool rsiSell = (rsi1 >= 25.0 && rsi1 <= 50.0 && rsi1 < rsi2); // falling momentum
+   bool rsiBuy  = (rsi1 >= 45.0 && rsi1 <= 78.0 && rsi1 > rsi2); // rising momentum
+   bool rsiSell = (rsi1 >= 22.0 && rsi1 <= 55.0 && rsi1 < rsi2); // falling momentum
 
    // 2-bar candle confirmation (bar[1] AND bar[2] agree)
    bool bullBar = StrongBull(o[1],c[1],h[1],l[1],atr1)
