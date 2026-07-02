@@ -1,221 +1,296 @@
 //+------------------------------------------------------------------+
-//|                                               GoldScalperEA.mq5  |
-//|                     RSI + Stochastic Scalper for XAUUSD (M1/M5)  |
+//|                                          GoldScalperX_M1.mq5     |
+//|                        XAUUSD M1 Fast Scalping Expert Advisor    |
 //+------------------------------------------------------------------+
-#property copyright "GoldScalperEA"
+#property copyright "GoldScalperX"
 #property version   "1.00"
 #property strict
 
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
 
-//--- Inputs
-input double LotSize        = 0.01;    // Lot Size
-input int    TakeProfit     = 25;      // Take Profit (pips)
-input int    StopLoss       = 35;      // Stop Loss (pips)
-input int    RSI_Period     = 7;       // RSI Period
-input int    MaxSpread      = 500;     // Max Spread (points)
-input int    Stoch_K        = 5;       // Stochastic %K
-input int    Stoch_D        = 3;       // Stochastic %D
-input int    Stoch_Slowing  = 3;       // Stochastic Slowing
-input double RSI_BuyLevel   = 45.0;    // RSI Buy below
-input double RSI_SellLevel  = 55.0;    // RSI Sell above
-input int    MaxPositions   = 1;       // Max simultaneous positions
-input long   MagicNumber    = 888888;  // Magic Number
+input double LotSize    = 0.01;
+input int    TP         = 30;
+input int    SL         = 40;
+input int    MaxSpread  = 500;
+input int    RSI_Period = 7;
+input int    EMA_Fast   = 8;
+input int    EMA_Slow   = 21;
 
-//--- Globals
+#define MAGIC_NUMBER 999111
+#define BOT_NAME     "GoldScalperX M1"
+#define DASH_PREFIX  "GSX_"
+
 CTrade        trade;
 CPositionInfo posInfo;
-int    rsiHandle    = INVALID_HANDLE;
-int    stochHandle  = INVALID_HANDLE;
-string lastSignal   = "None";
-datetime lastBarTime = 0;
-double pipFactor;
+
+int    hRSI      = INVALID_HANDLE;
+int    hEMAFast  = INVALID_HANDLE;
+int    hEMASlow  = INVALID_HANDLE;
+
+double g_rsi     = 0.0;
+double g_emaFast = 0.0;
+double g_emaSlow = 0.0;
+
+string   g_lastSignal     = "NONE";
+datetime g_lastSignalTime = 0;
+int      g_totalTrades    = 0;
+bool     g_running        = false;
 
 //+------------------------------------------------------------------+
 int OnInit()
   {
-   rsiHandle   = iRSI(_Symbol,_Period,RSI_Period,PRICE_CLOSE);
-   stochHandle = iStochastic(_Symbol,_Period,Stoch_K,Stoch_D,Stoch_Slowing,MODE_SMA,STO_LOWHIGH);
-
-   if(rsiHandle==INVALID_HANDLE || stochHandle==INVALID_HANDLE)
-     {
-      Print("Failed to create indicator handles");
-      return(INIT_FAILED);
-     }
-
-   trade.SetExpertMagicNumber(MagicNumber);
+   trade.SetExpertMagicNumber(MAGIC_NUMBER);
    trade.SetDeviationInPoints(30);
    trade.SetTypeFillingBySymbol(_Symbol);
 
-   pipFactor = (_Digits==3 || _Digits==2) ? 10.0 : 1.0;
+   hRSI     = iRSI(_Symbol, PERIOD_M1, RSI_Period, PRICE_CLOSE);
+   hEMAFast = iMA(_Symbol, PERIOD_M1, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE);
+   hEMASlow = iMA(_Symbol, PERIOD_M1, EMA_Slow, 0, MODE_EMA, PRICE_CLOSE);
 
+   if(hRSI == INVALID_HANDLE || hEMAFast == INVALID_HANDLE || hEMASlow == INVALID_HANDLE)
+     {
+      Print(BOT_NAME, ": FAILED to create indicator handles");
+      return(INIT_FAILED);
+     }
+
+   g_running = true;
    CreateDashboard();
-   Print("GoldScalperEA started. Magic=",MagicNumber," TF=",EnumToString(_Period));
+   Print(BOT_NAME, ": INITIALIZED | Symbol=", _Symbol, " | Magic=", MAGIC_NUMBER,
+         " | Lot=", DoubleToString(LotSize, 2), " | TP=", TP, " SL=", SL);
    return(INIT_SUCCEEDED);
   }
 
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
-   if(rsiHandle!=INVALID_HANDLE)   IndicatorRelease(rsiHandle);
-   if(stochHandle!=INVALID_HANDLE) IndicatorRelease(stochHandle);
-   ObjectsDeleteAll(0,"GSEA_");
-   Comment("");
+   g_running = false;
+   if(hRSI     != INVALID_HANDLE) IndicatorRelease(hRSI);
+   if(hEMAFast != INVALID_HANDLE) IndicatorRelease(hEMAFast);
+   if(hEMASlow != INVALID_HANDLE) IndicatorRelease(hEMASlow);
+   ObjectsDeleteAll(0, DASH_PREFIX);
+   ChartRedraw();
+   Print(BOT_NAME, ": STOPPED | TotalTrades=", g_totalTrades);
   }
 
 //+------------------------------------------------------------------+
 void OnTick()
   {
-   double rsi[2], stK[3], stD[3];
-   if(CopyBuffer(rsiHandle,0,0,2,rsi)<2)              { UpdateDashboard(0,0,0); return; }
-   if(CopyBuffer(stochHandle,MAIN_LINE,0,3,stK)<3)    { UpdateDashboard(rsi[1],0,0); return; }
-   if(CopyBuffer(stochHandle,SIGNAL_LINE,0,3,stD)<3)  { UpdateDashboard(rsi[1],0,0); return; }
+   if(!UpdateIndicators()) { UpdateDashboard(); return; }
 
-   double rsiCur = rsi[1];
-   double kCur = stK[2], dCur = stD[2];
-   double kPrev = stK[1], dPrev = stD[1];
+   double candleOpen  = iOpen(_Symbol, PERIOD_M1, 0);
+   double candleClose = iClose(_Symbol, PERIOD_M1, 0);
+   bool bullCandle = (candleClose > candleOpen);
+   bool bearCandle = (candleClose < candleOpen);
 
-   UpdateDashboard(rsiCur,kCur,dCur);
+   bool buySignal  = (bullCandle && g_emaFast > g_emaSlow && g_rsi >= 40.0 && g_rsi <= 70.0);
+   bool sellSignal = (bearCandle && g_emaFast < g_emaSlow && g_rsi >= 30.0 && g_rsi <= 60.0);
 
-   datetime barTime = iTime(_Symbol,_Period,0);
-   if(barTime==lastBarTime) return;
+   long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
 
-   long spread = SymbolInfoInteger(_Symbol,SYMBOL_SPREAD);
-   if(spread>MaxSpread) return;
-
-   if(CountPositions()>=MaxPositions) return;
-
-   bool crossUp   = (kPrev<=dPrev && kCur>dCur);
-   bool crossDown = (kPrev>=dPrev && kCur<dCur);
-
-   double ask = SymbolInfoDouble(_Symbol,SYMBOL_ASK);
-   double bid = SymbolInfoDouble(_Symbol,SYMBOL_BID);
-   double tpDist = TakeProfit*pipFactor*_Point;
-   double slDist = StopLoss*pipFactor*_Point;
-
-   if(rsiCur<RSI_BuyLevel)
+   bool hasBuy = false, hasSell = false;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
-      lastBarTime=barTime;
-      lastSignal = "BUY @ "+TimeToString(TimeCurrent(),TIME_MINUTES);
-      PrintFormat("SIGNAL BUY | RSI=%.2f K=%.2f D=%.2f Spread=%d",rsiCur,kCur,dCur,(int)spread);
-      double sl = NormalizeDouble(ask-slDist,_Digits);
-      double tp = NormalizeDouble(ask+tpDist,_Digits);
-      if(trade.Buy(LotSize,_Symbol,ask,sl,tp,"GSEA Buy"))
-         PrintFormat("BUY OPENED | Ticket=%I64u Price=%.2f SL=%.2f TP=%.2f",trade.ResultOrder(),ask,sl,tp);
-      else
-         PrintFormat("BUY FAILED | Error=%d %s",trade.ResultRetcode(),trade.ResultRetcodeDescription());
+      if(posInfo.SelectByIndex(i) && posInfo.Symbol() == _Symbol && posInfo.Magic() == MAGIC_NUMBER)
+        {
+         if(posInfo.PositionType() == POSITION_TYPE_BUY)  hasBuy  = true;
+         if(posInfo.PositionType() == POSITION_TYPE_SELL) hasSell = true;
+        }
      }
-   else if(rsiCur>RSI_SellLevel)
+
+   if(spread > MaxSpread) { UpdateDashboard(); return; }
+
+   if(buySignal)
      {
-      lastBarTime=barTime;
-      lastSignal = "SELL @ "+TimeToString(TimeCurrent(),TIME_MINUTES);
-      PrintFormat("SIGNAL SELL | RSI=%.2f K=%.2f D=%.2f Spread=%d",rsiCur,kCur,dCur,(int)spread);
-      double sl = NormalizeDouble(bid+slDist,_Digits);
-      double tp = NormalizeDouble(bid-tpDist,_Digits);
-      if(trade.Sell(LotSize,_Symbol,bid,sl,tp,"GSEA Sell"))
-         PrintFormat("SELL OPENED | Ticket=%I64u Price=%.2f SL=%.2f TP=%.2f",trade.ResultOrder(),bid,sl,tp);
+      if(hasSell)
+        {
+         Print(BOT_NAME, ": REVERSAL -> Closing SELL to open BUY | RSI=", DoubleToString(g_rsi, 2));
+         CloseAllPositions(POSITION_TYPE_SELL);
+        }
+      if(!hasBuy) OpenPosition(ORDER_TYPE_BUY);
+     }
+   else if(sellSignal)
+     {
+      if(hasBuy)
+        {
+         Print(BOT_NAME, ": REVERSAL -> Closing BUY to open SELL | RSI=", DoubleToString(g_rsi, 2));
+         CloseAllPositions(POSITION_TYPE_BUY);
+        }
+      if(!hasSell) OpenPosition(ORDER_TYPE_SELL);
+     }
+
+   UpdateDashboard();
+  }
+
+//+------------------------------------------------------------------+
+bool UpdateIndicators()
+  {
+   double bufRSI[1], bufFast[1], bufSlow[1];
+   if(CopyBuffer(hRSI, 0, 0, 1, bufRSI) < 1)      return(false);
+   if(CopyBuffer(hEMAFast, 0, 0, 1, bufFast) < 1) return(false);
+   if(CopyBuffer(hEMASlow, 0, 0, 1, bufSlow) < 1) return(false);
+   g_rsi     = bufRSI[0];
+   g_emaFast = bufFast[0];
+   g_emaSlow = bufSlow[0];
+   return(true);
+  }
+
+//+------------------------------------------------------------------+
+void OpenPosition(ENUM_ORDER_TYPE type)
+  {
+   double price, sl, tp;
+   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+
+   if(type == ORDER_TYPE_BUY)
+     {
+      price = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      sl = NormalizeDouble(price - SL * point, _Digits);
+      tp = NormalizeDouble(price + TP * point, _Digits);
+      if(trade.Buy(LotSize, _Symbol, price, sl, tp, BOT_NAME))
+        {
+         g_totalTrades++;
+         g_lastSignal = "BUY"; g_lastSignalTime = TimeCurrent();
+         Print(BOT_NAME, ": BUY OPENED | Price=", DoubleToString(price,_Digits),
+               " SL=", DoubleToString(sl,_Digits), " TP=", DoubleToString(tp,_Digits),
+               " | RSI=", DoubleToString(g_rsi,2), " Ticket=", trade.ResultOrder());
+        }
       else
-         PrintFormat("SELL FAILED | Error=%d %s",trade.ResultRetcode(),trade.ResultRetcodeDescription());
+         Print(BOT_NAME, ": BUY FAILED | ", trade.ResultRetcode(), " ", trade.ResultRetcodeDescription());
+     }
+   else
+     {
+      price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      sl = NormalizeDouble(price + SL * point, _Digits);
+      tp = NormalizeDouble(price - TP * point, _Digits);
+      if(trade.Sell(LotSize, _Symbol, price, sl, tp, BOT_NAME))
+        {
+         g_totalTrades++;
+         g_lastSignal = "SELL"; g_lastSignalTime = TimeCurrent();
+         Print(BOT_NAME, ": SELL OPENED | Price=", DoubleToString(price,_Digits),
+               " SL=", DoubleToString(sl,_Digits), " TP=", DoubleToString(tp,_Digits),
+               " | RSI=", DoubleToString(g_rsi,2), " Ticket=", trade.ResultOrder());
+        }
+      else
+         Print(BOT_NAME, ": SELL FAILED | ", trade.ResultRetcode(), " ", trade.ResultRetcodeDescription());
      }
   }
 
 //+------------------------------------------------------------------+
-void OnTradeTransaction(const MqlTradeTransaction &trans,
-                        const MqlTradeRequest &request,
-                        const MqlTradeResult &result)
+void CloseAllPositions(ENUM_POSITION_TYPE type)
   {
-   if(trans.type!=TRADE_TRANSACTION_DEAL_ADD) return;
-   if(!HistoryDealSelect(trans.deal)) return;
-   if(HistoryDealGetInteger(trans.deal,DEAL_MAGIC)!=MagicNumber) return;
-   if((ENUM_DEAL_ENTRY)HistoryDealGetInteger(trans.deal,DEAL_ENTRY)==DEAL_ENTRY_OUT)
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
-      double profit = HistoryDealGetDouble(trans.deal,DEAL_PROFIT);
-      ENUM_DEAL_REASON reason = (ENUM_DEAL_REASON)HistoryDealGetInteger(trans.deal,DEAL_REASON);
-      PrintFormat("POSITION CLOSED | Deal=%I64u Profit=%.2f Reason=%s",
-                  trans.deal, profit,
-                  reason==DEAL_REASON_TP ? "TakeProfit" :
-                  reason==DEAL_REASON_SL ? "StopLoss" : "Other");
+      if(posInfo.SelectByIndex(i) && posInfo.Symbol() == _Symbol &&
+         posInfo.Magic() == MAGIC_NUMBER && posInfo.PositionType() == type)
+        {
+         ulong  ticket = posInfo.Ticket();
+         double profit = posInfo.Profit();
+         if(trade.PositionClose(ticket))
+            Print(BOT_NAME, ": CLOSED | Ticket=", ticket,
+                  " Type=", (type==POSITION_TYPE_BUY?"BUY":"SELL"),
+                  " Profit=", DoubleToString(profit,2), " USD");
+         else
+            Print(BOT_NAME, ": CLOSE FAILED | Ticket=", ticket, " ", trade.ResultRetcodeDescription());
+        }
      }
   }
 
 //+------------------------------------------------------------------+
-int CountPositions()
+int OpenPositionsCount()
   {
-   int count=0;
-   for(int i=PositionsTotal()-1;i>=0;i--)
-      if(posInfo.SelectByIndex(i) && posInfo.Magic()==MagicNumber && posInfo.Symbol()==_Symbol)
+   int count = 0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+      if(posInfo.SelectByIndex(i) && posInfo.Symbol() == _Symbol && posInfo.Magic() == MAGIC_NUMBER)
          count++;
-   return count;
+   return(count);
   }
 
-//+------------------------------------------------------------------+
-double CurrentProfit()
+double FloatingProfit()
   {
-   double p=0;
-   for(int i=PositionsTotal()-1;i>=0;i--)
-      if(posInfo.SelectByIndex(i) && posInfo.Magic()==MagicNumber && posInfo.Symbol()==_Symbol)
-         p += posInfo.Profit()+posInfo.Swap();
-   return p;
+   double profit = 0.0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+      if(posInfo.SelectByIndex(i) && posInfo.Symbol() == _Symbol && posInfo.Magic() == MAGIC_NUMBER)
+         profit += posInfo.Profit() + posInfo.Swap();
+   return(profit);
   }
 
 //+------------------------------------------------------------------+
-void CreateLabel(string name,int x,int y,string text,color clr,int size=10)
+void CreatePanel(string name, int x, int y, int w, int h)
   {
-   string obj="GSEA_"+name;
-   if(ObjectFind(0,obj)<0)
-     {
-      ObjectCreate(0,obj,OBJ_LABEL,0,0,0);
-      ObjectSetInteger(0,obj,OBJPROP_CORNER,CORNER_LEFT_UPPER);
-      ObjectSetInteger(0,obj,OBJPROP_XDISTANCE,x);
-      ObjectSetInteger(0,obj,OBJPROP_YDISTANCE,y);
-      ObjectSetInteger(0,obj,OBJPROP_FONTSIZE,size);
-      ObjectSetString(0,obj,OBJPROP_FONT,"Consolas");
-      ObjectSetInteger(0,obj,OBJPROP_SELECTABLE,false);
-     }
-   ObjectSetString(0,obj,OBJPROP_TEXT,text);
-   ObjectSetInteger(0,obj,OBJPROP_COLOR,clr);
+   ObjectCreate(0, name, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, name, OBJPROP_XSIZE, w);
+   ObjectSetInteger(0, name, OBJPROP_YSIZE, h);
+   ObjectSetInteger(0, name, OBJPROP_BGCOLOR, C'20,20,30');
+   ObjectSetInteger(0, name, OBJPROP_BORDER_COLOR, clrDimGray);
+   ObjectSetInteger(0, name, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSetInteger(0, name, OBJPROP_BACK, false);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
   }
 
-//+------------------------------------------------------------------+
+void CreateLabel(string name, int x, int y)
+  {
+   ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 9);
+   ObjectSetString(0, name, OBJPROP_FONT, "Consolas");
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clrWhite);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+  }
+
+void SetLabel(int idx, string text, color clr)
+  {
+   string name = DASH_PREFIX + "L" + IntegerToString(idx);
+   ObjectSetString(0, name, OBJPROP_TEXT, text);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+  }
+
 void CreateDashboard()
   {
-   string bg="GSEA_BG";
-   if(ObjectFind(0,bg)<0)
-     {
-      ObjectCreate(0,bg,OBJ_RECTANGLE_LABEL,0,0,0);
-      ObjectSetInteger(0,bg,OBJPROP_CORNER,CORNER_LEFT_UPPER);
-      ObjectSetInteger(0,bg,OBJPROP_XDISTANCE,10);
-      ObjectSetInteger(0,bg,OBJPROP_YDISTANCE,20);
-      ObjectSetInteger(0,bg,OBJPROP_XSIZE,260);
-      ObjectSetInteger(0,bg,OBJPROP_YSIZE,150);
-      ObjectSetInteger(0,bg,OBJPROP_BGCOLOR,C'20,20,30');
-      ObjectSetInteger(0,bg,OBJPROP_BORDER_TYPE,BORDER_FLAT);
-      ObjectSetInteger(0,bg,OBJPROP_COLOR,clrGoldenrod);
-      ObjectSetInteger(0,bg,OBJPROP_BACK,false);
-      ObjectSetInteger(0,bg,OBJPROP_SELECTABLE,false);
-     }
-   CreateLabel("Title",20,26,"GOLD SCALPER EA",clrGold,11);
-   UpdateDashboard(0,0,0);
+   CreatePanel(DASH_PREFIX + "BG", 10, 20, 270, 255);
+   for(int i = 0; i < 11; i++)
+      CreateLabel(DASH_PREFIX + "L" + IntegerToString(i), 20, 30 + i * 22);
+   UpdateDashboard();
   }
 
-//+------------------------------------------------------------------+
-void UpdateDashboard(double rsiVal,double kVal,double dVal)
+void UpdateDashboard()
   {
-   bool tradingOK = (bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) &&
-                    (bool)MQLInfoInteger(MQL_TRADE_ALLOWED);
-   long spread = SymbolInfoInteger(_Symbol,SYMBOL_SPREAD);
-   double profit = CurrentProfit();
+   long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
 
-   CreateLabel("Status",20,46,"Status : "+(tradingOK?"RUNNING":"STOPPED"),
-               tradingOK?clrLime:clrRed);
-   CreateLabel("RSI",   20,66,StringFormat("RSI(%d) : %.2f",RSI_Period,rsiVal),
-               rsiVal<RSI_BuyLevel?clrLime:(rsiVal>RSI_SellLevel?clrRed:clrWhite));
-   CreateLabel("Stoch", 20,86,StringFormat("Stoch  : K=%.1f D=%.1f",kVal,dVal),clrWhite);
-   CreateLabel("Pos",   20,106,"Trades : "+(string)CountPositions(),clrWhite);
-   CreateLabel("PL",    20,126,StringFormat("P/L    : %.2f %s",profit,AccountInfoString(ACCOUNT_CURRENCY)),
-               profit>=0?clrLime:clrRed);
-   CreateLabel("Sig",   20,146,"Signal : "+lastSignal+"  Spr:"+(string)spread,clrSilver);
+   string trend; color trendClr;
+   if(g_emaFast > g_emaSlow)      { trend = "BULLISH"; trendClr = clrLime; }
+   else if(g_emaFast < g_emaSlow) { trend = "BEARISH"; trendClr = clrRed;  }
+   else                           { trend = "NEUTRAL"; trendClr = clrWhite; }
+
+   color rsiClr = clrWhite;
+   if(g_rsi >= 40.0 && g_rsi <= 70.0 && g_emaFast > g_emaSlow) rsiClr = clrLime;
+   else if(g_rsi >= 30.0 && g_rsi <= 60.0 && g_emaFast < g_emaSlow) rsiClr = clrRed;
+
+   double profit = FloatingProfit();
+   color profitClr = (profit > 0.0 ? clrLime : (profit < 0.0 ? clrRed : clrWhite));
+   color spreadClr = (spread > MaxSpread ? clrRed : clrLime);
+
+   string lastSig = g_lastSignal;
+   if(g_lastSignalTime > 0)
+      lastSig += " @ " + TimeToString(g_lastSignalTime, TIME_MINUTES|TIME_SECONDS);
+
+   SetLabel(0,  "★ " + BOT_NAME + " ★",                                          clrGold);
+   SetLabel(1,  "Status  : " + (g_running ? "RUNNING" : "STOPPED"),              g_running ? clrLime : clrRed);
+   SetLabel(2,  "EMA8    : " + DoubleToString(g_emaFast, 2),                     clrDeepSkyBlue);
+   SetLabel(3,  "EMA21   : " + DoubleToString(g_emaSlow, 2),                     clrOrange);
+   SetLabel(4,  "RSI(" + IntegerToString(RSI_Period) + ")  : " + DoubleToString(g_rsi, 2), rsiClr);
+   SetLabel(5,  "Trend   : " + trend,                                             trendClr);
+   SetLabel(6,  "Signal  : " + lastSig,                                           g_lastSignal=="BUY"?clrLime:g_lastSignal=="SELL"?clrRed:clrWhite);
+   SetLabel(7,  "Open    : " + IntegerToString(OpenPositionsCount()) + " trades", clrWhite);
+   SetLabel(8,  "P/L     : " + DoubleToString(profit, 2) + " USD",               profitClr);
+   SetLabel(9,  "Total   : " + IntegerToString(g_totalTrades) + " trades",       clrWhite);
+   SetLabel(10, "Spread  : " + IntegerToString((int)spread) + " pts",            spreadClr);
    ChartRedraw();
   }
 //+------------------------------------------------------------------+
