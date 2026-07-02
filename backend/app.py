@@ -8,7 +8,6 @@ from flask_cors import CORS
 import os
 import json
 import sqlite3
-import time
 from datetime import datetime
 from threading import Lock
 
@@ -28,8 +27,20 @@ latest_data = {
     "last_update": None,
 }
 
+DEFAULT_SETTINGS = {
+    "LotSize":      0.01,
+    "TP":           30,
+    "SL":           40,
+    "MaxSpread":    500,
+    "MaxPositions": 3,
+    "RSI_Period":   7,
+    "EMA_Fast":     8,
+    "EMA_Slow":     21,
+    "CandleConf":   2,
+}
 
-# ---------- SQLite setup ----------
+
+# ---------- SQLite ----------
 def get_db():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
@@ -59,6 +70,18 @@ def init_db():
                 last_update TEXT
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ea_settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        # إدراج الإعدادات الافتراضية إذا ما كانت موجودة
+        for k, v in DEFAULT_SETTINGS.items():
+            conn.execute(
+                "INSERT OR IGNORE INTO ea_settings (key, value) VALUES (?, ?)",
+                (k, str(v))
+            )
         conn.commit()
 
 
@@ -68,16 +91,17 @@ init_db()
 def load_latest_account():
     global latest_data
     with get_db() as conn:
-        row = conn.execute("SELECT data, last_update FROM account_snapshot WHERE id=1").fetchone()
+        row = conn.execute(
+            "SELECT data, last_update FROM account_snapshot WHERE id=1"
+        ).fetchone()
         if row:
-            latest_data["account"] = json.loads(row["data"]) if row["data"] else None
+            latest_data["account"]     = json.loads(row["data"]) if row["data"] else None
             latest_data["last_update"] = row["last_update"]
 
 
 load_latest_account()
 
 
-# ---------- helpers ----------
 def check_api_key():
     return request.headers.get("X-API-Key") == API_KEY
 
@@ -85,8 +109,7 @@ def check_api_key():
 def save_account(account, last_update):
     with get_db() as conn:
         conn.execute("""
-            INSERT INTO account_snapshot (id, data, last_update)
-            VALUES (1, ?, ?)
+            INSERT INTO account_snapshot (id, data, last_update) VALUES (1, ?, ?)
             ON CONFLICT(id) DO UPDATE SET data=excluded.data, last_update=excluded.last_update
         """, (json.dumps(account), last_update))
         conn.commit()
@@ -113,12 +136,37 @@ def get_history(limit=500):
         return [dict(r) for r in rows]
 
 
+def get_settings():
+    with get_db() as conn:
+        rows = conn.execute("SELECT key, value FROM ea_settings").fetchall()
+        result = dict(DEFAULT_SETTINGS)
+        for row in rows:
+            k, v = row["key"], row["value"]
+            if k in DEFAULT_SETTINGS:
+                try:
+                    result[k] = type(DEFAULT_SETTINGS[k])(v)
+                except Exception:
+                    result[k] = v
+        return result
+
+
+def save_settings(new_settings):
+    with get_db() as conn:
+        for k, v in new_settings.items():
+            if k in DEFAULT_SETTINGS:
+                conn.execute(
+                    "INSERT INTO ea_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (k, str(v))
+                )
+        conn.commit()
+
+
 # ---------- routes ----------
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
 def index(path):
     static_dir = os.path.join(os.path.dirname(__file__), "static")
-    file_path = os.path.join(static_dir, path)
+    file_path  = os.path.join(static_dir, path)
     if path and os.path.exists(file_path):
         return app.send_static_file(path)
     index_file = os.path.join(static_dir, "index.html")
@@ -144,9 +192,7 @@ def update_data():
         if latest_data["account"]:
             save_account(latest_data["account"], now)
 
-        new_history = payload.get("history")
-        if new_history:
-            upsert_history(new_history)
+        upsert_history(payload.get("history"))
 
     return jsonify({"status": "ok"})
 
@@ -163,8 +209,10 @@ def get_dashboard():
         wins   = [t for t in closed_trades if t["profit"] > 0]
         losses = [t for t in closed_trades if t["profit"] <= 0]
         win_rate     = (len(wins) / len(closed_trades) * 100) if closed_trades else 0
-        total_profit = sum(t["profit"] + t.get("swap", 0) + t.get("commission", 0)
-                          for t in closed_trades)
+        total_profit = sum(
+            t["profit"] + t.get("swap", 0) + t.get("commission", 0)
+            for t in closed_trades
+        )
 
         return jsonify({
             "account":     latest_data["account"],
@@ -178,8 +226,25 @@ def get_dashboard():
                 "losses":       len(losses),
                 "win_rate":     round(win_rate, 1),
                 "total_profit": round(total_profit, 2),
-            }
+            },
+            "settings": get_settings(),
         })
+
+
+@app.route("/api/settings", methods=["GET"])
+def api_get_settings():
+    return jsonify(get_settings())
+
+
+@app.route("/api/settings", methods=["POST"])
+def api_save_settings():
+    if not check_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json()
+    if not body:
+        return jsonify({"error": "No data"}), 400
+    save_settings(body)
+    return jsonify({"status": "ok", "settings": get_settings()})
 
 
 @app.route("/api/health", methods=["GET"])
