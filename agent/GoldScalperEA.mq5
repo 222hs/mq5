@@ -4,7 +4,7 @@
 //|  Gold scalper — bar-gated, closed-bar signals, smart filters     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.04"
+#property version   "9.05"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = true;     // London+NY sessions only
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.04"
+#define EA_VERSION    "9.05"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -173,29 +173,27 @@ double MyFloatingPL()
   }
 
 //+------------------------------------------------------------------+
-//| Bull candle: body>=35%, not a doji, range sane                   |
+//| Bull candle: minimal filter — closed up, not a doji, sane range  |
 //+------------------------------------------------------------------+
 bool StrongBull(double o, double c, double h, double l, double atr)
   {
    double range = h - l;
    if(range < 1e-10 || atr < 1e-10) return false;
-   return (c > o)
-       && ((c-o)/range >= 0.35)
-       && (range >= 0.2*atr)
-       && (range <= 5.0*atr);
+   return (c > o)                      // closed up
+       && ((c-o)/range >= 0.10)        // body >=10% of range (not a doji)
+       && (range <= 5.0*atr);          // reject freak spike bars only
   }
 
 //+------------------------------------------------------------------+
-//| Bear candle: body>=35%, not a doji, range sane                   |
+//| Bear candle: minimal filter — closed down, not a doji, sane range|
 //+------------------------------------------------------------------+
 bool StrongBear(double o, double c, double h, double l, double atr)
   {
    double range = h - l;
    if(range < 1e-10 || atr < 1e-10) return false;
-   return (c < o)
-       && ((o-c)/range >= 0.35)
-       && (range >= 0.2*atr)
-       && (range <= 5.0*atr);
+   return (c < o)                      // closed down
+       && ((o-c)/range >= 0.10)        // body >=10% of range (not a doji)
+       && (range <= 5.0*atr);          // reject freak spike bars only
   }
 
 //+------------------------------------------------------------------+
@@ -232,36 +230,45 @@ void OnTick()
    double ema92 = ema9[2], ema212= ema21[2];
    double atr1  = atr[1];
 
-   // EMA trend on closed bar[1]
+   //=================================================================
+   // SIGNAL LOGIC v9.05 — trend gate + 3-of-4 scoring
+   //=================================================================
+
+   // ── PRIMARY FILTER (mandatory): EMA9/EMA21 trend direction ──
    bool emaUp   = ema91 > ema211;
    bool emaDown = ema91 < ema211;
 
-   // EMA separation filter: ignore chop (< 0.15 * ATR)
-   bool emaSep  = MathAbs(ema91 - ema211) >= 0.15 * atr1;
-
-   // EMA crossover on closed bars (bar[2]→bar[1])
+   // EMA crossover on closed bars (bar[2]→bar[1]) — still used for exits
    bool crossUp = (ema92 <= ema212 && ema91 > ema211);
    bool crossDn = (ema92 >= ema212 && ema91 < ema211);
 
-   // price above/below fast EMA (no buying during pullbacks)
-   bool priceAboveEMA = c[1] > ema91;
-   bool priceBelowEMA = c[1] < ema91;
+   // ── SCORED CONDITION 1: EMA separation (loosened 0.15→0.05 ATR) ──
+   bool emaSep  = MathAbs(ema91 - ema211) >= 0.05 * atr1;
 
-   // RSI zone filter only (no direction req — too noisy on M1)
-   bool rsiBuy  = (rsi1 >= 50.0 && rsi1 <= 80.0);
-   bool rsiSell = (rsi1 >= 20.0 && rsi1 <= 50.0);
+   // ── SCORED CONDITION 2: RSI(7) momentum confirmation ──
+   // Direction of RSI, not a zone: rising + above midline = bullish push.
+   // Hard block only at true exhaustion (>85 / <15).
+   bool rsiBuy  = (rsi1 > rsi2 || rsi1 >= 55.0) && rsi1 > 45.0 && rsi1 < 85.0;
+   bool rsiSell = (rsi1 < rsi2 || rsi1 <= 45.0) && rsi1 < 55.0 && rsi1 > 15.0;
 
-   // single-bar candle confirmation
+   // ── SCORED CONDITION 3: candle direction (minimal — not a doji) ──
    bool bullBar = StrongBull(o[1],c[1],h[1],l[1],atr1);
    bool bearBar = StrongBear(o[1],c[1],h[1],l[1],atr1);
+
+   // ── SCORED CONDITION 4: price location vs fast EMA ──
+   bool priceAboveEMA = c[1] > ema91;
+   bool priceBelowEMA = c[1] < ema91;
 
    // manage exits (also on closed-bar signals)
    ManagePositions(rsi1, crossUp, crossDn, atr1);
 
-   // entry signal
+   // ── SCORING: trend is the gate, then 3 of 4 confirmations fire ──
+   int buyScore  = (emaSep?1:0) + (rsiBuy ?1:0) + (bullBar?1:0) + (priceAboveEMA?1:0);
+   int sellScore = (emaSep?1:0) + (rsiSell?1:0) + (bearBar?1:0) + (priceBelowEMA?1:0);
+
    int signal = 0;
-   if(emaUp && emaSep && rsiBuy  && bullBar && priceAboveEMA) signal =  1; // BUY
-   else if(emaDown && emaSep && rsiSell && bearBar && priceBelowEMA) signal = -1; // SELL
+   if(emaUp   && buyScore  >= 3) signal =  1; // BUY
+   else if(emaDown && sellScore >= 3) signal = -1; // SELL
 
    // filters
    long spread    = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
@@ -271,11 +278,7 @@ void OnTick()
    bool sessOK    = InTradingSession();
    bool allOK     = spreadOK && coolOK && slotsOK && sessOK && atr1 > 0.0;
 
-   // spread must be less than ATR so there's still edge after paying spread
-   double spreadVal = spread * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   bool tpOK = (atr1 > spreadVal);
-
-   if(signal != 0 && allOK && tpOK && g_botRunning)
+   if(signal != 0 && allOK && g_botRunning)
      {
       if(signal == 1) OpenTrade(ORDER_TYPE_BUY,  atr1);
       else            OpenTrade(ORDER_TYPE_SELL, atr1);
@@ -303,7 +306,7 @@ void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal)
    long frz  =SymbolInfoInteger(_Symbol,SYMBOL_TRADE_FREEZE_LEVEL);
    double minD=MathMax((double)(sl0+frz+5),10.0)*pt;
    double slD =MathMax(atrVal*1.5, minD);
-   double tpD =MathMax(atrVal*2.5, minD*2.0);
+   double tpD =MathMax(atrVal*2.0, minD*2.0);   // TP 2.0x ATR (was 2.5x)
    double lot =NormalizeLot(g_lot);
    double sl,tp; bool ok;
 
