@@ -19,10 +19,10 @@ input int             MaxSpread    = 150;       // Max spread in points (150=15 
 input bool            UseSession   = true;      // Filter: London+NY sessions only
 
 //--- constants
-#define EA_NAME     "GoldScalperX"
-#define EA_VERSION  "9.00"
-#define GV_PREFIX   "GSX_"
-#define DASH_PREFIX "GSX_D_"
+#define EA_NAME      "GoldScalperX"
+#define EA_VERSION   "9.00"
+#define DASH_PREFIX  "GSX_D_"
+#define SETTINGS_FILE "GSX_Settings.json"
 
 //--- globals
 CTrade         trade;
@@ -49,21 +49,46 @@ long MagicFromSymbol(const string sym)
   }
 
 //+------------------------------------------------------------------+
-double GVOrDefault(const string name, const double fallback)
+//| Read a value from GSX_Settings.json (Common\Files folder)       |
+//+------------------------------------------------------------------+
+double ReadJsonValue(const string key, const double fallback)
   {
-   string gv = GV_PREFIX + name;
-   if(GlobalVariableCheck(gv))
-      return GlobalVariableGet(gv);
-   return fallback;
+   int h = FileOpen(SETTINGS_FILE, FILE_READ|FILE_TXT|FILE_COMMON);
+   if(h == INVALID_HANDLE) return fallback;
+   string content = "";
+   while(!FileIsEnding(h))
+      content += FileReadString(h);
+   FileClose(h);
+
+   // simple key search: "key": value
+   string search = "\"" + key + "\"";
+   int pos = StringFind(content, search);
+   if(pos < 0) return fallback;
+   pos += StringLen(search);
+   // skip whitespace and colon
+   while(pos < StringLen(content) && (StringGetCharacter(content,pos)==' ' ||
+         StringGetCharacter(content,pos)==':' || StringGetCharacter(content,pos)=='\t'))
+      pos++;
+   // read number
+   string num = "";
+   while(pos < StringLen(content))
+     {
+      ushort c = StringGetCharacter(content, pos);
+      if(c=='-' || c=='.' || (c>='0' && c<='9'))
+        { num += ShortToString(c); pos++; }
+      else break;
+     }
+   if(StringLen(num) == 0) return fallback;
+   return StringToDouble(num);
   }
 
 //+------------------------------------------------------------------+
 void LoadSettings()
   {
-   g_lot          = GVOrDefault("LotSize",      LotSize);
-   g_maxSpread    = GVOrDefault("MaxSpread",    (double)MaxSpread);
-   g_maxPositions = (int)GVOrDefault("MaxPositions", (double)MaxPositions);
-   g_cooldownSecs = (int)GVOrDefault("CooldownSecs", (double)CooldownSecs);
+   g_lot          = ReadJsonValue("LotSize",      LotSize);
+   g_maxSpread    = ReadJsonValue("MaxSpread",    (double)MaxSpread);
+   g_maxPositions = (int)ReadJsonValue("MaxPositions", (double)MaxPositions);
+   g_cooldownSecs = (int)ReadJsonValue("CooldownSecs", (double)CooldownSecs);
   }
 
 //+------------------------------------------------------------------+
