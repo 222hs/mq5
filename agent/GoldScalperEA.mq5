@@ -94,7 +94,7 @@ void OnTick()
    double tpDist = TakeProfit*pipFactor*_Point;
    double slDist = StopLoss*pipFactor*_Point;
 
-   if(rsiCur<RSI_BuyLevel && crossUp)
+   if(rsiCur<RSI_BuyLevel)
      {
       lastBarTime=barTime;
       lastSignal = "BUY @ "+TimeToString(TimeCurrent(),TIME_MINUTES);
@@ -106,7 +106,7 @@ void OnTick()
       else
          PrintFormat("BUY FAILED | Error=%d %s",trade.ResultRetcode(),trade.ResultRetcodeDescription());
      }
-   else if(rsiCur>RSI_SellLevel && crossDown)
+   else if(rsiCur>RSI_SellLevel)
      {
       lastBarTime=barTime;
       lastSignal = "SELL @ "+TimeToString(TimeCurrent(),TIME_MINUTES);
