@@ -16,7 +16,11 @@ CORS(app)
 
 # ============== الإعدادات ==============
 API_KEY = os.environ.get("API_KEY", "mysecretkey123")
-DB_FILE = os.environ.get("DB_FILE", "mt5_data.db")
+_db_env = os.environ.get("DB_FILE", "mt5_data.db")
+_db_dir = os.path.dirname(_db_env)
+if _db_dir and not os.path.isdir(_db_dir):
+    os.makedirs(_db_dir, exist_ok=True)
+DB_FILE = _db_env
 # ========================================
 
 data_lock = Lock()
@@ -233,7 +237,10 @@ def get_dashboard():
 
 @app.route("/api/settings", methods=["GET"])
 def api_get_settings():
-    return jsonify(get_settings())
+    try:
+        return jsonify(get_settings())
+    except Exception as e:
+        return jsonify(DEFAULT_SETTINGS), 200
 
 
 @app.route("/api/settings", methods=["POST"])
@@ -243,7 +250,10 @@ def api_save_settings():
     body = request.get_json()
     if not body:
         return jsonify({"error": "No data"}), 400
-    save_settings(body)
+    try:
+        save_settings(body)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
     return jsonify({"status": "ok", "settings": get_settings()})
 
 
