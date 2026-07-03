@@ -33,12 +33,12 @@ latest_data = {
 
 DEFAULT_SETTINGS = {
     "LotSize":      0.5,
-    "TP_USD":       5.0,
-    "SL_USD":       2.5,
+    "TP_USD":       3.0,
+    "SL_USD":       2.0,
     "MaxSpread":    350,
     "MaxPositions": 10,
     "CooldownSecs": 0,
-    "TrailUSD":     1.0,
+    "TrailUSD":     0.5,
     "BotRunning":   1,
 }
 

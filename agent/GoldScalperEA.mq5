@@ -1,10 +1,10 @@
 //+------------------------------------------------------------------+
 //|                                                GoldScalperEA.mq5 |
-//|                                        GoldScalperX version 9.35 |
+//|                                        GoldScalperX version 9.40 |
 //|  Gold scalper — bar-gated, closed-bar signals, trailing stop     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.35"
+#property version   "9.40"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.35"
+#define EA_VERSION    "9.40"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -115,9 +115,9 @@ void LoadSettings()
    g_maxSpread    = ReadJsonValue("MaxSpread",    (double)MaxSpread);
    g_maxPositions = (int)ReadJsonValue("MaxPositions",(double)MaxPositions);
    g_cooldownSecs = (int)ReadJsonValue("CooldownSecs",(double)CooldownSecs);
-   g_tpUSD        = ReadJsonValue("TP_USD",       5.0);
-   g_slUSD        = ReadJsonValue("SL_USD",       2.5);
-   g_trailUSD     = ReadJsonValue("TrailUSD",     1.0);
+   g_tpUSD        = ReadJsonValue("TP_USD",       3.0);
+   g_slUSD        = ReadJsonValue("SL_USD",       2.0);
+   g_trailUSD     = ReadJsonValue("TrailUSD",     0.5);
    g_botRunning   = (ReadJsonValue("BotRunning",  1.0) > 0.5);
 
    // كتابة الإعدادات الفعلية في ملف مؤقت ثم rename (atomic — يتجنب تعارض القراءة)
@@ -390,46 +390,49 @@ void ManagePositions()
       double   profit  = posInfo.Profit() + posInfo.Swap() + posInfo.Commission();
       int      ageSeconds = (int)(now - openAt);
 
-      // trailing stop tracker
+      // ── تتبع الذروة لكل صفقة ──
       int ti = FindTrail(tk);
       if(ti < 0) ti = AddTrail(tk);
-      if(ti >= 0)
+      if(ti >= 0 && profit > g_trail[ti].peak) g_trail[ti].peak = profit;
+
+      // ── TP: وصل الهدف ──
+      if(profit >= g_tpUSD)
         {
-         if(profit > g_trail[ti].peak) g_trail[ti].peak = profit;
-         if(!g_trail[ti].armed && g_trail[ti].peak >= g_tpUSD) g_trail[ti].armed = true;
+         // إذا Trail مفعّل: اسمح للربح يكمل، أسكّر لما يرجع TrailUSD من الذروة
+         if(g_trailUSD > 0 && ti >= 0)
+           {
+            if(!g_trail[ti].armed) g_trail[ti].armed = true;
+            // انتظر حتى يبدأ بالرجوع
+            if(profit <= g_trail[ti].peak - g_trailUSD)
+              { trade.PositionClose(tk); RemoveTrail(tk);
+                Print(EA_NAME,": TRAIL TP $",DoubleToString(profit,2)," peak=$",DoubleToString(g_trail[ti].peak,2)); continue; }
+           }
+         else
+           { // Trail معطّل: أسكّر مباشرة عند TP
+            trade.PositionClose(tk); if(ti>=0) RemoveTrail(tk);
+            Print(EA_NAME,": TP $",DoubleToString(profit,2)); continue;
+           }
         }
 
-      // TP with trailing: once armed, close only when profit drops TrailUSD from peak
-      if(ti >= 0 && g_trail[ti].armed && g_trailUSD > 0)
-        {
-         if(profit <= g_trail[ti].peak - g_trailUSD)
-           { trade.PositionClose(tk); RemoveTrail(tk);
-             Print(EA_NAME,": TRAIL $",DoubleToString(profit,2),
-                   " peak=$",DoubleToString(g_trail[ti].peak,2)); continue; }
-        }
-      else if(profit >= g_tpUSD && (g_trailUSD <= 0 || ti < 0 || !g_trail[ti].armed))
-        {
-         if(g_trailUSD <= 0)
-           { trade.PositionClose(tk); if(ti>=0) RemoveTrail(tk);
-             Print(EA_NAME,": TP $",DoubleToString(profit,2)); continue; }
-        }
+      // ── Breakeven: لما يصل نص الـ TP، الـ SL يصبح 0 (ما نخسر على الأقل) ──
+      // (لا نعدّل الأوردر — ManagePositions تتحكم بالإغلاق)
 
-      // Emergency SL: loss > 2x SL_USD → close immediately + flag reversal
-      if(profit <= -(g_slUSD * 2.0))
+      // ── SL فوري: خسارة تجاوزت 1.5x SL_USD أسكّر فوراً + reversal ──
+      if(profit <= -(g_slUSD * 1.5))
         {
          int lossDir = (posInfo.PositionType()==POSITION_TYPE_BUY) ? 1 : -1;
          trade.PositionClose(tk); if(ti>=0) RemoveTrail(tk);
          g_lastWasLoss = true; g_lastLossDir = lossDir;
-         Print(EA_NAME,": EMERG SL $",DoubleToString(profit,2)," → reversal queued"); continue;
+         Print(EA_NAME,": EMERG SL $",DoubleToString(profit,2)); continue;
         }
 
-      // Normal SL: wait 60s then close + flag reversal
-      if(ageSeconds >= 60 && profit <= -g_slUSD)
+      // ── SL عادي: بعد 45 ثانية لو الخسارة >= SL_USD ──
+      if(ageSeconds >= 45 && profit <= -g_slUSD)
         {
          int lossDir = (posInfo.PositionType()==POSITION_TYPE_BUY) ? 1 : -1;
          trade.PositionClose(tk); if(ti>=0) RemoveTrail(tk);
          g_lastWasLoss = true; g_lastLossDir = lossDir;
-         Print(EA_NAME,": SL $",DoubleToString(profit,2)," → reversal queued"); continue;
+         Print(EA_NAME,": SL $",DoubleToString(profit,2)); continue;
         }
      }
   }
