@@ -278,7 +278,7 @@ export default function Dashboard() {
             <span style={{ color: C.greenBright }}>● LIVE</span>
           </div>
           <div className="gsx-pnl" style={{ color: pnlColor, margin: '6px 0 2px 0' }}>
-            {bigPnl.neg ? '-' : ''}${bigPnl.dollars}
+            {bigPnl.neg ? '-$' : '$'}{bigPnl.dollars}
             <span style={{ fontSize: 34, fontWeight: 700, letterSpacing: 0, opacity: 0.7 }}>.{bigPnl.cents}</span>
           </div>
           <div style={{ fontSize: 13, color: C.sub, letterSpacing: 1 }}>
