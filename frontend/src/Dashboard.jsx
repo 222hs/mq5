@@ -47,7 +47,7 @@ const label = (extra = {}) => ({
   color: C.dim, fontFamily: C.mono, ...extra,
 });
 const panel = (extra = {}) => ({
-  background: C.panel, border: `1px solid ${C.border}`, padding: 14, ...extra,
+  background: C.panel, padding: 16, ...extra,
 });
 function Dot({ color, size = 8 }) {
   return <span style={{
@@ -213,43 +213,49 @@ export default function Dashboard() {
   return (
     <div style={{
       background: C.bg, minHeight: '100vh', fontFamily: C.mono, color: C.text,
-      padding: '12px 16px 60px 16px', boxSizing: 'border-box',
+      padding: 0, boxSizing: 'border-box',
     }}>
       <style>{`
         @keyframes popIn { from { transform: scale(0.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
         * { box-sizing: border-box; }
+        .gsx-section { padding: 12px 20px; }
         .gsx-topbar { display:flex; justify-content:space-between; align-items:flex-start; }
-        .gsx-hero { display:flex; gap:14px; }
-        .gsx-hero-main { flex: 0 0 70%; min-width:0; }
-        .gsx-hero-streak { flex:1; min-width:140px; }
-        .gsx-pnl { font-size:80px; font-weight:900; letter-spacing:-3px; line-height:1.05; white-space:nowrap; }
-        .gsx-row2 { display:flex; gap:14px; }
-        .gsx-row2 > * { flex:1; min-width:0; }
-        .gsx-row3 { display:flex; gap:14px; }
-        .gsx-row3 > * { flex:1; min-width:0; }
-        .gsx-pipeline { display:flex; gap:8px; }
-        .gsx-pipeline > * { flex:1; min-width:0; }
+        .gsx-hero { display:flex; gap:0; }
+        .gsx-hero-main { flex: 0 0 72%; min-width:0; padding: 16px 20px; }
+        .gsx-hero-streak { flex:1; min-width:140px; border-left:1px solid ${C.border}; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:16px; }
+        .gsx-pnl { font-size:clamp(48px,6vw,88px); font-weight:900; letter-spacing:-3px; line-height:1.05; white-space:nowrap; }
+        .gsx-row2 { display:flex; gap:0; }
+        .gsx-row2 > * { flex:1; min-width:0; border-right:1px solid ${C.border}; }
+        .gsx-row2 > *:last-child { border-right:none; }
+        .gsx-row3 { display:flex; gap:0; }
+        .gsx-row3 > * { flex:1; min-width:0; border-right:1px solid ${C.border}; }
+        .gsx-row3 > *:last-child { border-right:none; }
+        .gsx-pipeline { display:flex; gap:0; }
+        .gsx-pipeline > * { flex:1; min-width:0; border-right:1px solid ${C.border}; }
+        .gsx-pipeline > *:last-child { border-right:none; }
+        .gsx-divider { border:none; border-top:1px solid ${C.border}; margin:0; }
         @media (max-width:900px) {
           .gsx-hero { flex-direction:column; }
           .gsx-hero-main { flex:none; width:100%; }
-          .gsx-hero-streak { flex:none; width:100%; display:flex; flex-direction:row; align-items:center; gap:16px; padding:12px; }
-          .gsx-pnl { font-size:clamp(36px, 10vw, 80px); }
+          .gsx-hero-streak { flex:none; width:100%; flex-direction:row; border-left:none; border-top:1px solid ${C.border}; gap:16px; }
           .gsx-row2 { flex-direction:column; }
           .gsx-row3 { flex-direction:column; }
+          .gsx-row2 > *, .gsx-row3 > * { border-right:none; border-bottom:1px solid ${C.border}; }
           .gsx-pipeline { flex-wrap:wrap; }
-          .gsx-pipeline > * { min-width:calc(33% - 8px); }
+          .gsx-pipeline > * { min-width:calc(33% - 1px); border-bottom:1px solid ${C.border}; }
           .gsx-topbar { flex-wrap:wrap; gap:6px; }
         }
         @media (max-width:480px) {
           .gsx-pnl { font-size:clamp(28px, 12vw, 48px); }
-          .gsx-pipeline > * { min-width:calc(50% - 8px); }
+          .gsx-pipeline > * { min-width:calc(50% - 1px); }
         }
       `}</style>
 
       {/* ============ 1. TOP BAR ============ */}
-      <div className="gsx-topbar" style={{
-        borderBottom: `1px solid ${C.border}`, paddingBottom: 8, marginBottom: 14,
+      <div className="gsx-topbar gsx-section" style={{
+        borderBottom: `1px solid ${C.border}`,
+        background: C.panelLight,
       }}>
         <div>
           <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: 2 }}>
@@ -270,8 +276,9 @@ export default function Dashboard() {
         </div>
       </div>
 
+      <hr className="gsx-divider" />
       {/* ============ 2. HERO ============ */}
-      <div className="gsx-hero" style={{ marginBottom: 14 }}>
+      <div className="gsx-hero" style={{ borderBottom: `1px solid ${C.border}` }}>
         <div className="gsx-hero-main">
           <div style={label()}>
             TOTAL · REALIZED PNL&nbsp;&nbsp;
@@ -291,10 +298,7 @@ export default function Dashboard() {
         </div>
 
         {/* streak circle */}
-        <div className="gsx-hero-streak" style={panel({
-          display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', background: C.panelLight,
-        })}>
+        <div className="gsx-hero-streak" style={{ background: C.panelLight }}>
           <svg width="130" height="130" viewBox="0 0 130 130">
             <circle cx="65" cy="65" r={R} fill="none" stroke={C.border} strokeWidth="7" />
             <circle
@@ -312,7 +316,7 @@ export default function Dashboard() {
       </div>
 
       {/* ============ 3. PROGRESS SEGMENTS ============ */}
-      <div style={{ marginBottom: 14 }}>
+      <div className="gsx-section" style={{ borderBottom: `1px solid ${C.border}` }}>
         <div style={label({ marginBottom: 5 })}>LAST {recent30.length} TRADES · OLDEST → NEWEST</div>
         <div style={{ display: 'flex', gap: 3 }}>
           {recent30.length === 0 && <div style={label()}>NO TRADE DATA YET</div>}
@@ -326,9 +330,9 @@ export default function Dashboard() {
       </div>
 
       {/* ============ 4. TWO CHART PANELS ============ */}
-      <div className="gsx-row2" style={{ marginBottom: 14 }}>
+      <div className="gsx-row2" style={{ borderBottom: `1px solid ${C.border}` }}>
         {/* LEFT: cash flow bars */}
-        <div style={panel({ flex: 1, background: C.panelLight })}>
+        <div style={panel({ background: C.panelLight })}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <div style={label()}>CASH FLOW · WIN STACK</div>
             <div style={{ fontSize: 16, fontWeight: 900, color: pnlColor }}>{fmtMoney(stats.total_profit, true)}</div>
@@ -364,7 +368,7 @@ export default function Dashboard() {
         </div>
 
         {/* RIGHT: 24h cumulative area */}
-        <div style={panel({ flex: 1, background: C.panelLight })}>
+        <div style={panel({ background: C.panelLight })}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <div style={label()}>24H PNL · LIVE</div>
             <div style={label()}>PEAK <span style={{ color: C.green, fontWeight: 700 }}>{fmtMoney(peak24, true)}</span></div>
@@ -404,7 +408,7 @@ export default function Dashboard() {
       </div>
 
       {/* ============ 5. LIVE POSITIONS ============ */}
-      <div style={panel({ marginBottom: 14, background: C.panelLight })}>
+      <div style={panel({ background: C.panelLight, borderBottom: `1px solid ${C.border}` })}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'baseline', marginBottom: 10 }}>
           <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 2 }}>
             <Dot color={positions.length ? C.greenBright : C.dim} />LIVE&nbsp;&nbsp;OPEN POSITIONS
@@ -445,9 +449,9 @@ export default function Dashboard() {
       </div>
 
       {/* ============ 6. EXECUTION PIPELINE ============ */}
-      <div className="gsx-pipeline" style={{ marginBottom: 14 }}>
+      <div className="gsx-pipeline" style={{ borderBottom: `1px solid ${C.border}` }}>
         {pipeline.map(step => (
-          <div key={step.n} style={panel({ flex: 1, padding: 10 })}>
+          <div key={step.n} style={panel({ padding: 12 })}>
             <div style={label({ fontSize: 9 })}>{step.n}</div>
             <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: 1, margin: '3px 0' }}>{step.t}</div>
             <div style={label({ fontSize: 9, textTransform: 'none' })}>{step.s}</div>
@@ -459,8 +463,8 @@ export default function Dashboard() {
         ))}
         {/* 06 CLOSE / LAST SETTLE — highlighted */}
         <div style={panel({
-          flex: 1, padding: 10, background: C.panelLight,
-          border: `2px solid ${lastProfit === null ? C.border : lastProfit >= 0 ? C.greenBright : C.amber}`,
+          padding: 12, background: C.panelLight,
+          borderLeft: `3px solid ${lastProfit === null ? C.border : lastProfit >= 0 ? C.greenBright : C.amber}`,
         })}>
           <div style={label({ fontSize: 9 })}>06</div>
           <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: 1, margin: '3px 0' }}>CLOSE</div>
@@ -475,9 +479,9 @@ export default function Dashboard() {
       </div>
 
       {/* ============ 7. BOTTOM STATS ROW ============ */}
-      <div className="gsx-row3" style={{ marginBottom: 14 }}>
+      <div className="gsx-row3" style={{ borderBottom: `1px solid ${C.border}` }}>
         {/* wins */}
-        <div style={panel({ flex: 1, background: C.panelLight })}>
+        <div style={panel({ background: C.panelLight })}>
           <div style={label()}>WINS · TODAY / ALL TIME</div>
           <div style={{ fontSize: 42, fontWeight: 900, color: C.green, letterSpacing: -1, margin: '6px 0 2px 0' }}>
             {todayWins}<span style={{ fontSize: 16, color: C.dim, fontWeight: 400 }}> / {stats.wins}</span>
@@ -488,7 +492,7 @@ export default function Dashboard() {
         </div>
 
         {/* bot status */}
-        <div style={panel({ flex: 1, background: C.panelLight, textAlign: 'center' })}>
+        <div style={panel({ background: C.panelLight, textAlign: 'center' })}>
           <div style={label()}>BOT STATUS</div>
           <div style={{
             fontSize: 36, fontWeight: 900, letterSpacing: 1, margin: '4px 0',
@@ -512,7 +516,7 @@ export default function Dashboard() {
         </div>
 
         {/* velocity */}
-        <div style={panel({ flex: 1, background: C.panelLight })}>
+        <div style={panel({ background: C.panelLight })}>
           <div style={label()}>VELOCITY · 1H</div>
           <div style={{ fontSize: 42, fontWeight: 900, letterSpacing: -1, margin: '6px 0 2px 0' }}>
             {tradesLastHour}<span style={{ fontSize: 16, color: C.dim, fontWeight: 400 }}> trades/hr</span>
@@ -524,7 +528,7 @@ export default function Dashboard() {
       </div>
 
       {/* ============ SETTINGS (collapsible) ============ */}
-      <div style={panel({ marginBottom: 14 })}>
+      <div style={panel({ borderBottom: `1px solid ${C.border}` })}>
         <div
           onClick={() => setShowSettings(s => !s)}
           style={{ cursor: 'pointer', fontSize: 12, fontWeight: 700, letterSpacing: 2, userSelect: 'none' }}
