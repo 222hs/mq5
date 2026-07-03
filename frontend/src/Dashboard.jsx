@@ -17,6 +17,8 @@ const C = {
   greenBright: '#52b788',
   red: '#b5451b',
   amber: '#e07b39',
+  dark: '#1a1a18',
+  cream: '#e8e4d9',
   mono: "'Courier New', monospace",
 };
 
@@ -45,9 +47,6 @@ function ageStr(iso) {
 const label = (extra = {}) => ({
   fontSize: 10, letterSpacing: 2, textTransform: 'uppercase',
   color: C.dim, fontFamily: C.mono, ...extra,
-});
-const panel = (extra = {}) => ({
-  background: C.panel, padding: 16, ...extra,
 });
 function Dot({ color, size = 8 }) {
   return <span style={{
@@ -194,7 +193,7 @@ export default function Dashboard() {
 
   // streak circle
   const streakPct = Math.min(1, streak / 20);
-  const R = 52, CIRC = 2 * Math.PI * R;
+  const R = 50, CIRC = 2 * Math.PI * R;
 
   const utc = now.toISOString().slice(11, 19);
   const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
@@ -210,83 +209,92 @@ export default function Dashboard() {
     { n: '05', t: 'MANAGE', s: 'TP/SL mon', ok: positions.length > 0, active: positions.length > 0 },
   ];
 
+  const card = (extra = {}) => ({
+    background: C.panel, padding: 18, minWidth: 0, ...extra,
+  });
+
   return (
     <div style={{
-      background: C.bg, minHeight: '100vh', fontFamily: C.mono, color: C.text,
-      padding: 0, boxSizing: 'border-box',
+      background: C.bg, minHeight: '100vh', width: '100vw',
+      fontFamily: C.mono, color: C.text, boxSizing: 'border-box',
+      paddingBottom: 44, // space for fixed ticker
     }}>
       <style>{`
+        * { box-sizing: border-box; }
         @keyframes popIn { from { transform: scale(0.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
-        * { box-sizing: border-box; }
-        .gsx-section { padding: 12px 20px; }
-        .gsx-topbar { display:flex; justify-content:space-between; align-items:flex-start; }
-        .gsx-hero { display:flex; gap:0; }
-        .gsx-hero-main { flex: 0 0 72%; min-width:0; padding: 16px 20px; }
-        .gsx-hero-streak { flex:1; min-width:140px; border-left:1px solid ${C.border}; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:16px; }
-        .gsx-pnl { font-size:clamp(48px,6vw,88px); font-weight:900; letter-spacing:-3px; line-height:1.05; white-space:nowrap; }
-        .gsx-row2 { display:flex; gap:0; }
-        .gsx-row2 > * { flex:1; min-width:0; border-right:1px solid ${C.border}; }
-        .gsx-row2 > *:last-child { border-right:none; }
-        .gsx-row3 { display:flex; gap:0; }
-        .gsx-row3 > * { flex:1; min-width:0; border-right:1px solid ${C.border}; }
-        .gsx-row3 > *:last-child { border-right:none; }
-        .gsx-pipeline { display:flex; gap:0; }
-        .gsx-pipeline > * { flex:1; min-width:0; border-right:1px solid ${C.border}; }
-        .gsx-pipeline > *:last-child { border-right:none; }
-        .gsx-divider { border:none; border-top:1px solid ${C.border}; margin:0; }
-        @media (max-width:900px) {
-          .gsx-hero { flex-direction:column; }
-          .gsx-hero-main { flex:none; width:100%; }
-          .gsx-hero-streak { flex:none; width:100%; flex-direction:row; border-left:none; border-top:1px solid ${C.border}; gap:16px; }
-          .gsx-row2 { flex-direction:column; }
-          .gsx-row3 { flex-direction:column; }
-          .gsx-row2 > *, .gsx-row3 > * { border-right:none; border-bottom:1px solid ${C.border}; }
-          .gsx-pipeline { flex-wrap:wrap; }
-          .gsx-pipeline > * { min-width:calc(33% - 1px); border-bottom:1px solid ${C.border}; }
-          .gsx-topbar { flex-wrap:wrap; gap:6px; }
+        .gsx-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr 1fr;
+          gap: 1px;
+          background: ${C.border};
+          width: 100%;
         }
-        @media (max-width:480px) {
-          .gsx-pnl { font-size:clamp(28px, 12vw, 48px); }
-          .gsx-pipeline > * { min-width:calc(50% - 1px); }
+        .gsx-span2 { grid-column: span 2; }
+        .gsx-span3 { grid-column: span 3; }
+        .gsx-pipegrid {
+          display: grid;
+          grid-template-columns: 1fr 1fr 1fr;
+          gap: 1px;
+          background: ${C.border};
+        }
+        @media (max-width: 900px) {
+          .gsx-grid { grid-template-columns: 1fr 1fr; }
+          .gsx-span2, .gsx-span3 { grid-column: span 2; }
+          .gsx-pipegrid { grid-template-columns: 1fr 1fr; }
+          .gsx-topbar { flex-wrap: wrap; gap: 6px; }
+        }
+        @media (max-width: 600px) {
+          .gsx-grid { grid-template-columns: 1fr; }
+          .gsx-span2, .gsx-span3 { grid-column: span 1; }
+          .gsx-pipegrid { grid-template-columns: 1fr; }
         }
       `}</style>
 
-      {/* ============ 1. TOP BAR ============ */}
-      <div className="gsx-topbar gsx-section" style={{
-        borderBottom: `1px solid ${C.border}`,
-        background: C.panelLight,
+      {/* ============ TOP BAR (outside grid) ============ */}
+      <div className="gsx-topbar" style={{
+        position: 'sticky', top: 0, zIndex: 600,
+        background: C.dark, color: C.cream,
+        padding: '10px 20px',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
       }}>
         <div>
           <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: 2 }}>
             <Dot color={botRunning ? C.greenBright : C.amber} />
             GOLD SCALPER X · LIVE · {now.getUTCFullYear()}
           </div>
-          <div style={label({ marginTop: 4 })}>
-            XAUUSD · M1 SCALPER · CANDLE SIGNAL · LOT {settings.LotSize ?? '--'}
+          <div style={label({ marginTop: 3, color: '#8a8580' })}>
+            XAUUSD · M1 SCALPER · LOT {settings.LotSize ?? '--'}
           </div>
         </div>
-        <div style={{ fontSize: 12, letterSpacing: 2, color: isOnline ? C.green : C.red, fontWeight: 700, alignSelf: 'center' }}>
+        <div style={{
+          fontSize: 12, letterSpacing: 2, fontWeight: 700,
+          color: isOnline ? C.greenBright : C.amber,
+        }}>
           <span style={isOnline ? { animation: 'blink 2s infinite' } : {}}>{isOnline ? '●' : '○'}</span>
           {' '}{isOnline ? 'ONLINE' : 'OFFLINE'}
         </div>
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: 1 }}>{utc} UTC</div>
-          <div style={label({ marginTop: 4 })}>{dateStr}</div>
+          <div style={label({ marginTop: 3, color: '#8a8580' })}>{dateStr}</div>
         </div>
       </div>
 
-      <hr className="gsx-divider" />
-      {/* ============ 2. HERO ============ */}
-      <div className="gsx-hero" style={{ borderBottom: `1px solid ${C.border}` }}>
-        <div className="gsx-hero-main">
+      {/* ============ MAIN GRID ============ */}
+      <div className="gsx-grid">
+
+        {/* --- HERO PnL (span 2) --- */}
+        <div className="gsx-span2" style={card({ background: C.panelLight })}>
           <div style={label()}>
             TOTAL · REALIZED PNL&nbsp;&nbsp;
             <span style={{ color: C.greenBright }}>● LIVE</span>
           </div>
-          <div className="gsx-pnl" style={{ color: pnlColor, margin: '6px 0 2px 0' }}>
+          <div style={{
+            fontSize: 'clamp(48px, 5vw, 80px)', fontWeight: 900, letterSpacing: -3,
+            lineHeight: 1.05, color: pnlColor, margin: '6px 0 2px 0', whiteSpace: 'nowrap',
+          }}>
             {bigPnl.neg ? '-$' : '$'}{bigPnl.dollars}
-            <span style={{ fontSize: 34, fontWeight: 700, letterSpacing: 0, opacity: 0.7 }}>.{bigPnl.cents}</span>
+            <span style={{ fontSize: 32, fontWeight: 700, letterSpacing: 0, opacity: 0.7 }}>.{bigPnl.cents}</span>
           </div>
           <div style={{ fontSize: 13, color: C.sub, letterSpacing: 1 }}>
             <span style={{ color: pnlColor }}>{stats.total_profit >= 0 ? '▲' : '▼'}</span>
@@ -295,69 +303,60 @@ export default function Dashboard() {
           <div style={label({ marginTop: 6 })}>
             XAUUSD · M1 MARKETS · {now.getUTCFullYear()} · {fmtMoney(perSec, true)}/sec live
           </div>
+          {/* last 30 trades segments */}
+          <div style={{ display: 'flex', gap: 2, marginTop: 12 }}>
+            {recent30.length === 0 && <div style={label()}>NO TRADE DATA YET</div>}
+            {recent30.map((t, i) => (
+              <div key={t.ticket ?? i} title={fmtMoney(netOf(t), true)} style={{
+                flex: 1, height: 8, maxWidth: 26,
+                background: netOf(t) > 0 ? C.greenBright : C.amber,
+              }} />
+            ))}
+          </div>
         </div>
 
-        {/* streak circle */}
-        <div className="gsx-hero-streak" style={{ background: C.panelLight }}>
-          <svg width="130" height="130" viewBox="0 0 130 130">
-            <circle cx="65" cy="65" r={R} fill="none" stroke={C.border} strokeWidth="7" />
+        {/* --- WIN STREAK (span 1) --- */}
+        <div style={card({
+          background: C.panel, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+        })}>
+          <svg width="126" height="126" viewBox="0 0 126 126">
+            <circle cx="63" cy="63" r={R} fill="none" stroke={C.border} strokeWidth="7" />
             <circle
-              cx="65" cy="65" r={R} fill="none"
+              cx="63" cy="63" r={R} fill="none"
               stroke={streak > 0 ? C.greenBright : C.dim} strokeWidth="7"
               strokeDasharray={`${CIRC * streakPct} ${CIRC}`}
-              transform="rotate(-90 65 65)"
+              strokeLinecap="butt"
+              transform="rotate(-90 63 63)"
             />
-            <text x="65" y="76" textAnchor="middle" fontSize="34" fontWeight="900"
+            <text x="63" y="74" textAnchor="middle" fontSize="34" fontWeight="900"
               fontFamily={C.mono} fill={streak > 0 ? C.green : C.sub}>{streak}</text>
           </svg>
-          <div style={label({ marginTop: 6, color: C.sub })}>WIN STREAK</div>
-          <div style={label({ marginTop: 2 })}>+1 · STREAK {streak}</div>
+          <div style={label({ marginTop: 8, color: C.sub })}>WIN STREAK</div>
+          <div style={label({ marginTop: 2 })}>STREAK {streak}</div>
         </div>
-      </div>
 
-      {/* ============ 3. PROGRESS SEGMENTS ============ */}
-      <div className="gsx-section" style={{ borderBottom: `1px solid ${C.border}` }}>
-        <div style={label({ marginBottom: 5 })}>LAST {recent30.length} TRADES · OLDEST → NEWEST</div>
-        <div style={{ display: 'flex', gap: 3 }}>
-          {recent30.length === 0 && <div style={label()}>NO TRADE DATA YET</div>}
-          {recent30.map((t, i) => (
-            <div key={t.ticket ?? i} title={fmtMoney(netOf(t), true)} style={{
-              flex: 1, height: 14, maxWidth: 30,
-              background: netOf(t) > 0 ? C.greenBright : C.amber,
-            }} />
-          ))}
-        </div>
-      </div>
-
-      {/* ============ 4. TWO CHART PANELS ============ */}
-      <div className="gsx-row2" style={{ borderBottom: `1px solid ${C.border}` }}>
-        {/* LEFT: cash flow bars */}
-        <div style={panel({ background: C.panelLight })}>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        {/* --- CASH FLOW / TRADE HISTORY BARS (span 1) --- */}
+        <div style={card()}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <div style={label()}>CASH FLOW · WIN STACK</div>
-            <div style={{ fontSize: 16, fontWeight: 900, color: pnlColor }}>{fmtMoney(stats.total_profit, true)}</div>
+            <div style={{ fontSize: 15, fontWeight: 900, color: pnlColor }}>{fmtMoney(stats.total_profit, true)}</div>
           </div>
           <div style={label({ margin: '4px 0 10px 0' })}>
             {stats.total_trades} TRADES · {Math.ceil(spanDays)} DAYS · {stats.win_rate}% WIN RATE
           </div>
-          <svg width="100%" height={Math.max(60, bars.length * 15)} style={{ display: 'block' }}>
+          <svg width="100%" height={Math.max(60, bars.length * 14)} style={{ display: 'block' }}>
             {bars.map((b, i) => {
-              const w = (Math.abs(b.net) / maxAbs) * 40; // % of svg width per side
-              const y = i * 15;
+              const w = (Math.abs(b.net) / maxAbs) * 44;
+              const y = i * 14;
               const win = b.net > 0;
               return (
                 <g key={b.ticket ?? i}>
-                  <line x1="50%" y1={y} x2="50%" y2={y + 11} stroke={C.border} strokeWidth="1" />
+                  <line x1="50%" y1={y} x2="50%" y2={y + 10} stroke={C.border} strokeWidth="1" />
                   <rect
-                    x={win ? '50%' : `${50 - w}%`} y={y + 1} width={`${Math.max(0.4, w)}%`} height={9}
+                    x={win ? '50%' : `${50 - w}%`} y={y + 1} width={`${Math.max(0.4, w)}%`} height={8}
                     fill={win ? C.greenBright : C.red}
                   />
-                  <text
-                    x={win ? `${51.5 + w}%` : `${48.5 - w}%`} y={y + 9}
-                    fontSize="9" fontFamily={C.mono}
-                    fill={win ? C.green : C.red}
-                    textAnchor={win ? 'start' : 'end'}
-                  >{fmtMoney(b.net, true)}</text>
                 </g>
               );
             })}
@@ -367,13 +366,13 @@ export default function Dashboard() {
           </svg>
         </div>
 
-        {/* RIGHT: 24h cumulative area */}
-        <div style={panel({ background: C.panelLight })}>
+        {/* --- 24H PNL CHART (span 2) --- */}
+        <div className="gsx-span2" style={card({ background: C.panelLight })}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <div style={label()}>24H PNL · LIVE</div>
             <div style={label()}>PEAK <span style={{ color: C.green, fontWeight: 700 }}>{fmtMoney(peak24, true)}</span></div>
           </div>
-          <div style={{ fontSize: 22, fontWeight: 900, color: cum >= 0 ? C.green : C.red, margin: '4px 0 8px 0' }}>
+          <div style={{ fontSize: 26, fontWeight: 900, color: cum >= 0 ? C.green : C.red, margin: '4px 0 8px 0' }}>
             {fmtMoney(cum, true)}
           </div>
           <svg width="100%" height="150" viewBox="0 0 400 150" preserveAspectRatio="none" style={{ display: 'block' }}>
@@ -399,89 +398,83 @@ export default function Dashboard() {
               );
             })()}
           </svg>
-          {cumPts.length >= 2 && (
-            <div style={{ textAlign: 'right', fontSize: 10, letterSpacing: 2, color: cum >= 0 ? C.green : C.red, fontWeight: 700 }}>
-              {cum >= 0 ? 'PROFIT' : 'DRAWDOWN'}
+        </div>
+
+        {/* --- LIVE POSITIONS (span 3) --- */}
+        <div className="gsx-span3" style={card({ background: C.panelLight })}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'baseline', marginBottom: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 2 }}>
+              <Dot color={positions.length ? C.greenBright : C.dim} />LIVE&nbsp;&nbsp;OPEN POSITIONS
+            </span>
+            <span style={label()}>
+              · {positions.length} open · avg {fmtMoney(openAvg, true)} · total {fmtMoney(openTotal, true)}
+            </span>
+          </div>
+          {positions.length === 0 ? (
+            <div style={label({ padding: '10px 0', fontSize: 11 })}>NO OPEN POSITIONS · BOT MONITORING MARKET</div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <div style={{ display: 'flex', minWidth: 480, ...label({ paddingBottom: 6, borderBottom: `1px solid ${C.border}` }) }}>
+                <span style={{ flex: 2 }}>#TICKET</span><span style={{ flex: 1 }}>TYPE</span>
+                <span style={{ flex: 1 }}>VOL</span><span style={{ flex: 2 }}>ENTRY</span>
+                <span style={{ flex: 2 }}>PROFIT</span><span style={{ flex: 1 }}>AGE</span>
+              </div>
+              {positions.map((p, i) => {
+                const buy = p.type === 'BUY';
+                return (
+                  <div key={p.ticket ?? i} style={{
+                    display: 'flex', minWidth: 480, fontSize: 12, padding: '6px 0 6px 8px',
+                    borderBottom: `1px solid ${C.border}`,
+                    borderLeft: `3px solid ${buy ? C.green : C.red}`,
+                    alignItems: 'center',
+                  }}>
+                    <span style={{ flex: 2, color: C.sub }}>#{p.ticket}</span>
+                    <span style={{ flex: 1, fontWeight: 900, color: buy ? C.green : C.red }}>{p.type}</span>
+                    <span style={{ flex: 1 }}>{p.volume}</span>
+                    <span style={{ flex: 2 }}>{p.price_open}</span>
+                    <span style={{ flex: 2, fontWeight: 900, color: (p.profit || 0) >= 0 ? C.green : C.red }}>{fmtMoney(p.profit, true)}</span>
+                    <span style={{ flex: 1, color: C.dim }}>{ageStr(p.time)}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
-      </div>
 
-      {/* ============ 5. LIVE POSITIONS ============ */}
-      <div style={panel({ background: C.panelLight, borderBottom: `1px solid ${C.border}` })}>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'baseline', marginBottom: 10 }}>
-          <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 2 }}>
-            <Dot color={positions.length ? C.greenBright : C.dim} />LIVE&nbsp;&nbsp;OPEN POSITIONS
-          </span>
-          <span style={label()}>
-            · {positions.length} open · avg profit {fmtMoney(openAvg, true)} · total {fmtMoney(openTotal, true)}
-          </span>
-        </div>
-        {positions.length === 0 ? (
-          <div style={label({ padding: '10px 0', fontSize: 11 })}>NO OPEN POSITIONS · BOT MONITORING MARKET</div>
-        ) : (
-          <div>
-            <div style={{ display: 'flex', ...label({ paddingBottom: 6, borderBottom: `1px solid ${C.border}` }) }}>
-              <span style={{ flex: 2 }}>#TICKET</span><span style={{ flex: 1 }}>TYPE</span>
-              <span style={{ flex: 1 }}>VOL</span><span style={{ flex: 2 }}>ENTRY</span>
-              <span style={{ flex: 2 }}>PROFIT</span><span style={{ flex: 1 }}>AGE</span>
-            </div>
-            {positions.map((p, i) => {
-              const buy = p.type === 'BUY';
-              return (
-                <div key={p.ticket ?? i} style={{
-                  display: 'flex', fontSize: 12, padding: '6px 0 6px 8px',
-                  borderBottom: `1px solid ${C.border}`,
-                  borderLeft: `3px solid ${buy ? C.green : C.amber}`,
-                  alignItems: 'center',
-                }}>
-                  <span style={{ flex: 2, color: C.sub }}>#{p.ticket}</span>
-                  <span style={{ flex: 1, fontWeight: 900, color: buy ? C.green : C.red }}>{p.type}</span>
-                  <span style={{ flex: 1 }}>{p.volume}</span>
-                  <span style={{ flex: 2 }}>{p.price_open}</span>
-                  <span style={{ flex: 2, fontWeight: 900, color: (p.profit || 0) >= 0 ? C.green : C.red }}>{fmtMoney(p.profit, true)}</span>
-                  <span style={{ flex: 1, color: C.dim }}>{ageStr(p.time)}</span>
+        {/* --- PIPELINE (span 3 container, nested grid of 6) --- */}
+        <div className="gsx-span3" style={{ background: C.border, minWidth: 0 }}>
+          <div className="gsx-pipegrid">
+            {pipeline.map(step => (
+              <div key={step.n} style={card({ padding: 14 })}>
+                <div style={label({ fontSize: 9 })}>{step.n}</div>
+                <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: 1, margin: '3px 0' }}>{step.t}</div>
+                <div style={label({ fontSize: 9, textTransform: 'none' })}>{step.s}</div>
+                <div style={{ fontSize: 10, letterSpacing: 1, marginTop: 6, fontWeight: 700, color: step.ok ? C.green : C.dim }}>
+                  <Dot color={step.ok ? C.greenBright : C.dim} size={6} />
+                  {step.active ? 'ACTIVE' : step.ok ? 'READY' : 'IDLE'}
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* ============ 6. EXECUTION PIPELINE ============ */}
-      <div className="gsx-pipeline" style={{ borderBottom: `1px solid ${C.border}` }}>
-        {pipeline.map(step => (
-          <div key={step.n} style={panel({ padding: 12 })}>
-            <div style={label({ fontSize: 9 })}>{step.n}</div>
-            <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: 1, margin: '3px 0' }}>{step.t}</div>
-            <div style={label({ fontSize: 9, textTransform: 'none' })}>{step.s}</div>
-            <div style={{ fontSize: 10, letterSpacing: 1, marginTop: 6, fontWeight: 700, color: step.ok ? C.green : C.dim }}>
-              <Dot color={step.ok ? C.greenBright : C.dim} size={6} />
-              {step.active ? 'ACTIVE' : step.ok ? 'READY' : 'IDLE'}
+              </div>
+            ))}
+            {/* 06 CLOSE — highlighted with last-trade accent */}
+            <div style={card({
+              padding: 14, background: C.panelLight,
+              borderLeft: `3px solid ${lastProfit === null ? C.border : lastProfit >= 0 ? C.greenBright : C.amber}`,
+            })}>
+              <div style={label({ fontSize: 9 })}>06</div>
+              <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: 1, margin: '3px 0' }}>CLOSE</div>
+              <div style={label({ fontSize: 9, textTransform: 'none' })}>profit/loss settle</div>
+              <div style={{
+                fontSize: 13, marginTop: 6, fontWeight: 900,
+                color: lastProfit === null ? C.dim : lastProfit >= 0 ? C.green : C.red,
+              }}>
+                LAST: {lastProfit === null ? '--' : fmtMoney(lastProfit, true)}
+              </div>
             </div>
           </div>
-        ))}
-        {/* 06 CLOSE / LAST SETTLE — highlighted */}
-        <div style={panel({
-          padding: 12, background: C.panelLight,
-          borderLeft: `3px solid ${lastProfit === null ? C.border : lastProfit >= 0 ? C.greenBright : C.amber}`,
-        })}>
-          <div style={label({ fontSize: 9 })}>06</div>
-          <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: 1, margin: '3px 0' }}>CLOSE</div>
-          <div style={label({ fontSize: 9, textTransform: 'none' })}>profit/loss settle</div>
-          <div style={{
-            fontSize: 14, marginTop: 6, fontWeight: 900,
-            color: lastProfit === null ? C.dim : lastProfit >= 0 ? C.green : C.red,
-          }}>
-            LAST: {lastProfit === null ? '--' : fmtMoney(lastProfit, true)}
-          </div>
         </div>
-      </div>
 
-      {/* ============ 7. BOTTOM STATS ROW ============ */}
-      <div className="gsx-row3" style={{ borderBottom: `1px solid ${C.border}` }}>
-        {/* wins */}
-        <div style={panel({ background: C.panelLight })}>
+        {/* --- WINS (span 1) --- */}
+        <div style={card({ background: C.panelLight })}>
           <div style={label()}>WINS · TODAY / ALL TIME</div>
           <div style={{ fontSize: 42, fontWeight: 900, color: C.green, letterSpacing: -1, margin: '6px 0 2px 0' }}>
             {todayWins}<span style={{ fontSize: 16, color: C.dim, fontWeight: 400 }}> / {stats.wins}</span>
@@ -491,8 +484,8 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* bot status */}
-        <div style={panel({ background: C.panelLight, textAlign: 'center' })}>
+        {/* --- BOT CONTROL (span 1) --- */}
+        <div style={card({ textAlign: 'center' })}>
           <div style={label()}>BOT STATUS</div>
           <div style={{
             fontSize: 36, fontWeight: 900, letterSpacing: 1, margin: '4px 0',
@@ -500,7 +493,7 @@ export default function Dashboard() {
           }}>
             {botRunning ? 'UP ▲' : 'DOWN ▼'}
           </div>
-          <div style={label({ marginBottom: 8 })}>
+          <div style={label({ marginBottom: 10 })}>
             LOT {settings.LotSize ?? '--'} · TP ${settings.TP_USD ?? '--'} · SL ${settings.SL_USD ?? '--'}
           </div>
           <button
@@ -509,14 +502,14 @@ export default function Dashboard() {
             style={{
               fontFamily: C.mono, fontSize: 13, fontWeight: 900, letterSpacing: 3,
               padding: '8px 26px', cursor: busy ? 'wait' : 'pointer',
-              background: botRunning ? C.red : C.green, color: '#fafaf8',
+              background: botRunning ? C.red : C.green, color: C.panelLight,
               border: 'none',
             }}
           >{botRunning ? 'STOP' : 'START'}</button>
         </div>
 
-        {/* velocity */}
-        <div style={panel({ background: C.panelLight })}>
+        {/* --- VELOCITY (span 1) --- */}
+        <div style={card({ background: C.panelLight })}>
           <div style={label()}>VELOCITY · 1H</div>
           <div style={{ fontSize: 42, fontWeight: 900, letterSpacing: -1, margin: '6px 0 2px 0' }}>
             {tradesLastHour}<span style={{ fontSize: 16, color: C.dim, fontWeight: 400 }}> trades/hr</span>
@@ -525,51 +518,51 @@ export default function Dashboard() {
             pace {(tradesLastHour * 24).toLocaleString()}/day · lifetime {tradesPerDay.toFixed(1)}/day
           </div>
         </div>
-      </div>
 
-      {/* ============ SETTINGS (collapsible) ============ */}
-      <div style={panel({ borderBottom: `1px solid ${C.border}` })}>
-        <div
-          onClick={() => setShowSettings(s => !s)}
-          style={{ cursor: 'pointer', fontSize: 12, fontWeight: 700, letterSpacing: 2, userSelect: 'none' }}
-        >
-          ⚙ SETTINGS {showSettings ? '▾' : '▸'}
-          <span style={label({ marginLeft: 10, color: saveMsg === 'ERROR' ? C.red : C.green })}>{saveMsg}</span>
-        </div>
-        {showSettings && settingsDraft && (
-          <div style={{ display: 'flex', gap: 12, marginTop: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            {settingKeys.map(k => (
-              <div key={k}>
-                <div style={label({ fontSize: 9, marginBottom: 4 })}>{k}</div>
-                <input
-                  type="number" step="any"
-                  value={settingsDraft[k] ?? ''}
-                  onChange={e => setSettingsDraft(d => ({ ...d, [k]: e.target.value === '' ? '' : Number(e.target.value) }))}
-                  style={{
-                    fontFamily: C.mono, fontSize: 13, width: 90, padding: '6px 8px',
-                    background: C.panelLight, border: `1px solid ${C.border}`, color: C.text,
-                  }}
-                />
-              </div>
-            ))}
-            <button
-              onClick={saveSettings}
-              disabled={busy}
-              style={{
-                fontFamily: C.mono, fontSize: 12, fontWeight: 900, letterSpacing: 2,
-                padding: '8px 20px', background: C.text, color: C.bg, border: 'none',
-                cursor: busy ? 'wait' : 'pointer',
-              }}
-            >SAVE ALL</button>
+        {/* --- SETTINGS (span 3, collapsible) --- */}
+        <div className="gsx-span3" style={card()}>
+          <div
+            onClick={() => setShowSettings(s => !s)}
+            style={{ cursor: 'pointer', fontSize: 12, fontWeight: 700, letterSpacing: 2, userSelect: 'none' }}
+          >
+            ⚙ SETTINGS {showSettings ? '▾' : '▸'}
+            <span style={label({ marginLeft: 10, color: saveMsg === 'ERROR' ? C.red : C.green })}>{saveMsg}</span>
           </div>
-        )}
-        {showSettings && !settingsDraft && <div style={label({ marginTop: 10 })}>LOADING SETTINGS...</div>}
+          {showSettings && settingsDraft && (
+            <div style={{ display: 'flex', gap: 12, marginTop: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              {settingKeys.map(k => (
+                <div key={k}>
+                  <div style={label({ fontSize: 9, marginBottom: 4 })}>{k}</div>
+                  <input
+                    type="number" step="any"
+                    value={settingsDraft[k] ?? ''}
+                    onChange={e => setSettingsDraft(d => ({ ...d, [k]: e.target.value === '' ? '' : Number(e.target.value) }))}
+                    style={{
+                      fontFamily: C.mono, fontSize: 13, width: 90, padding: '6px 8px',
+                      background: C.panelLight, border: `1px solid ${C.border}`, color: C.text,
+                    }}
+                  />
+                </div>
+              ))}
+              <button
+                onClick={saveSettings}
+                disabled={busy}
+                style={{
+                  fontFamily: C.mono, fontSize: 12, fontWeight: 900, letterSpacing: 2,
+                  padding: '8px 20px', background: C.text, color: C.bg, border: 'none',
+                  cursor: busy ? 'wait' : 'pointer',
+                }}
+              >SAVE ALL</button>
+            </div>
+          )}
+          {showSettings && !settingsDraft && <div style={label({ marginTop: 10 })}>LOADING SETTINGS...</div>}
+        </div>
       </div>
 
-      {/* ============ 8. TICKER BAR ============ */}
+      {/* ============ FIXED TICKER BAR (outside grid) ============ */}
       <div style={{
         position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 500,
-        background: C.text, color: '#e8e4d9', fontFamily: C.mono,
+        background: C.dark, color: C.cream, fontFamily: C.mono,
         fontSize: 11, letterSpacing: 2, padding: '8px 16px',
         whiteSpace: 'nowrap', overflow: 'hidden', textTransform: 'uppercase',
       }}>
@@ -588,10 +581,10 @@ export default function Dashboard() {
         <div style={{
           position: 'fixed', inset: 0, display: 'flex',
           alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(26,26,26,0.35)', zIndex: 1000,
+          background: 'rgba(26,26,24,0.45)', zIndex: 1000,
         }}>
           <div style={{
-            background: '#1a1a1a',
+            background: C.dark,
             border: `3px solid ${popup.profit >= 0 ? C.greenBright : C.amber}`,
             padding: '36px 70px', textAlign: 'center',
             animation: 'popIn 0.25s ease-out',
