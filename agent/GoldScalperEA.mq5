@@ -1,10 +1,10 @@
 //+------------------------------------------------------------------+
 //|                                                GoldScalperEA.mq5 |
-//|                                        GoldScalperX version 9.20 |
+//|                                        GoldScalperX version 9.21 |
 //|  Gold scalper — bar-gated, closed-bar signals, trailing stop     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.20"
+#property version   "9.21"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.20"
+#define EA_VERSION    "9.21"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -272,10 +272,14 @@ void OnTick()
    bool bear1 = (c[1]<o[1]) && ((o[1]-c[1])/range1 >= 0.25) && range1 <= 5.0*atr1;
    bool bear2 = (c[2]<o[2]) && ((o[2]-c[2])/range2 >= 0.20);
 
-   // both candles agree → stronger signal, reduces BUY/SELL bias
+   // RSI directional filter — avoid trading against extreme RSI
+   // BUY only when RSI not overbought; SELL only when RSI not oversold
+   bool rsiBuyOK  = (rsi1 < 68.0);
+   bool rsiSellOK = (rsi1 > 32.0);
+
    int signal = 0;
-   if(bull1 && bull2) signal =  1;
-   else if(bear1 && bear2) signal = -1;
+   if(bull1 && bull2 && rsiBuyOK)  signal =  1;
+   else if(bear1 && bear2 && rsiSellOK) signal = -1;
 
    long spread   = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    bool spreadOK = (spread <= (long)g_maxSpread);
@@ -286,7 +290,8 @@ void OnTick()
 
    if(signal != 0 && allOK && g_botRunning)
      {
-      int slots = g_maxPositions - CountMyPositions();
+      // Max 2 trades per bar — keeps slots available for the opposite direction
+      int slots = MathMin(2, g_maxPositions - CountMyPositions());
       for(int i = 0; i < slots; i++)
         {
          if(signal == 1) OpenTrade(ORDER_TYPE_BUY,  atr1);
