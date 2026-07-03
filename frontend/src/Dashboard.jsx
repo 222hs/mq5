@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const POLL_MS = 3000;
+const POLL_MS = 1500;
+const CANDLE_POLL_MS = 10000;
 
 // ---------- palette : parchment terminal ----------
 const C = {
@@ -64,7 +65,8 @@ export default function Dashboard() {
   const [settingsDraft, setSettingsDraft] = useState(null);
   const [saveMsg, setSaveMsg] = useState('');
   const [busy, setBusy] = useState(false);
-  const seenTickets = useRef(null);                  // Set of history tickets seen
+  const [candleData, setCandleData] = useState({ candles: [], sessions: {} });
+  const seenTickets = useRef(null);
   const popupTimer = useRef(null);
 
   // clock
@@ -105,6 +107,22 @@ export default function Dashboard() {
     return () => { alive = false; clearInterval(t); clearTimeout(popupTimer.current); };
   }, []);
 
+  // candle poll — separate, slower
+  useEffect(() => {
+    let alive = true;
+    const fetchCandles = async () => {
+      try {
+        const r = await fetch(`${API_URL}/api/candles`);
+        if (!r.ok || !alive) return;
+        const d = await r.json();
+        setCandleData(d);
+      } catch (e) {}
+    };
+    fetchCandles();
+    const t = setInterval(fetchCandles, CANDLE_POLL_MS);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+
   const botControl = async (action) => {
     setBusy(true);
     try {
@@ -141,8 +159,8 @@ export default function Dashboard() {
   const settings = data?.settings || {};
   const isOnline = !!data?.is_online;
   const botRunning = !!data?.bot_running;
-  const candles = Array.isArray(data?.candles) ? data.candles : [];
-  const sessions = data?.sessions || {};
+  const candles = candleData.candles || [];
+  const sessions = candleData.sessions || {};
 
   const netOf = t => (t.profit || 0) + (t.swap || 0) + (t.commission || 0);
 
@@ -368,28 +386,30 @@ export default function Dashboard() {
           </div>
           {/* Candlestick SVG */}
           {candles.length < 2 ? (
-            <div style={label({ padding: '20px 0', textAlign: 'center' })}>AWAITING CANDLE DATA</div>
+            <div style={label({ padding: '20px 0', textAlign: 'center' })}>AWAITING CANDLE DATA<br/>تأكد من تشغيل الـ Agent</div>
           ) : (() => {
-            const last = candles.slice(-60);
-            const W = 400, H = 200, padL = 8, padR = 45, padT = 8, padB = 8;
-            const cw = Math.max(2, (W - padL - padR) / last.length);
+            const last = candles.slice(-40); // آخر 40 شمعة — مناسب للعرض
+            const W = 400, H = 220, padL = 4, padR = 50, padT = 6, padB = 6;
+            const gap = 1;
+            const cw = (W - padL - padR) / last.length;
+            const bodyW = Math.max(1.5, cw - gap);
             const allH = last.flatMap(c => [c.h, c.l]);
             const lo = Math.min(...allH), hi = Math.max(...allH);
-            const range = Math.max(hi - lo, 0.01);
+            const range = Math.max(hi - lo, 0.1);
             const Y = v => padT + ((hi - v) / range) * (H - padT - padB);
-            const X = i => padL + i * cw + cw * 0.1;
-            // find open positions entry prices for markers
-            const entryPrices = positions.map(p => p.price_open);
+            const Cx = i => padL + i * cw + (cw - bodyW) / 2; // center x of body
+            const entryPrices = positions.map(p => ({ price: p.price_open, type: p.type }));
+            // 4 price labels on right
+            const priceLabels = [0, 0.33, 0.66, 1].map(f => lo + f * range);
             return (
               <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
-                {/* price grid lines */}
-                {[0, 0.25, 0.5, 0.75, 1].map(f => {
-                  const price = lo + f * range;
+                {/* grid */}
+                {priceLabels.map((price, i) => {
                   const y = Y(price);
                   return (
-                    <g key={f}>
+                    <g key={i}>
                       <line x1={padL} y1={y} x2={W - padR} y2={y} stroke={C.border} strokeWidth="0.5" strokeDasharray="3 3" />
-                      <text x={W - padR + 4} y={y + 3} fontSize="8" fill={C.dim} fontFamily={C.mono}>{price.toFixed(1)}</text>
+                      <text x={W - padR + 4} y={y + 3} fontSize="9" fill={C.dim} fontFamily={C.mono}>{price.toFixed(2)}</text>
                     </g>
                   );
                 })}
@@ -397,30 +417,41 @@ export default function Dashboard() {
                 {last.map((c, i) => {
                   const bull = c.c >= c.o;
                   const col = bull ? C.green : C.red;
-                  const cx = X(i) + cw * 0.4;
-                  const bodyT = Y(Math.max(c.o, c.c));
-                  const bodyB = Y(Math.min(c.o, c.c));
-                  const bodyH = Math.max(1, bodyB - bodyT);
+                  const midX = Cx(i) + bodyW / 2;
+                  const bodyTop = Y(Math.max(c.o, c.c));
+                  const bodyBot = Y(Math.min(c.o, c.c));
+                  const bodyH = Math.max(1, bodyBot - bodyTop);
                   return (
                     <g key={c.t ?? i}>
-                      {/* wick */}
-                      <line x1={cx} y1={Y(c.h)} x2={cx} y2={Y(c.l)} stroke={col} strokeWidth="0.8" />
-                      {/* body */}
-                      <rect x={X(i)} y={bodyT} width={Math.max(1, cw * 0.8)} height={bodyH} fill={col} />
+                      <line x1={midX} y1={Y(c.h)} x2={midX} y2={bodyTop} stroke={col} strokeWidth="1" />
+                      <rect x={Cx(i)} y={bodyTop} width={bodyW} height={bodyH} fill={bull ? C.green : C.red} stroke={col} strokeWidth="0.3" />
+                      <line x1={midX} y1={bodyBot} x2={midX} y2={Y(c.l)} stroke={col} strokeWidth="1" />
                     </g>
                   );
                 })}
-                {/* entry price lines for open positions */}
-                {entryPrices.map((p, i) => {
-                  const y = Y(p);
-                  if (y < 0 || y > H) return null;
+                {/* open position entry lines */}
+                {entryPrices.map((ep, i) => {
+                  const y = Y(ep.price);
+                  if (y < padT || y > H - padB) return null;
                   return (
                     <g key={i}>
-                      <line x1={padL} y1={y} x2={W - padR} y2={y} stroke={C.amber} strokeWidth="1" strokeDasharray="4 2" />
-                      <text x={W - padR + 4} y={y + 3} fontSize="8" fill={C.amber} fontFamily={C.mono}>{p?.toFixed(1)}</text>
+                      <line x1={padL} y1={y} x2={W - padR} y2={y} stroke={C.amber} strokeWidth="1.2" strokeDasharray="5 3" />
+                      <text x={W - padR + 4} y={y + 3} fontSize="9" fill={C.amber} fontFamily={C.mono} fontWeight="bold">{ep.price?.toFixed(2)}</text>
                     </g>
                   );
                 })}
+                {/* last price label */}
+                {(() => {
+                  const lc = last[last.length - 1];
+                  const y = Y(lc.c);
+                  const bull = lc.c >= lc.o;
+                  return (
+                    <g>
+                      <rect x={W - padR} y={y - 7} width={padR} height={14} fill={bull ? C.green : C.red} />
+                      <text x={W - padR + 3} y={y + 4} fontSize="9" fill="#fff" fontFamily={C.mono} fontWeight="bold">{lc.c?.toFixed(2)}</text>
+                    </g>
+                  );
+                })()}
               </svg>
             );
           })()}
