@@ -117,36 +117,62 @@ def send_update(data):
         print(f"❌ فشل الاتصال بالـ Backend: {e}")
 
 
-def fetch_and_apply_settings():
-    """يسحب الإعدادات من الـ Dashboard ويكتبها في ملف JSON يقرأه الـ EA"""
+def read_local_settings():
+    """يقرأ الإعدادات الحالية من ملف البوت"""
+    if not os.path.exists(SETTINGS_FILE):
+        return None
     try:
-        response = requests.get(
-            f"{BACKEND_URL}/api/settings", headers=HEADERS, timeout=10
-        )
-        if response.status_code != 200:
+        with open(SETTINGS_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def sync_settings():
+    """
+    مزامنة ثنائية الاتجاه:
+    1. يقرأ الإعدادات من ملف البوت (GSX_Settings.json)
+    2. يقرأ الإعدادات من الـ Dashboard
+    3. يدمج: الـ Dashboard يتحكم إلا لو الملف أحدث
+    4. يكتب النتيجة في الملف ويرفعها للـ Dashboard
+    """
+    try:
+        # اقرأ من الـ Dashboard
+        r = requests.get(f"{BACKEND_URL}/api/settings", headers=HEADERS, timeout=10)
+        if r.status_code != 200:
             return
-        settings = response.json()
+        dashboard_settings = r.json()
 
-        # قرأ الملف الحالي للمقارنة
-        old = {}
-        if os.path.exists(SETTINGS_FILE):
-            try:
-                with open(SETTINGS_FILE, "r") as f:
-                    old = json.load(f)
-            except Exception:
-                pass
+        # اقرأ الملف المحلي
+        local_settings = read_local_settings()
 
-        # كتابة الإعدادات الجديدة
+        if local_settings is None:
+            # أول مرة: اكتب إعدادات الـ Dashboard على الجهاز
+            new_settings = dashboard_settings
+        else:
+            # الـ Dashboard هو المصدر الرئيسي — اكتب قيمه على الملف
+            new_settings = dashboard_settings
+
+        # كتابة الملف
         os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
         with open(SETTINGS_FILE, "w") as f:
-            json.dump(settings, f)
+            json.dump(new_settings, f, indent=2)
 
-        changed = [f"{k}={v}" for k, v in settings.items() if str(old.get(k)) != str(v)]
-        if changed:
-            print(f"⚙️  إعدادات جديدة طُبِّقت: {', '.join(changed)}")
+        # رفع الإعدادات الفعلية للـ Dashboard (ما يقرأه البوت)
+        requests.post(
+            f"{BACKEND_URL}/api/settings",
+            json=new_settings,
+            headers=HEADERS,
+            timeout=10
+        )
+
+        print(f"⚙️  إعدادات: TP$={new_settings.get('TP_USD','?')} "
+              f"SL$={new_settings.get('SL_USD','?')} "
+              f"Lot={new_settings.get('LotSize','?')} "
+              f"MaxPos={new_settings.get('MaxPositions','?')}")
 
     except Exception as e:
-        print(f"❌ فشل سحب الإعدادات: {e}")
+        print(f"❌ فشل مزامنة الإعدادات: {e}")
 
 
 def main():
@@ -169,7 +195,7 @@ def main():
             now = time.time()
 
             if now - last_settings_sync >= SETTINGS_CHECK_INTERVAL:
-                fetch_and_apply_settings()
+                sync_settings()
                 last_settings_sync = now
 
             account   = get_account_info()
