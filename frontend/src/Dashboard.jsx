@@ -1,365 +1,446 @@
-import { useEffect, useState, useRef } from "react";
+import React, { useState, useEffect, useRef } from 'react';
 
-const API_URL = import.meta.env.VITE_API_URL || "";
+const API_KEY = 'mysecretkey123';
+const POLL_MS = 3000;
+
+const C = {
+  bg: '#0d0d0d',
+  panel: '#141412',
+  border: '#2a2a26',
+  text: '#e8e4d9',
+  dim: '#8a8678',
+  green: '#4a7c59',
+  greenBright: '#6fbf85',
+  amber: '#c8762a',
+  mono: "'Courier New', monospace",
+};
+
+function fmtUsd(v, sign = true) {
+  if (v === null || v === undefined || isNaN(v)) return '--';
+  const s = sign && v > 0 ? '+' : '';
+  return s + '$' + Number(v).toFixed(2);
+}
+
+function ageSecs(iso) {
+  if (!iso) return 0;
+  const t = new Date(iso).getTime();
+  return Math.max(0, Math.floor((Date.now() - t) / 1000));
+}
+
+// ---------- small building blocks ----------
+
+function Panel({ title, children, style }) {
+  return (
+    <div style={{
+      background: C.panel, border: `1px solid ${C.border}`,
+      padding: 16, ...style,
+    }}>
+      {title && (
+        <div style={{
+          fontSize: 11, letterSpacing: 2, color: C.dim,
+          textTransform: 'uppercase', marginBottom: 12,
+          borderBottom: `1px solid ${C.border}`, paddingBottom: 8,
+        }}>{title}</div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+function StatusDot({ online }) {
+  return (
+    <span style={{
+      display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
+      background: online ? C.greenBright : C.amber,
+      boxShadow: online ? `0 0 8px ${C.greenBright}` : `0 0 8px ${C.amber}`,
+      marginRight: 8,
+    }} />
+  );
+}
+
+// ---------- charts (pure SVG) ----------
+
+function WinLossBars({ history }) {
+  const recent = (history || []).slice(-20).slice().sort((a, b) => b.profit - a.profit);
+  if (recent.length === 0) {
+    return <div style={{ color: C.dim, fontSize: 12 }}>NO TRADE HISTORY</div>;
+  }
+  const maxAbs = Math.max(...recent.map(t => Math.abs(t.profit)), 0.01);
+  const rowH = 14;
+  const W = 420, mid = W / 2;
+  const H = recent.length * rowH;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+      <line x1={mid} y1={0} x2={mid} y2={H} stroke={C.border} strokeWidth={1} />
+      {recent.map((t, i) => {
+        const w = (Math.abs(t.profit) / maxAbs) * (mid - 60);
+        const win = t.profit >= 0;
+        const y = i * rowH + 2;
+        return (
+          <g key={t.ticket ?? i}>
+            <rect
+              x={win ? mid : mid - w} y={y}
+              width={Math.max(w, 2)} height={rowH - 4}
+              fill={win ? C.green : C.amber}
+            />
+            <text
+              x={win ? mid + w + 6 : mid - w - 6} y={y + rowH - 6}
+              textAnchor={win ? 'start' : 'end'}
+              fontSize={9} fill={C.dim} fontFamily={C.mono}
+            >{fmtUsd(t.profit)}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function CumulativePnl({ history }) {
+  const hist = history || [];
+  if (hist.length === 0) {
+    return <div style={{ color: C.dim, fontSize: 12 }}>NO TRADE HISTORY</div>;
+  }
+  const cum = [];
+  let run = 0;
+  for (const t of hist) { run += t.profit || 0; cum.push(run); }
+  const W = 420, H = 280, pad = 24;
+  const min = Math.min(0, ...cum), max = Math.max(0, ...cum);
+  const span = max - min || 1;
+  const x = i => pad + (i / Math.max(cum.length - 1, 1)) * (W - pad * 2);
+  const y = v => H - pad - ((v - min) / span) * (H - pad * 2);
+  const pts = cum.map((v, i) => `${x(i)},${y(v)}`).join(' ');
+  const area = `${x(0)},${y(0)} ${pts} ${x(cum.length - 1)},${y(0)}`;
+  const last = cum[cum.length - 1];
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+      <line x1={pad} y1={y(0)} x2={W - pad} y2={y(0)} stroke={C.border} strokeWidth={1} strokeDasharray="4 4" />
+      <polygon points={area} fill={last >= 0 ? C.green : C.amber} opacity={0.15} />
+      <polyline points={pts} fill="none" stroke={last >= 0 ? C.greenBright : C.amber} strokeWidth={2} />
+      <circle cx={x(cum.length - 1)} cy={y(last)} r={4} fill={last >= 0 ? C.greenBright : C.amber} />
+      <text x={W - pad} y={y(last) - 8} textAnchor="end" fontSize={12} fill={C.text} fontFamily={C.mono}>
+        {fmtUsd(last)}
+      </text>
+    </svg>
+  );
+}
+
+// ---------- main component ----------
 
 export default function Dashboard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [clock, setClock] = useState(new Date());
+  const [busy, setBusy] = useState(false);
+  const [settingsDraft, setSettingsDraft] = useState(null);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const timerRef = useRef(null);
+
+  const fetchData = async () => {
+    try {
+      const res = await fetch('/api/dashboard');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json();
+      setData(json);
+      setError(null);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/dashboard`);
-        if (!res.ok) throw new Error("Failed to fetch");
-        const json = await res.json();
-        setData(json);
-        setError(null);
-      } catch (e) {
-        setError("تعذر الاتصال بالسيرفر");
-      }
-    };
     fetchData();
-    const interval = setInterval(fetchData, 5000);
-    return () => clearInterval(interval);
+    timerRef.current = setInterval(fetchData, POLL_MS);
+    const clk = setInterval(() => setClock(new Date()), 1000);
+    return () => { clearInterval(timerRef.current); clearInterval(clk); };
   }, []);
 
-  if (error) {
-    return <div style={styles.errorBox}>{error}</div>;
-  }
-
-  if (!data) {
-    return <div style={styles.loading}>جاري التحميل...</div>;
-  }
-
-  const { account, positions, history, stats, is_online, bot_running } = data;
-
-  return (
-    <div>
-      <TradingSessions />
-
-      <div style={styles.statusRow}>
-        <span style={{ ...styles.dot, background: is_online ? "#4ADE80" : "#F87171" }} />
-        <span style={styles.statusText}>
-          {is_online ? "البوت متصل" : "البوت غير متصل"}
-          {account?.server ? ` · ${account.server}` : ""}
-        </span>
-        <BotToggle running={bot_running} />
-      </div>
-
-      <div style={styles.metricsGrid}>
-        <MetricCard label="الرصيد"             value={`$${account?.balance?.toFixed(2) ?? "—"}`} />
-        <MetricCard label="الإكويتي"            value={`$${account?.equity?.toFixed(2) ?? "—"}`} />
-        <MetricCard
-          label="الربح/الخسارة الحالي"
-          value={`$${account?.profit?.toFixed(2) ?? "0.00"}`}
-          positive={account?.profit >= 0}
-        />
-        <MetricCard label="نسبة الفوز" value={`${stats?.win_rate ?? 0}%`} />
-      </div>
-
-      <SectionTitle>الصفقات المفتوحة</SectionTitle>
-      <Table
-        headers={["الرمز", "النوع", "الحجم", "سعر الفتح", "الربح/الخسارة"]}
-        rows={(positions || []).map((p) => [
-          p.symbol,
-          p.type === "BUY" ? "شراء" : "بيع",
-          p.volume,
-          p.price_open,
-          <span style={{ color: p.profit >= 0 ? "#4ADE80" : "#F87171" }}>
-            ${p.profit?.toFixed(2)}
-          </span>,
-        ])}
-        empty="لا توجد صفقات مفتوحة"
-      />
-
-      <SectionTitle>آخر الصفقات</SectionTitle>
-      <HistoryTable history={history || []} />
-
-      <div style={styles.statsRow}>
-        <StatPill label="إجمالي الصفقات" value={stats?.total_trades ?? 0} />
-        <StatPill label="رابحة"           value={stats?.wins ?? 0}         color="#4ADE80" />
-        <StatPill label="خاسرة"           value={stats?.losses ?? 0}       color="#F87171" />
-        <StatPill
-          label="صافي الربح"
-          value={`$${stats?.total_profit ?? 0}`}
-          color={stats?.total_profit >= 0 ? "#4ADE80" : "#F87171"}
-        />
-      </div>
-    </div>
-  );
-}
-
-function MetricCard({ label, value, positive }) {
-  return (
-    <div style={styles.metricCard}>
-      <p style={styles.metricLabel}>{label}</p>
-      <p style={{
-        ...styles.metricValue,
-        color: positive === undefined ? "#fff" : positive ? "#4ADE80" : "#F87171",
-      }}>
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function SectionTitle({ children }) {
-  return <p style={styles.sectionTitle}>{children}</p>;
-}
-
-function Table({ headers, rows, empty }) {
-  return (
-    <div style={styles.tableWrap}>
-      <div style={{ ...styles.tableRow, ...styles.tableHeader }}>
-        {headers.map((h, i) => <span key={i}>{h}</span>)}
-      </div>
-      {rows.length === 0
-        ? <div style={styles.emptyRow}>{empty}</div>
-        : rows.map((row, i) => (
-            <div key={i} style={styles.tableRow}>
-              {row.map((cell, j) => <span key={j}>{cell}</span>)}
-            </div>
-          ))
-      }
-    </div>
-  );
-}
-
-// ── Bot Toggle Button ─────────────────────────────────────────────
-const API_KEY = "mysecretkey123";
-
-function BotToggle({ running }) {
-  const [state, setState] = useState(running);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => setState(running), [running]);
-
-  const toggle = async () => {
-    setLoading(true);
+  const botControl = async (action) => {
+    setBusy(true);
     try {
-      const action = state ? "stop" : "start";
-      const res = await fetch(`${API_URL}/api/bot/control`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
+      await fetch('/api/bot/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
         body: JSON.stringify({ action }),
       });
-      if (res.ok) setState(!state);
-    } catch {}
-    setLoading(false);
+      await fetchData();
+    } catch (e) { setError(e.message); }
+    setBusy(false);
   };
 
+  const saveSettings = async () => {
+    if (!settingsDraft) return;
+    setSavingSettings(true);
+    try {
+      const payload = {};
+      for (const [k, v] of Object.entries(settingsDraft)) payload[k] = Number(v);
+      await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+        body: JSON.stringify(payload),
+      });
+      setSettingsDraft(null);
+      await fetchData();
+    } catch (e) { setError(e.message); }
+    setSavingSettings(false);
+  };
+
+  const acct = data?.account || {};
+  const stats = data?.stats || {};
+  const positions = data?.positions || [];
+  const history = data?.history || [];
+  const settings = data?.settings || {};
+  const online = !!data?.is_online;
+  const running = !!data?.bot_running;
+
+  // win streak: count consecutive wins from most recent trade backwards
+  let streak = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    if ((history[i].profit || 0) > 0) streak++;
+    else break;
+  }
+
+  // trades/day estimate from history span
+  let tradesPerDay = '--';
+  if (history.length > 1) {
+    const t0 = new Date(history[0].time).getTime();
+    const t1 = new Date(history[history.length - 1].time).getTime();
+    const days = Math.max((t1 - t0) / 86400000, 1 / 24);
+    tradesPerDay = (history.length / days).toFixed(1);
+  }
+
+  const totalPnl = stats.total_profit ?? 0;
+  const pnlColor = totalPnl >= 0 ? C.greenBright : C.amber;
+
+  const labelStyle = { fontSize: 10, letterSpacing: 2, color: C.dim, textTransform: 'uppercase' };
+  const bigStyle = { fontSize: 22, fontWeight: 'bold', color: C.text };
+
   return (
-    <button onClick={toggle} disabled={loading} style={{
-      marginRight: "auto",
-      background: state ? "#DC2626" : "#16A34A",
-      color: "#fff",
-      border: "none",
-      borderRadius: 8,
-      padding: "5px 16px",
-      fontSize: 13,
-      fontWeight: 600,
-      cursor: loading ? "wait" : "pointer",
-      fontFamily: "inherit",
-      transition: "background .2s",
+    <div style={{
+      minHeight: '100vh', background: C.bg, color: C.text,
+      fontFamily: C.mono, padding: 20, boxSizing: 'border-box', direction: 'ltr',
     }}>
-      {loading ? "..." : state ? "⏹ إيقاف البوت" : "▶ تشغيل البوت"}
-    </button>
-  );
-}
-// ─────────────────────────────────────────────────────────────────
-
-// ── History Table with filters ───────────────────────────────────
-function HistoryTable({ history }) {
-  const [filter, setFilter] = useState("all");
-
-  const filtered = history.filter((h) => {
-    if (filter === "win")  return h.profit > 0;
-    if (filter === "loss") return h.profit <= 0;
-    if (filter === "buy")  return h.type === "BUY";
-    if (filter === "sell") return h.type === "SELL";
-    return true;
-  });
-
-  const tabs = [
-    { key: "all",  label: "الكل" },
-    { key: "win",  label: "رابحة ✅" },
-    { key: "loss", label: "خاسرة ❌" },
-    { key: "buy",  label: "شراء ▲" },
-    { key: "sell", label: "بيع ▼" },
-  ];
-
-  return (
-    <div>
-      <div style={ht.filterRow}>
-        {tabs.map((t) => (
+      {/* HEADER */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        borderBottom: `2px solid ${C.border}`, paddingBottom: 14, marginBottom: 20,
+        flexWrap: 'wrap', gap: 12,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ fontSize: 24, fontWeight: 'bold', letterSpacing: 4 }}>
+            GOLD SCALPER <span style={{ color: C.greenBright }}>X</span>
+          </div>
+          <div style={{ fontSize: 12, color: online ? C.greenBright : C.amber }}>
+            <StatusDot online={online} />{online ? 'ONLINE' : 'OFFLINE'}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 32, alignItems: 'center' }}>
+          <div>
+            <div style={labelStyle}>UTC TIME</div>
+            <div style={{ fontSize: 16 }}>{clock.toISOString().slice(11, 19)}</div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={labelStyle}>BALANCE</div>
+            <div style={{ fontSize: 28, fontWeight: 'bold', color: C.text }}>
+              ${Number(acct.balance ?? 0).toFixed(2)}
+            </div>
+          </div>
           <button
-            key={t.key}
-            onClick={() => setFilter(t.key)}
-            style={{ ...ht.filterBtn, ...(filter === t.key ? ht.filterActive : {}) }}
+            onClick={() => botControl(running ? 'stop' : 'start')}
+            disabled={busy}
+            style={{
+              fontFamily: C.mono, fontSize: 16, fontWeight: 'bold', letterSpacing: 3,
+              padding: '14px 28px', cursor: busy ? 'wait' : 'pointer',
+              background: running ? 'transparent' : C.green,
+              color: running ? C.amber : C.text,
+              border: `2px solid ${running ? C.amber : C.green}`,
+            }}
           >
-            {t.label}
+            {busy ? '...' : running ? 'STOP BOT' : 'START BOT'}
           </button>
+        </div>
+      </div>
+
+      {error && (
+        <div style={{ color: C.amber, fontSize: 12, marginBottom: 12 }}>
+          [!] API ERROR: {error}
+        </div>
+      )}
+
+      {/* HERO */}
+      <div style={{
+        display: 'flex', gap: 20, marginBottom: 20, flexWrap: 'wrap', alignItems: 'stretch',
+      }}>
+        <Panel style={{ flex: '2 1 380px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <div style={labelStyle}>TOTAL P&amp;L</div>
+          <div style={{
+            fontSize: 84, fontWeight: 'bold', color: pnlColor, lineHeight: 1.05,
+            letterSpacing: 6,
+            textShadow: `0 0 24px ${pnlColor}44, 3px 3px 0 #000`,
+          }}>
+            {fmtUsd(totalPnl)}
+          </div>
+          <div style={{ fontSize: 12, color: C.dim, marginTop: 6 }}>
+            XAUUSD SCALPING &middot; LAST UPDATE {data?.last_update ? new Date(data.last_update).toISOString().slice(11, 19) : '--'} UTC
+          </div>
+        </Panel>
+
+        <Panel style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{
+            width: 130, height: 130, borderRadius: '50%',
+            border: `4px solid ${C.greenBright}`,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            boxShadow: `0 0 20px ${C.greenBright}33 inset, 0 0 20px ${C.greenBright}22`,
+          }}>
+            <div style={{ fontSize: 44, fontWeight: 'bold', color: C.greenBright }}>{streak}</div>
+            <div style={{ fontSize: 9, letterSpacing: 2, color: C.dim }}>WIN STREAK</div>
+          </div>
+        </Panel>
+
+        <Panel style={{ flex: '1 1 220px', display: 'flex', flexDirection: 'column', justifyContent: 'space-around', gap: 10 }}>
+          <div>
+            <div style={labelStyle}>TOTAL TRADES</div>
+            <div style={bigStyle}>{stats.total_trades ?? '--'}</div>
+          </div>
+          <div>
+            <div style={labelStyle}>WIN RATE</div>
+            <div style={{ ...bigStyle, color: C.greenBright }}>
+              {stats.win_rate != null ? stats.win_rate.toFixed(1) + '%' : '--'}
+              <span style={{ fontSize: 12, color: C.dim, marginLeft: 8 }}>
+                ({stats.wins ?? 0}W / {stats.losses ?? 0}L)
+              </span>
+            </div>
+          </div>
+          <div>
+            <div style={labelStyle}>TRADES / DAY</div>
+            <div style={bigStyle}>{tradesPerDay}</div>
+          </div>
+        </Panel>
+      </div>
+
+      {/* CHARTS */}
+      <div style={{ display: 'flex', gap: 20, marginBottom: 20, flexWrap: 'wrap' }}>
+        <Panel title="WIN / LOSS — LAST 20 TRADES" style={{ flex: '1 1 400px' }}>
+          <WinLossBars history={history} />
+        </Panel>
+        <Panel title="CUMULATIVE P&L" style={{ flex: '1 1 400px' }}>
+          <CumulativePnl history={history} />
+        </Panel>
+      </div>
+
+      {/* POSITIONS */}
+      <Panel title={`LIVE POSITIONS [${positions.length}]`} style={{ marginBottom: 20 }}>
+        {positions.length === 0 ? (
+          <div style={{ color: C.dim, fontSize: 12 }}>NO OPEN POSITIONS — WAITING FOR SIGNAL...</div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ color: C.dim, fontSize: 10, letterSpacing: 2, textAlign: 'left' }}>
+                {['TICKET', 'TYPE', 'VOLUME', 'ENTRY', 'PROFIT', 'AGE'].map(h => (
+                  <th key={h} style={{ padding: '6px 8px', borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {positions.map(p => (
+                <tr key={p.ticket}>
+                  <td style={{ padding: '8px', borderBottom: `1px solid ${C.border}` }}>#{p.ticket}</td>
+                  <td style={{
+                    padding: '8px', borderBottom: `1px solid ${C.border}`, fontWeight: 'bold',
+                    color: p.type === 'BUY' ? C.greenBright : C.amber,
+                  }}>{p.type}</td>
+                  <td style={{ padding: '8px', borderBottom: `1px solid ${C.border}` }}>{p.volume}</td>
+                  <td style={{ padding: '8px', borderBottom: `1px solid ${C.border}` }}>{Number(p.price).toFixed(2)}</td>
+                  <td style={{
+                    padding: '8px', borderBottom: `1px solid ${C.border}`, fontWeight: 'bold',
+                    color: p.profit >= 0 ? C.greenBright : C.amber,
+                  }}>{fmtUsd(p.profit)}</td>
+                  <td style={{ padding: '8px', borderBottom: `1px solid ${C.border}`, color: C.dim }}>
+                    {ageSecs(p.time)}s
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Panel>
+
+      {/* SETTINGS */}
+      <Panel title="BOT SETTINGS" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          {['LotSize', 'TP_USD', 'SL_USD', 'MaxSpread', 'MaxPositions', 'CooldownSecs', 'TrailUSD'].map(key => (
+            <div key={key}>
+              <div style={labelStyle}>{key}</div>
+              <input
+                type="number"
+                step="any"
+                value={settingsDraft ? settingsDraft[key] : (settings[key] ?? '')}
+                onChange={e => setSettingsDraft({
+                  ...(settingsDraft || { ...settings }),
+                  [key]: e.target.value,
+                })}
+                style={{
+                  fontFamily: C.mono, fontSize: 14, width: 100, marginTop: 4,
+                  background: C.bg, color: C.text, border: `1px solid ${C.border}`,
+                  padding: '6px 8px', outline: 'none',
+                }}
+              />
+            </div>
+          ))}
+          <button
+            onClick={saveSettings}
+            disabled={!settingsDraft || savingSettings}
+            style={{
+              fontFamily: C.mono, fontSize: 13, fontWeight: 'bold', letterSpacing: 2,
+              padding: '9px 20px',
+              cursor: settingsDraft ? 'pointer' : 'default',
+              background: settingsDraft ? C.green : 'transparent',
+              color: settingsDraft ? C.text : C.dim,
+              border: `1px solid ${settingsDraft ? C.green : C.border}`,
+            }}
+          >
+            {savingSettings ? 'SAVING...' : 'SAVE SETTINGS'}
+          </button>
+          {settingsDraft && (
+            <button
+              onClick={() => setSettingsDraft(null)}
+              style={{
+                fontFamily: C.mono, fontSize: 13, letterSpacing: 2, padding: '9px 14px',
+                background: 'transparent', color: C.dim, border: `1px solid ${C.border}`,
+                cursor: 'pointer',
+              }}
+            >CANCEL</button>
+          )}
+        </div>
+      </Panel>
+
+      {/* STATS BAR */}
+      <div style={{
+        display: 'flex', gap: 0, border: `1px solid ${C.border}`, background: C.panel,
+        flexWrap: 'wrap',
+      }}>
+        {[
+          ['EQUITY', '$' + Number(acct.equity ?? 0).toFixed(2)],
+          ['FLOATING P&L', fmtUsd(acct.profit ?? 0)],
+          ['MARGIN', '$' + Number(acct.margin ?? 0).toFixed(2)],
+          ['FREE MARGIN', '$' + Number(acct.free_margin ?? 0).toFixed(2)],
+          ['MAX SPREAD', settings.MaxSpread ?? '--'],
+          ['LOT SIZE', settings.LotSize ?? '--'],
+          ['TP', '$' + Number(settings.TP_USD ?? 0).toFixed(2)],
+          ['SL', '$' + Number(settings.SL_USD ?? 0).toFixed(2)],
+        ].map(([label, val], i) => (
+          <div key={label} style={{
+            flex: '1 1 110px', padding: '12px 16px',
+            borderLeft: i === 0 ? 'none' : `1px solid ${C.border}`,
+          }}>
+            <div style={labelStyle}>{label}</div>
+            <div style={{ fontSize: 16, fontWeight: 'bold', marginTop: 4 }}>{val}</div>
+          </div>
         ))}
       </div>
-      <Table
-        headers={["الرمز", "النوع", "التوقيت", "الجلسة", "الربح/الخسارة"]}
-        rows={filtered.slice(0, 20).map((h) => {
-          const d = new Date(h.time);
-          const dateStr = d.toLocaleDateString("ar");
-          const timeStr = d.toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" });
-          const utcH = d.getUTCHours();
-          const session =
-            utcH >= 13 && utcH < 17 ? { label: "L+NY", color: "#F97316" } :
-            utcH >= 13 && utcH < 22 ? { label: "NY",   color: "#F59E0B" } :
-            utcH >=  8 && utcH < 17 ? { label: "لندن", color: "#34D399" } :
-            utcH >=  0 && utcH <  9 ? { label: "طوكيو",color: "#818CF8" } :
-                                       { label: "—",    color: "#6B7280" };
-          return [
-            h.symbol,
-            <span style={{ color: h.type === "BUY" ? "#34D399" : "#F87171" }}>
-              {h.type === "BUY" ? "▲ شراء" : "▼ بيع"}
-            </span>,
-            <span style={{ fontSize: 11 }}>
-              <span style={{ color: "#fff" }}>{dateStr}</span>
-              <br />
-              <span style={{ color: "#9CA3AF" }}>{timeStr}</span>
-            </span>,
-            <span style={{ background: session.color + "22", color: session.color,
-                           borderRadius: 5, padding: "2px 6px", fontSize: 11 }}>
-              {session.label}
-            </span>,
-            <span style={{ color: h.profit > 0 ? "#4ADE80" : "#F87171", fontWeight: 500 }}>
-              {h.profit > 0 ? "+" : ""}${h.profit?.toFixed(2)}
-            </span>,
-          ];
-        })}
-        empty="لا توجد صفقات"
-      />
-      <div style={ht.count}>
-        عرض {Math.min(filtered.length, 20)} من {filtered.length} صفقة
+
+      <div style={{ marginTop: 16, fontSize: 10, color: C.dim, letterSpacing: 2, textAlign: 'center' }}>
+        GOLD SCALPER X &middot; XAUUSD &middot; MT5 BRIDGE &middot; POLLING EVERY {POLL_MS / 1000}S
       </div>
     </div>
   );
 }
-
-const ht = {
-  filterRow:   { display:"flex", gap:6, marginBottom:8, flexWrap:"wrap" },
-  filterBtn:   { background:"#16161D", border:"0.5px solid #2A2A33", borderRadius:8,
-                 color:"#9CA3AF", padding:"5px 14px", fontSize:12, cursor:"pointer",
-                 fontFamily:"inherit" },
-  filterActive:{ background:"#1D4ED8", color:"#fff", borderColor:"#1D4ED8" },
-  count:       { fontSize:11, color:"#6B7280", textAlign:"center", marginTop:8 },
-};
-// ─────────────────────────────────────────────────────────────────
-
-// ── Trading Sessions Widget ──────────────────────────────────────
-const SESSIONS = [
-  { name: "طوكيو",        open: 0,  close: 9,  color: "#818CF8", quality: "ضعيف للذهب" },
-  { name: "لندن",         open: 8,  close: 17, color: "#34D399", quality: "جيد" },
-  { name: "نيويورك",      open: 13, close: 22, color: "#F59E0B", quality: "جيد" },
-  { name: "تداخل L+NY",  open: 13, close: 17, color: "#F97316", quality: "الأفضل للذهب" },
-];
-
-function TradingSessions() {
-  const [now, setNow] = useState(new Date());
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 30000);
-    return () => clearInterval(t);
-  }, []);
-
-  const utcH = now.getUTCHours() + now.getUTCMinutes() / 60;
-
-  const isActive = (open, close) => {
-    if (open < close) return utcH >= open && utcH < close;
-    return utcH >= open || utcH < close;
-  };
-
-  const nextOpen = (open) => {
-    const diff = open > utcH ? open - utcH : 24 - utcH + open;
-    const h = Math.floor(diff);
-    const m = Math.round((diff - h) * 60);
-    return h > 0 ? `${h}س ${m}د` : `${m}د`;
-  };
-
-  const utcStr = `${String(now.getUTCHours()).padStart(2,"0")}:${String(now.getUTCMinutes()).padStart(2,"0")} UTC`;
-
-  return (
-    <div style={ss.wrap}>
-      <div style={ss.header}>
-        <span style={ss.title}>أوقات التداول</span>
-        <span style={ss.clock}>{utcStr}</span>
-      </div>
-      <div style={ss.grid}>
-        {SESSIONS.map((s) => {
-          const active = isActive(s.open, s.close);
-          return (
-            <div key={s.name} style={{ ...ss.card, borderColor: active ? s.color : "#2A2A33" }}>
-              <div style={ss.cardTop}>
-                <span style={{ ...ss.dot2, background: active ? s.color : "#374151" }} />
-                <span style={{ ...ss.name, color: active ? s.color : "#9CA3AF" }}>{s.name}</span>
-              </div>
-              <div style={ss.time}>
-                {String(s.open).padStart(2,"0")}:00 – {String(s.close).padStart(2,"0")}:00
-              </div>
-              <div style={{ ...ss.badge, background: active ? s.color + "22" : "#16161D",
-                            color: active ? s.color : "#6B7280" }}>
-                {active ? `نشط · ${s.quality}` : `يفتح بعد ${nextOpen(s.open)}`}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div style={ss.hint}>
-        الأوقات بتوقيت UTC · أفضل وقت للذهب: <span style={{color:"#F97316",fontWeight:600}}>13:00–17:00 UTC</span>
-      </div>
-    </div>
-  );
-}
-
-const ss = {
-  wrap:   { background:"#0F0F16", border:"0.5px solid #2A2A33", borderRadius:14,
-            padding:"1rem 1.25rem", marginBottom:"1.5rem" },
-  header: { display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"0.75rem" },
-  title:  { fontSize:14, fontWeight:600, color:"#fff" },
-  clock:  { fontSize:12, color:"#6B7280", fontVariantNumeric:"tabular-nums" },
-  grid:   { display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:10 },
-  card:   { background:"#16161D", borderRadius:10, padding:"0.75rem",
-            border:"1px solid #2A2A33", transition:"border-color .3s" },
-  cardTop:{ display:"flex", alignItems:"center", gap:6, marginBottom:4 },
-  dot2:   { width:7, height:7, borderRadius:"50%", flexShrink:0 },
-  name:   { fontSize:13, fontWeight:500 },
-  time:   { fontSize:11, color:"#6B7280", marginBottom:6, fontVariantNumeric:"tabular-nums" },
-  badge:  { fontSize:11, borderRadius:6, padding:"2px 8px", display:"inline-block" },
-  hint:   { fontSize:11, color:"#6B7280", marginTop:"0.75rem", textAlign:"center" },
-};
-// ─────────────────────────────────────────────────────────────────
-
-function StatPill({ label, value, color = "#fff" }) {
-  return (
-    <div style={styles.statPill}>
-      <p style={styles.statLabel}>{label}</p>
-      <p style={{ ...styles.statValue, color }}>{value}</p>
-    </div>
-  );
-}
-
-const styles = {
-  statusRow:   { display: "flex", alignItems: "center", gap: 10, marginBottom: "1.5rem", flexWrap: "wrap" },
-  dot:         { width: 8, height: 8, borderRadius: "50%", flexShrink: 0 },
-  statusText:  { fontSize: 14, color: "#9CA3AF" },
-  metricsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: "2rem" },
-  metricCard:  { background: "#16161D", borderRadius: 12, padding: "1rem 1.25rem", border: "0.5px solid #2A2A33" },
-  metricLabel: { fontSize: 13, color: "#9CA3AF", margin: "0 0 6px" },
-  metricValue: { fontSize: 24, fontWeight: 500, margin: 0 },
-  sectionTitle:{ fontSize: 15, fontWeight: 500, margin: "1.5rem 0 8px" },
-  tableWrap:   { border: "0.5px solid #2A2A33", borderRadius: 12, overflow: "hidden" },
-  tableRow:    { display: "grid", gridTemplateColumns: "1fr 1fr 1.4fr 0.8fr 1fr", padding: "10px 14px", fontSize: 13, borderTop: "0.5px solid #2A2A33", alignItems: "center" },
-  tableHeader: { background: "#16161D", fontSize: 12, color: "#9CA3AF", borderTop: "none" },
-  emptyRow:    { padding: "1.5rem", textAlign: "center", color: "#6B7280", fontSize: 13 },
-  statsRow:    { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginTop: "1.5rem" },
-  statPill:    { background: "#16161D", borderRadius: 12, padding: "0.875rem 1rem", border: "0.5px solid #2A2A33", textAlign: "center" },
-  statLabel:   { fontSize: 12, color: "#9CA3AF", margin: "0 0 4px" },
-  statValue:   { fontSize: 18, fontWeight: 500, margin: 0 },
-  loading:     { textAlign: "center", padding: "4rem", color: "#9CA3AF" },
-  errorBox:    { textAlign: "center", padding: "2rem", background: "#1F1212", color: "#F87171", borderRadius: 12, maxWidth: 400, margin: "4rem auto" },
-};
