@@ -215,12 +215,21 @@ void ExecuteFastOrder(ENUM_ORDER_TYPE type)
    double price = (type==ORDER_TYPE_BUY)
                   ? SymbolInfoDouble(_Symbol, SYMBOL_ASK)
                   : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+
+   // الحد الأدنى المسموح به للرمز
+   long   stopsLevel = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   long   freezeLevel= SymbolInfoInteger(_Symbol, SYMBOL_TRADE_FREEZE_LEVEL);
+   double minDist    = MathMax((double)(stopsLevel + freezeLevel + 5), 10.0) * _Point;
+
+   double slDist = MathMax(InpStopLossPoints   * _Point, minDist);
+   double tpDist = MathMax(InpTakeProfitPoints * _Point, minDist);
+
    double sl = (type==ORDER_TYPE_BUY)
-               ? price - InpStopLossPoints   * _Point
-               : price + InpStopLossPoints   * _Point;
+               ? price - slDist
+               : price + slDist;
    double tp = (type==ORDER_TYPE_BUY)
-               ? price + InpTakeProfitPoints * _Point
-               : price - InpTakeProfitPoints * _Point;
+               ? price + tpDist
+               : price - tpDist;
 
    request.action       = TRADE_ACTION_DEAL;
    request.symbol       = _Symbol;
