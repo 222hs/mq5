@@ -1,10 +1,10 @@
 //+------------------------------------------------------------------+
 //|                                                GoldScalperEA.mq5 |
-//|                                        GoldScalperX version 9.50 |
+//|                                        GoldScalperX version 9.60 |
 //|  Gold scalper — bar-gated, closed-bar signals, trailing stop     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.50"
+#property version   "9.60"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.50"
+#define EA_VERSION    "9.60"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -48,7 +48,8 @@ CPositionInfo  posInfo;
 
 long     g_magic         = 0;
 int      hRSI = INVALID_HANDLE, hEMA9 = INVALID_HANDLE,
-         hEMA21 = INVALID_HANDLE, hATR = INVALID_HANDLE;
+         hEMA21 = INVALID_HANDLE, hATR = INVALID_HANDLE,
+         hBB = INVALID_HANDLE, hStoch = INVALID_HANDLE;
 datetime g_lastEntryTime = 0;
 datetime g_lastBar       = 0;
 int      g_totalTrades   = 0;
@@ -158,13 +159,16 @@ int OnInit()
    trade.SetDeviationInPoints(50);
    trade.SetTypeFillingBySymbol(_Symbol);
 
-   hRSI   = iRSI(_Symbol, TF, 7,  PRICE_CLOSE);
-   hEMA9  = iMA (_Symbol, TF, 9,  0, MODE_EMA, PRICE_CLOSE);
-   hEMA21 = iMA (_Symbol, TF, 21, 0, MODE_EMA, PRICE_CLOSE);
-   hATR   = iATR(_Symbol, TF, 14);
+   hRSI   = iRSI   (_Symbol, TF, 7,  PRICE_CLOSE);
+   hEMA9  = iMA    (_Symbol, TF, 9,  0, MODE_EMA, PRICE_CLOSE);
+   hEMA21 = iMA    (_Symbol, TF, 21, 0, MODE_EMA, PRICE_CLOSE);
+   hATR   = iATR   (_Symbol, TF, 14);
+   hBB    = iBands (_Symbol, TF, 20, 0, 2.0, PRICE_CLOSE);
+   hStoch = iStochastic(_Symbol, TF, 5, 3, 3, MODE_SMA, STO_LOWHIGH);
 
    if(hRSI==INVALID_HANDLE||hEMA9==INVALID_HANDLE||
-      hEMA21==INVALID_HANDLE||hATR==INVALID_HANDLE)
+      hEMA21==INVALID_HANDLE||hATR==INVALID_HANDLE||
+      hBB==INVALID_HANDLE||hStoch==INVALID_HANDLE)
      { Print(EA_NAME,": indicator init failed"); return(INIT_FAILED); }
 
    LoadSettings();
@@ -177,6 +181,8 @@ int OnInit()
 void OnDeinit(const int reason)
   {
    if(hRSI  !=INVALID_HANDLE) IndicatorRelease(hRSI);
+   if(hBB   !=INVALID_HANDLE) IndicatorRelease(hBB);
+   if(hStoch!=INVALID_HANDLE) IndicatorRelease(hStoch);
    if(hEMA9 !=INVALID_HANDLE) IndicatorRelease(hEMA9);
    if(hEMA21!=INVALID_HANDLE) IndicatorRelease(hEMA21);
    if(hATR  !=INVALID_HANDLE) IndicatorRelease(hATR);
@@ -250,38 +256,53 @@ void OnTick()
    LoadSettings();
 
    double rsi[], ema9[], ema21[], atr[];
+   double bbU[], bbL[], bbM[];
+   double stochK[], stochD[];
    double o[], h[], l[], c[];
-   ArraySetAsSeries(rsi,true);  ArraySetAsSeries(ema9,true);
+   ArraySetAsSeries(rsi,true);   ArraySetAsSeries(ema9,true);
    ArraySetAsSeries(ema21,true); ArraySetAsSeries(atr,true);
+   ArraySetAsSeries(bbU,true);   ArraySetAsSeries(bbL,true); ArraySetAsSeries(bbM,true);
+   ArraySetAsSeries(stochK,true);ArraySetAsSeries(stochD,true);
    ArraySetAsSeries(o,true); ArraySetAsSeries(h,true);
    ArraySetAsSeries(l,true); ArraySetAsSeries(c,true);
 
-   if(CopyBuffer(hRSI,  0,0,4,rsi)  <4) return;
-   if(CopyBuffer(hEMA9, 0,0,4,ema9) <4) return;
-   if(CopyBuffer(hEMA21,0,0,4,ema21)<4) return;
-   if(CopyBuffer(hATR,  0,0,3,atr)  <3) return;
-   if(CopyOpen (_Symbol,TF,0,4,o)<4)    return;
-   if(CopyHigh (_Symbol,TF,0,4,h)<4)    return;
-   if(CopyLow  (_Symbol,TF,0,4,l)<4)    return;
-   if(CopyClose(_Symbol,TF,0,4,c)<4)    return;
+   if(CopyBuffer(hRSI,  0,0,4,rsi)   <4) return;
+   if(CopyBuffer(hEMA9, 0,0,4,ema9)  <4) return;
+   if(CopyBuffer(hEMA21,0,0,4,ema21) <4) return;
+   if(CopyBuffer(hATR,  0,0,3,atr)   <3) return;
+   if(CopyBuffer(hBB,   1,0,4,bbU)   <4) return;  // upper band
+   if(CopyBuffer(hBB,   2,0,4,bbL)   <4) return;  // lower band
+   if(CopyBuffer(hBB,   0,0,4,bbM)   <4) return;  // middle band
+   if(CopyBuffer(hStoch,0,0,4,stochK)<4) return;  // %K
+   if(CopyBuffer(hStoch,1,0,4,stochD)<4) return;  // %D
+   if(CopyOpen (_Symbol,TF,0,4,o)<4)     return;
+   if(CopyHigh (_Symbol,TF,0,4,h)<4)     return;
+   if(CopyLow  (_Symbol,TF,0,4,l)<4)     return;
+   if(CopyClose(_Symbol,TF,0,4,c)<4)     return;
 
-   double rsi1 = rsi[1];
-   double ema91= ema9[1], ema211= ema21[1];
-   double atr1 = atr[1];
+   double rsi1  = rsi[1];
+   double ema91 = ema9[1], ema211 = ema21[1];
+   double atr1  = atr[1];
 
-   // ── STRATEGY: EMA21 Price Cross ──
-   // السعر يتجاوز EMA21 = تغيير اتجاه حقيقي
-   // bar[2] = قبل الكسر، bar[1] = بعد الكسر
-   bool crossUp = (c[2] < ema21[2]) && (c[1] > ema21[1]);  // كسر EMA21 لأعلى → BUY
-   bool crossDn = (c[2] > ema21[2]) && (c[1] < ema21[1]);  // كسر EMA21 لأسفل → SELL
+   // ── STRATEGY: Bollinger Bands + Stochastic ──
+   // السعر يلمس الباند السفلي + Stochastic oversold → BUY (ارتداد لأعلى)
+   // السعر يلمس الباند العلوي + Stochastic overbought → SELL (ارتداد لأسفل)
 
-   // تأكيد إضافي: EMA9 في نفس الاتجاه (تجنب الإشارات الكاذبة وسط الضوضاء)
-   bool ema9Up = (ema9[1] > ema9[2]);
-   bool ema9Dn = (ema9[1] < ema9[2]);
+   // لمس الباند: الشمعة المغلقة أغلقت داخل/خارج الباند
+   bool touchedLower = (l[1] <= bbL[1]);   // لمس أو اخترق الباند السفلي
+   bool touchedUpper = (h[1] >= bbU[1]);   // لمس أو اخترق الباند العلوي
+
+   // Stochastic: %K يتقاطع مع %D في المنطقة المناسبة
+   bool stochBuy  = (stochK[1] < 25.0) && (stochK[1] > stochK[2]); // oversold + يرتد
+   bool stochSell = (stochK[1] > 75.0) && (stochK[1] < stochK[2]); // overbought + ينزل
+
+   // شمعة الإغلاق تؤكد الاتجاه (ارتداد من الباند)
+   bool candleBuy  = (c[1] > o[1]);  // شمعة خضراء (ارتداد من أسفل)
+   bool candleSell = (c[1] < o[1]);  // شمعة حمراء (ارتداد من أعلى)
 
    int signal = 0;
-   if(crossUp && ema9Up) signal =  1;
-   else if(crossDn && ema9Dn) signal = -1;
+   if(touchedLower && stochBuy  && candleBuy)  signal =  1;
+   else if(touchedUpper && stochSell && candleSell) signal = -1;
 
    // Reversal: إذا آخر صفقة خسرت وما في إشارة جديدة، اعكس الاتجاه
    if(g_lastWasLoss && signal == 0) signal = -g_lastLossDir;
