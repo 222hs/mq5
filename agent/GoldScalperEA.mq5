@@ -16,7 +16,7 @@ input double          LotSize      = 0.5;      // Lot size
 input ENUM_TIMEFRAMES TF           = PERIOD_M1;// Working timeframe
 input int             MaxPositions = 5;        // Max open positions
 input int             MaxSpread    = 350;      // Max spread in points
-input int             PendingExpireCandles = 2;// إلغاء الأوردر بعد كم شمعة
+input int             PendingExpireCandles = 3;// إلغاء الأوردر بعد كم شمعة
 input int             OrderMode            = 0;// 0=Stop+Limit  1=Stop فقط  2=Limit فقط
 
 //--- constants
@@ -443,8 +443,8 @@ void OnTick()
    int signal = 0;
    double bodySize = MathAbs(close1 - open1);
 
-   // فلتر doji: تجاهل الشموع بجسم أقل من 30 نقطة
-   if(bodySize >= 30.0 * pt)
+   // فلتر doji: تجاهل الشموع بجسم أقل من 10 نقاط
+   if(bodySize >= 10.0 * pt)
      {
       if     (close1 > open1) signal =  1;  // شمعة خضراء → BUY
       else if(close1 < open1) signal = -1;  // شمعة حمراء → SELL
