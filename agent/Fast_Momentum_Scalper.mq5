@@ -238,10 +238,15 @@ void ExecuteFastOrder(ENUM_ORDER_TYPE type)
    request.price        = price;
    request.sl           = NormalizeDouble(sl, _Digits);
    request.tp           = NormalizeDouble(tp, _Digits);
-   request.deviation    = 5;
+   request.deviation    = 50;
    request.magic        = magicNumber;
    request.comment      = "FMS";
-   request.type_filling = ORDER_FILLING_IOC;
+
+   // اختيار نوع التعبئة المدعوم تلقائياً
+   long fillMode = SymbolInfoInteger(_Symbol, SYMBOL_FILLING_MODE);
+   if((fillMode & SYMBOL_FILLING_FOK)    != 0) request.type_filling = ORDER_FILLING_FOK;
+   else if((fillMode & SYMBOL_FILLING_IOC) != 0) request.type_filling = ORDER_FILLING_IOC;
+   else                                          request.type_filling = ORDER_FILLING_RETURN;
 
    if(OrderSend(request, result))
      { g_totalTrades++; Print("FMS: ", EnumToString(type), " opened #", result.order); }
