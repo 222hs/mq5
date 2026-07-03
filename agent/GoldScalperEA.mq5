@@ -1,10 +1,10 @@
 //+------------------------------------------------------------------+
 //|                                                GoldScalperEA.mq5 |
-//|                                        GoldScalperX version 9.80 |
+//|                                        GoldScalperX version 9.81 |
 //|  Gold scalper — كل شمعة صاعدة BUY، كل شمعة هابطة SELL          |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.80"
+#property version   "9.81"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.80"
+#define EA_VERSION    "9.81"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -104,8 +104,8 @@ void LoadSettings()
    g_maxSpread    = ReadJsonValue("MaxSpread",    (double)MaxSpread);
    g_maxPositions = (int)ReadJsonValue("MaxPositions",(double)MaxPositions);
    g_cooldownSecs = (int)ReadJsonValue("CooldownSecs",(double)CooldownSecs);
-   g_tpUSD        = ReadJsonValue("TP_USD",       2.0);
-   g_slUSD        = ReadJsonValue("SL_USD",       3.0);
+   g_tpUSD        = ReadJsonValue("TP_USD",       4.0);
+   g_slUSD        = ReadJsonValue("SL_USD",       2.0);
    g_botRunning   = (ReadJsonValue("BotRunning",  1.0) > 0.5);
 
    // كتابة الإعدادات الفعلية للـ Agent
