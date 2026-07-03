@@ -1,10 +1,10 @@
 //+------------------------------------------------------------------+
 //|                                                GoldScalperEA.mq5 |
-//|                                        GoldScalperX version 9.02 |
-//|  Gold scalper — bar-gated, closed-bar signals, smart filters     |
+//|                                        GoldScalperX version 9.20 |
+//|  Gold scalper — bar-gated, closed-bar signals, trailing stop     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.15"
+#property version   "9.20"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.15"
+#define EA_VERSION    "9.20"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -59,6 +59,12 @@ int      g_cooldownSecs;
 double   g_maxSpread;
 double   g_tpUSD;
 double   g_slUSD;
+double   g_trailUSD;   // trail drawdown from peak once TP is reached (0=disabled)
+
+//--- trailing stop tracker
+struct TrailData { ulong ticket; double peak; bool armed; };
+TrailData g_trail[20];
+int       g_trailCount = 0;
 
 //+------------------------------------------------------------------+
 long MagicFromSymbol(const string sym)
@@ -105,8 +111,9 @@ void LoadSettings()
    g_maxSpread    = ReadJsonValue("MaxSpread",    (double)MaxSpread);
    g_maxPositions = (int)ReadJsonValue("MaxPositions",(double)MaxPositions);
    g_cooldownSecs = (int)ReadJsonValue("CooldownSecs",(double)CooldownSecs);
-   g_tpUSD        = ReadJsonValue("TP_USD",       3.0);
-   g_slUSD        = ReadJsonValue("SL_USD",       2.0);
+   g_tpUSD        = ReadJsonValue("TP_USD",       5.0);
+   g_slUSD        = ReadJsonValue("SL_USD",       2.5);
+   g_trailUSD     = ReadJsonValue("TrailUSD",     1.0);
    g_botRunning   = (ReadJsonValue("BotRunning",  1.0) > 0.5);
 
    // كتابة الإعدادات الفعلية في ملف مؤقت ثم rename (atomic — يتجنب تعارض القراءة)
@@ -117,6 +124,7 @@ void LoadSettings()
    js += "\"MaxSpread\":"    + IntegerToString((int)g_maxSpread)+ ",";
    js += "\"MaxPositions\":" + IntegerToString(g_maxPositions)  + ",";
    js += "\"CooldownSecs\":" + IntegerToString(g_cooldownSecs)  + ",";
+   js += "\"TrailUSD\":"     + DoubleToString(g_trailUSD,2)     + ",";
    js += "\"BotRunning\":"   + (g_botRunning?"1":"0")           + "}";
    int fh = FileOpen("GSX_Active.tmp", FILE_WRITE|FILE_TXT|FILE_COMMON);
    if(fh != INVALID_HANDLE)
@@ -337,6 +345,24 @@ double NormalizeLot(double lot)
   }
 
 //+------------------------------------------------------------------+
+int FindTrail(ulong tk)
+  {
+   for(int i=0;i<g_trailCount;i++) if(g_trail[i].ticket==tk) return i;
+   return -1;
+  }
+int AddTrail(ulong tk)
+  {
+   if(g_trailCount>=20) return -1;
+   g_trail[g_trailCount].ticket=tk; g_trail[g_trailCount].peak=-999999; g_trail[g_trailCount].armed=false;
+   return g_trailCount++;
+  }
+void RemoveTrail(ulong tk)
+  {
+   for(int i=0;i<g_trailCount;i++)
+     if(g_trail[i].ticket==tk) { g_trail[i]=g_trail[--g_trailCount]; return; }
+  }
+
+//+------------------------------------------------------------------+
 void ManagePositions()
   {
    datetime now = TimeCurrent();
@@ -349,14 +375,34 @@ void ManagePositions()
       double   profit  = posInfo.Profit() + posInfo.Swap() + posInfo.Commission();
       int      ageSeconds = (int)(now - openAt);
 
-      // TP: check immediately
-      if(profit >= g_tpUSD)
-        { trade.PositionClose(tk);
-          Print(EA_NAME,": TP $",DoubleToString(profit,2)," age=",ageSeconds,"s"); continue; }
+      // trailing stop tracker
+      int ti = FindTrail(tk);
+      if(ti < 0) ti = AddTrail(tk);
+      if(ti >= 0)
+        {
+         if(profit > g_trail[ti].peak) g_trail[ti].peak = profit;
+         if(!g_trail[ti].armed && g_trail[ti].peak >= g_tpUSD) g_trail[ti].armed = true;
+        }
+
+      // TP with trailing: once armed, close only when profit drops TrailUSD from peak
+      if(ti >= 0 && g_trail[ti].armed && g_trailUSD > 0)
+        {
+         if(profit <= g_trail[ti].peak - g_trailUSD)
+           { trade.PositionClose(tk); RemoveTrail(tk);
+             Print(EA_NAME,": TRAIL $",DoubleToString(profit,2),
+                   " peak=$",DoubleToString(g_trail[ti].peak,2)); continue; }
+        }
+      else if(profit >= g_tpUSD && (g_trailUSD <= 0 || ti < 0 || !g_trail[ti].armed))
+        {
+         // TrailUSD disabled or not armed yet — simple close at TP
+         if(g_trailUSD <= 0)
+           { trade.PositionClose(tk); if(ti>=0) RemoveTrail(tk);
+             Print(EA_NAME,": TP $",DoubleToString(profit,2)); continue; }
+        }
 
       // SL: wait 60s first (spread cost needs time to recover)
       if(ageSeconds >= 60 && profit <= -g_slUSD)
-        { trade.PositionClose(tk);
+        { trade.PositionClose(tk); if(ti>=0) RemoveTrail(tk);
           Print(EA_NAME,": SL $",DoubleToString(profit,2)," age=",ageSeconds,"s"); continue; }
      }
   }

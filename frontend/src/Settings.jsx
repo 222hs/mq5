@@ -10,6 +10,7 @@ const FIELDS = [
   { key: "MaxSpread",    label: "أقصى سبريد (نقطة)",     unit: "pts",min: 50,   max: 1000, step: 10,   decimals: 0 },
   { key: "MaxPositions", label: "أقصى صفقات مفتوحة",     unit: "",   min: 1,    max: 15,   step: 1,    decimals: 0 },
   { key: "CooldownSecs", label: "وقت الانتظار بين الصفقات",unit:"s", min: 0,    max: 300,  step: 5,    decimals: 0 },
+  { key: "TrailUSD",    label: "Trailing Stop (تراجع من الذروة)", unit: "$", min: 0, max: 10, step: 0.5, decimals: 1 },
 ];
 
 export default function Settings() {
