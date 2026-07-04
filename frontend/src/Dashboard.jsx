@@ -193,8 +193,9 @@ export default function Dashboard() {
   const openTotal = positions.reduce((a, p) => a + (p.profit || 0), 0);
   const lastTrade = history[0] || null;
   const lastProfit= lastTrade ? netOf(lastTrade) : null;
-  const bigPnl    = fmtBig(stats.total_profit);
-  const pnlPos    = stats.total_profit >= 0;
+  const balance   = account?.balance ?? null;
+  const bigPnl    = fmtBig(balance);
+  const pnlPos    = (balance ?? 0) >= 0;
 
   const recent30  = history.slice(0, 30).slice().reverse();
 
@@ -366,9 +367,9 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* TOTAL PNL كبير */}
+          {/* BALANCE كبير */}
           <div style={{display:'flex', flexDirection:'column', alignItems:'center', gap:12}}>
-            <div style={bLabel({fontSize:12, letterSpacing:'4px'})}>TOTAL PNL</div>
+            <div style={bLabel({fontSize:12, letterSpacing:'4px'})}>BALANCE</div>
             <div style={{
               fontSize:'clamp(72px,10vw,130px)',
               fontWeight:'bold',
