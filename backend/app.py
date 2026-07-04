@@ -1,10 +1,11 @@
 """
-MT5 Dashboard Backend
-يستقبل البيانات من الـ Agent (Windows) ويوفرها للـ Dashboard (React)
+MT5 Dashboard Backend — WebSocket edition
+يستقبل البيانات من الـ Agent (Windows) ويبثها فوراً للـ Dashboard عبر Socket.IO
 """
 
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
+from flask_socketio import SocketIO, emit
 import os
 import json
 import sqlite3
@@ -13,7 +14,8 @@ from threading import Lock
 import urllib.request
 
 app = Flask(__name__, static_folder="static", static_url_path="")
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 # ============== الإعدادات ==============
 API_KEY           = os.environ.get("API_KEY", "mysecretkey123")
@@ -46,7 +48,7 @@ DEFAULT_SETTINGS = {
     "CooldownSecs":   0,
     "TrailUSD":       0.0,
     "BotRunning":     1,
-    "Direction":      0,    # 0=free, 1=BUY only, -1=SELL only
+    "Direction":      0,
     "MaxLossPerDay":  50.0,
     "MaxProfitPerDay":200.0,
     "TradeHoursStart":0,
@@ -91,7 +93,6 @@ def init_db():
                 value TEXT
             )
         """)
-        # إدراج الإعدادات الافتراضية إذا ما كانت موجودة
         for k, v in DEFAULT_SETTINGS.items():
             conn.execute(
                 "INSERT OR IGNORE INTO ea_settings (key, value) VALUES (?, ?)",
@@ -176,6 +177,45 @@ def save_settings(new_settings):
         conn.commit()
 
 
+def build_dashboard_payload():
+    """بناء payload الداشبورد الكامل — يُستخدم للـ REST والـ WebSocket"""
+    with data_lock:
+        is_online = False
+        if latest_data["last_update"]:
+            last = datetime.fromisoformat(latest_data["last_update"])
+            is_online = (datetime.now() - last).total_seconds() < 30
+
+        closed_trades = get_history(500)
+        wins   = [t for t in closed_trades if t["profit"] > 0]
+        losses = [t for t in closed_trades if t["profit"] <= 0]
+        win_rate     = (len(wins) / len(closed_trades) * 100) if closed_trades else 0
+        total_profit = sum(
+            t["profit"] + t.get("swap", 0) + t.get("commission", 0)
+            for t in closed_trades
+        )
+
+        return {
+            "account":      latest_data["account"],
+            "positions":    latest_data["positions"],
+            "history":      closed_trades[:50],
+            "is_online":    is_online,
+            "last_update":  latest_data["last_update"],
+            "stats": {
+                "total_trades": len(closed_trades),
+                "wins":         len(wins),
+                "losses":       len(losses),
+                "win_rate":     round(win_rate, 1),
+                "total_profit": round(total_profit, 2),
+            },
+            "settings":     get_settings(),
+            "bot_running":  int(get_settings().get("BotRunning", 1)) == 1,
+            "candles":      latest_data["candles"],
+            "sessions":     latest_data["sessions"],
+            "claude_advice":latest_data["claude_advice"],
+            "claude_time":  latest_data["claude_time"],
+        }
+
+
 # ---------- Claude AI ----------
 def call_claude(consecutive_losses, recent_trades, account):
     if not ANTHROPIC_API_KEY:
@@ -215,7 +255,23 @@ def call_claude(consecutive_losses, recent_trades, account):
         return f"Claude error: {str(e)[:60]}"
 
 
-# ---------- routes ----------
+# ---------- WebSocket events ----------
+@socketio.on("connect")
+def on_connect():
+    """عند اتصال client جديد، يبعث له snapshot فوري"""
+    try:
+        payload = build_dashboard_payload()
+        emit("dashboard", payload)
+    except Exception:
+        pass
+
+
+@socketio.on("disconnect")
+def on_disconnect():
+    pass
+
+
+# ---------- HTTP routes ----------
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
 def index(path):
@@ -249,7 +305,7 @@ def update_data():
 
         upsert_history(history_payload)
 
-    # check consecutive losses → call Claude
+    # Claude consecutive losses check
     settings = get_settings()
     claude_enabled = int(settings.get("ClaudeEnabled", 1)) == 1
     if claude_enabled and history_payload:
@@ -262,60 +318,32 @@ def update_data():
                 break
         if consecutive >= 5:
             last_claude = latest_data.get("claude_time")
-            # avoid spamming — call only once per streak
             if last_claude is None or consecutive == 5:
                 advice = call_claude(consecutive, recent, latest_data["account"] or {})
                 with data_lock:
                     latest_data["claude_advice"] = advice
                     latest_data["claude_time"]   = now
 
+    # بث التحديث لكل الـ clients المتصلين فوراً
+    try:
+        dashboard_payload = build_dashboard_payload()
+        socketio.emit("dashboard", dashboard_payload)
+    except Exception:
+        pass
+
     return jsonify({"status": "ok"})
 
 
 @app.route("/api/dashboard", methods=["GET"])
 def get_dashboard():
-    with data_lock:
-        is_online = False
-        if latest_data["last_update"]:
-            last = datetime.fromisoformat(latest_data["last_update"])
-            is_online = (datetime.now() - last).total_seconds() < 30
-
-        closed_trades = get_history(500)
-        wins   = [t for t in closed_trades if t["profit"] > 0]
-        losses = [t for t in closed_trades if t["profit"] <= 0]
-        win_rate     = (len(wins) / len(closed_trades) * 100) if closed_trades else 0
-        total_profit = sum(
-            t["profit"] + t.get("swap", 0) + t.get("commission", 0)
-            for t in closed_trades
-        )
-
-        return jsonify({
-            "account":     latest_data["account"],
-            "positions":   latest_data["positions"],
-            "history":     closed_trades[:50],
-            "is_online":   is_online,
-            "last_update": latest_data["last_update"],
-            "stats": {
-                "total_trades": len(closed_trades),
-                "wins":         len(wins),
-                "losses":       len(losses),
-                "win_rate":     round(win_rate, 1),
-                "total_profit": round(total_profit, 2),
-            },
-            "settings":    get_settings(),
-            "bot_running": int(get_settings().get("BotRunning", 1)) == 1,
-            "candles":      latest_data["candles"],
-            "sessions":     latest_data["sessions"],
-            "claude_advice":latest_data["claude_advice"],
-            "claude_time":  latest_data["claude_time"],
-        })
+    return jsonify(build_dashboard_payload())
 
 
 @app.route("/api/settings", methods=["GET"])
 def api_get_settings():
     try:
         return jsonify(get_settings())
-    except Exception as e:
+    except Exception:
         return jsonify(DEFAULT_SETTINGS), 200
 
 
@@ -330,6 +358,13 @@ def api_save_settings():
         save_settings(body)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+    # بث الإعدادات الجديدة لكل الـ clients
+    try:
+        socketio.emit("settings", get_settings())
+    except Exception:
+        pass
+
     return jsonify({"status": "ok", "settings": get_settings()})
 
 
@@ -343,6 +378,16 @@ def update_candles():
             latest_data["candles"] = payload["candles"]
         if payload.get("sessions"):
             latest_data["sessions"] = payload["sessions"]
+
+    # بث الشمعات فوراً
+    try:
+        socketio.emit("candles", {
+            "candles":  latest_data["candles"],
+            "sessions": latest_data["sessions"],
+        })
+    except Exception:
+        pass
+
     return jsonify({"status": "ok"})
 
 
@@ -364,6 +409,12 @@ def bot_control():
     if action not in ("start", "stop"):
         return jsonify({"error": "action must be start or stop"}), 400
     save_settings({"BotRunning": 1 if action == "start" else 0})
+
+    try:
+        socketio.emit("settings", get_settings())
+    except Exception:
+        pass
+
     return jsonify({"status": "ok", "BotRunning": 1 if action == "start" else 0})
 
 
@@ -374,4 +425,4 @@ def health():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    socketio.run(app, host="0.0.0.0", port=port)
