@@ -203,7 +203,7 @@ export default function Dashboard() {
   const cumPts = dayTrades.map(t => (cum += netOf(t)));
   const peak24 = cumPts.length ? Math.max(...cumPts) : 0;
 
-  const R = 80, CIRC = 2 * Math.PI * R;
+  const R = 130, CIRC = 2 * Math.PI * R;
   const streakPct = Math.min(1, streak / 20);
 
   const allNets   = history.map(t => netOf(t));
@@ -331,39 +331,73 @@ export default function Dashboard() {
 
       <div style={{padding:'1.25rem'}}>
 
-        {/* ═══ WIN STREAK BIG RING ══════════════════════════════ */}
-        <div className="bcard" style={bCard({marginBottom:'1.25rem', display:'flex', alignItems:'center', justifyContent:'center', gap:32, padding:'1.5rem 2rem'})}>
-          <svg width="200" height="200" viewBox="0 0 200 200">
-            <circle cx="100" cy="100" r={R} fill="none" stroke={C.faint} strokeWidth="10"/>
-            <circle cx="100" cy="100" r={R} fill="none"
-              stroke={streak>0 ? C.neon : C.faint} strokeWidth="10"
-              strokeDasharray={`${CIRC*streakPct} ${CIRC}`}
-              transform="rotate(-90 100 100)" strokeLinecap="butt"
-              style={{filter: streak>0 ? `drop-shadow(0 0 8px ${C.neon})` : 'none'}}/>
-            <text x="100" y="112" textAnchor="middle"
-              fontSize="60" fontWeight="bold" fontFamily={C.mono}
-              fill={streak>0 ? C.neon : C.muted}>{streak}</text>
-          </svg>
-          <div>
-            <div style={bLabel({fontSize:13, color:C.muted, marginBottom:8})}>WIN STREAK</div>
-            <div style={{fontSize:28, fontWeight:'bold', color: streak>0?C.neon:C.muted, letterSpacing:'4px'}}>
-              {streak > 0 ? `${streak} IN A ROW` : 'NO STREAK'}
-            </div>
-            <div style={{marginTop:12, display:'flex', gap:24}}>
-              <div>
-                <div style={bLabel({fontSize:9})}>WINS</div>
-                <div style={{fontSize:22, fontWeight:'bold', color:C.neon}}>{stats.wins??0}</div>
+        {/* ═══ WIN STREAK + TOTAL PNL ══════════════════════════ */}
+        <div className="bcard" style={bCard({marginBottom:'1.25rem', display:'flex', alignItems:'center', justifyContent:'space-around', flexWrap:'wrap', gap:40, padding:'2.5rem 3rem'})}>
+
+          {/* دائرة WIN STREAK */}
+          <div style={{display:'flex', flexDirection:'column', alignItems:'center', gap:16}}>
+            <svg width="320" height="320" viewBox="0 0 320 320">
+              <circle cx="160" cy="160" r={R} fill="none" stroke={C.faint} strokeWidth="14"/>
+              <circle cx="160" cy="160" r={R} fill="none"
+                stroke={streak>0 ? C.neon : C.faint} strokeWidth="14"
+                strokeDasharray={`${CIRC*streakPct} ${CIRC}`}
+                transform="rotate(-90 160 160)" strokeLinecap="butt"
+                style={{filter: streak>0 ? `drop-shadow(0 0 12px ${C.neon})` : 'none'}}/>
+              <text x="160" y="148" textAnchor="middle"
+                fontSize="90" fontWeight="bold" fontFamily={C.mono}
+                fill={streak>0 ? C.neon : C.muted}>{streak}</text>
+              <text x="160" y="196" textAnchor="middle"
+                fontSize="18" fontWeight="bold" fontFamily={C.mono}
+                fill={C.muted} letterSpacing="4">WIN STREAK</text>
+            </svg>
+            <div style={{display:'flex', gap:36}}>
+              <div style={{textAlign:'center'}}>
+                <div style={bLabel({fontSize:10})}>WINS</div>
+                <div style={{fontSize:28, fontWeight:'bold', color:C.neon}}>{stats.wins??0}</div>
               </div>
-              <div>
-                <div style={bLabel({fontSize:9})}>LOSSES</div>
-                <div style={{fontSize:22, fontWeight:'bold', color:C.red}}>{stats.losses??0}</div>
+              <div style={{textAlign:'center'}}>
+                <div style={bLabel({fontSize:10})}>LOSSES</div>
+                <div style={{fontSize:28, fontWeight:'bold', color:C.red}}>{stats.losses??0}</div>
               </div>
-              <div>
-                <div style={bLabel({fontSize:9})}>WIN RATE</div>
-                <div style={{fontSize:22, fontWeight:'bold', color: stats.win_rate>=50?C.neon:C.red}}>{stats.win_rate}%</div>
+              <div style={{textAlign:'center'}}>
+                <div style={bLabel({fontSize:10})}>WIN RATE</div>
+                <div style={{fontSize:28, fontWeight:'bold', color: stats.win_rate>=50?C.neon:C.red}}>{stats.win_rate}%</div>
               </div>
             </div>
           </div>
+
+          {/* TOTAL PNL كبير */}
+          <div style={{display:'flex', flexDirection:'column', alignItems:'center', gap:12}}>
+            <div style={bLabel({fontSize:12, letterSpacing:'4px'})}>TOTAL PNL</div>
+            <div style={{
+              fontSize:'clamp(72px,10vw,130px)',
+              fontWeight:'bold',
+              fontFamily:C.mono,
+              fontVariantNumeric:'tabular-nums',
+              lineHeight:1,
+              color: pnlPos ? C.neon : C.red,
+              textShadow: pnlPos
+                ? '0 0 40px rgba(0,255,65,0.7), 0 0 80px rgba(0,255,65,0.3)'
+                : '0 0 40px rgba(255,69,96,0.7), 0 0 80px rgba(255,69,96,0.3)',
+            }}>
+              {bigPnl.neg ? '-$' : '$'}{bigPnl.dollars}
+              <span style={{fontSize:'35%', opacity:0.6}}>.{bigPnl.cents}</span>
+            </div>
+            <div style={{fontSize:14, color:C.muted, letterSpacing:'2px', textTransform:'uppercase'}}>
+              {stats.total_trades.toLocaleString()} TRADES &nbsp;·&nbsp; {tradesPerDay.toFixed(1)}/DAY
+            </div>
+            <div style={{marginTop:8, display:'flex', gap:32}}>
+              <div style={{textAlign:'center'}}>
+                <div style={bLabel({fontSize:10})}>TODAY NET</div>
+                <div style={{fontSize:26, fontWeight:'bold', color: todayNet>=0?C.neon:C.red, fontVariantNumeric:'tabular-nums'}}>{fmtMoney(todayNet,true)}</div>
+              </div>
+              <div style={{textAlign:'center'}}>
+                <div style={bLabel({fontSize:10})}>AVG/TRADE</div>
+                <div style={{fontSize:26, fontWeight:'bold', color: avgPerTrade>=0?C.neon:C.red, fontVariantNumeric:'tabular-nums'}}>{fmtMoney(avgPerTrade,true)}</div>
+              </div>
+            </div>
+          </div>
+
         </div>
 
         {/* ═══ MAIN 3-COL GRID: STATS | CHART | PIPELINE ══════ */}
