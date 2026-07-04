@@ -129,10 +129,15 @@ export default function Dashboard() {
 
     socket.on('dashboard', handleDashboard);
     socket.on('candles', (d) => setCandleData(d));
+    socket.on('settings', (s) => {
+      settingsDirty.current = false;
+      setSettingsDraft({ ...s });
+    });
 
     return () => {
       socket.off('dashboard', handleDashboard);
       socket.off('candles');
+      socket.off('settings');
       socket.disconnect();
       clearTimeout(popupTimer.current);
     };
