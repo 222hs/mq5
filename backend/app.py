@@ -105,14 +105,19 @@ def init_db():
                     saved = json.load(f)
             except Exception:
                 saved = {}
-        # قيم الـ backup تتجاوز الافتراضية، لكن لا نلمس قيم موجودة أصلاً في DB
+        # استعادة إعدادات المستخدم من الـ backup
         for k, v in saved.items():
             if k in DEFAULT_SETTINGS:
                 conn.execute(
                     "INSERT OR REPLACE INTO ea_settings (key, value) VALUES (?, ?)",
                     (k, str(v))
                 )
-        # الافتراضية فقط للمفاتيح الناقصة — INSERT OR IGNORE حتى لا تدهس قيم محفوظة
+        # استعادة علامة _user_saved من الـ backup
+        if saved.get("_user_saved"):
+            conn.execute(
+                "INSERT OR REPLACE INTO ea_settings (key, value) VALUES ('_user_saved', '1')"
+            )
+        # الافتراضية فقط للمفاتيح الناقصة
         for k, v in DEFAULT_SETTINGS.items():
             conn.execute(
                 "INSERT OR IGNORE INTO ea_settings (key, value) VALUES (?, ?)",
@@ -213,9 +218,10 @@ def is_user_saved():
 
 
 def _write_settings_backup():
-    # اكتب backup JSON حتى تُستعاد بعد كل redeploy
     try:
         current = get_settings()
+        # احفظ علامة _user_saved حتى تبقى بعد كل redeploy
+        current["_user_saved"] = 1 if is_user_saved() else 0
         tmp = SETTINGS_BACKUP + ".tmp"
         with open(tmp, "w") as f:
             json.dump(current, f, indent=2)
@@ -428,6 +434,9 @@ def api_seed_settings():
     body = request.get_json(silent=True)
     if not body:
         return jsonify({"error": "No data"}), 400
+    # لا تقبل الـ seed إذا المستخدم سبق وحفظ إعدادات — داشبورد له الأولوية
+    if is_user_saved():
+        return jsonify({"status": "ok", "applied": False, "settings": get_settings()})
     try:
         save_settings(body, mark_user_saved=False)
     except Exception as e:
