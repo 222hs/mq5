@@ -376,13 +376,21 @@ int OnInit()
 
    LoadSettings();
    CreateDashboard();
+   EventSetTimer(10); // reload settings كل 10 ثواني
    Print(EA_NAME, " v", EA_VERSION, " | Magic=", g_magic, " | TF=", EnumToString(TF));
    return(INIT_SUCCEEDED);
   }
 
 //+------------------------------------------------------------------+
+void OnTimer()
+  {
+   LoadSettings(); // تطبيق أي تغيير فوري من الداشبورد
+  }
+
+//+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
+   EventKillTimer();
    CancelPendingOrders();
    if(hRSI != INVALID_HANDLE) IndicatorRelease(hRSI);
    if(hATR != INVALID_HANDLE) IndicatorRelease(hATR);
