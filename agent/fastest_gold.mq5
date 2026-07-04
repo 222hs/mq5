@@ -22,7 +22,8 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 #define EA_NAME       "GoldScalperX"
 #define EA_VERSION    "9.12"
 #define DASH_PREFIX   "GSX_D_"
-#define SETTINGS_FILE "GSX_Settings.json"
+#define SETTINGS_FILE   "GSX_Settings.json"
+#define CURRENT_FILE    "GSX_Current.json"
 
 //--- panel layout
 #define PANEL_X   10
@@ -107,6 +108,29 @@ double ReadJsonValue(const string key, const double fallback)
 //+------------------------------------------------------------------+
 bool     g_botRunning = true;
 
+//+------------------------------------------------------------------+
+void WriteCurrentSettings()
+  {
+   // يكتب الإعدادات الفعلية الشغّالة حالياً → الـ Agent يقرأها ويرفعها للداشبورد
+   int fh = FileOpen(CURRENT_FILE, FILE_WRITE|FILE_TXT|FILE_COMMON);
+   if(fh == INVALID_HANDLE) return;
+   string j = "{\n";
+   j += "  \"LotSize\": "        + DoubleToString(g_lot,2)           + ",\n";
+   j += "  \"TP_USD\": "         + DoubleToString(g_tpUSD,2)         + ",\n";
+   j += "  \"SL_USD\": "         + DoubleToString(g_slUSD,2)         + ",\n";
+   j += "  \"MaxSpread\": "      + DoubleToString(g_maxSpread,0)     + ",\n";
+   j += "  \"MaxPositions\": "   + IntegerToString(g_maxPositions)   + ",\n";
+   j += "  \"CooldownSecs\": "   + IntegerToString(g_cooldownSecs)   + ",\n";
+   j += "  \"MaxLossPerDay\": "  + DoubleToString(g_maxLossPerDay,2) + ",\n";
+   j += "  \"MaxProfitPerDay\": "+ DoubleToString(g_maxProfitPerDay,2)+ ",\n";
+   j += "  \"TradeHoursStart\": "+ IntegerToString(g_tradeHoursStart)+ ",\n";
+   j += "  \"TradeHoursEnd\": "  + IntegerToString(g_tradeHoursEnd)  + ",\n";
+   j += "  \"BotRunning\": "     + (g_botRunning ? "1" : "0")        + "\n";
+   j += "}";
+   FileWriteString(fh, j);
+   FileClose(fh);
+  }
+
 void LoadSettings()
   {
    g_lot        = ReadJsonValue("LotSize",      LotSize);
@@ -124,6 +148,7 @@ void LoadSettings()
          " maxPos=",g_maxPositions," spread=",g_maxSpread,
          " maxLoss$=",g_maxLossPerDay," maxProfit$=",g_maxProfitPerDay,
          " hours=",g_tradeHoursStart,"-",g_tradeHoursEnd);
+   WriteCurrentSettings();
   }
 
 //+------------------------------------------------------------------+
