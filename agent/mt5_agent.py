@@ -82,6 +82,22 @@ def get_open_positions():
     return result
 
 
+def detect_gold_symbol():
+    """يكتشف رمز الذهب المتاح في الحساب تلقائياً"""
+    candidates = ["XAUUSD", "XAUUSDm", "XAUUSD.", "GOLD", "XAUUSDc", "XAUUSD+"]
+    for sym in candidates:
+        info = mt5.symbol_info(sym)
+        if info is not None and info.visible:
+            return sym
+    # إذا ما لقى، يجرب أي رمز فيه XAU
+    all_symbols = mt5.symbols_get()
+    if all_symbols:
+        for s in all_symbols:
+            if "XAU" in s.name or "GOLD" in s.name.upper():
+                return s.name
+    return "XAUUSD"
+
+
 def get_candles(symbol="XAUUSD", timeframe=mt5.TIMEFRAME_M1, count=80):
     """يجلب آخر N شمعة M1"""
     rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
@@ -152,7 +168,8 @@ def send_update(data):
 
 def send_candles():
     try:
-        candles  = get_candles("XAUUSD", mt5.TIMEFRAME_M1, 60)
+        symbol   = detect_gold_symbol()
+        candles  = get_candles(symbol, mt5.TIMEFRAME_M1, 60)
         sessions = get_trading_sessions()
         response = requests.post(
             f"{BACKEND_URL}/api/candles",
@@ -160,7 +177,7 @@ def send_candles():
             headers=HEADERS, timeout=20
         )
         if response.status_code == 200:
-            print(f"🕯️  {datetime.now().strftime('%H:%M:%S')} - تم إرسال {len(candles)} شمعة")
+            print(f"🕯️  {datetime.now().strftime('%H:%M:%S')} - {symbol}: تم إرسال {len(candles)} شمعة")
     except requests.exceptions.Timeout:
         print("⏳ timeout إرسال الشمعات")
     except Exception as e:
