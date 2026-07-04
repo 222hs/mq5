@@ -105,10 +105,17 @@ def init_db():
                     saved = json.load(f)
             except Exception:
                 saved = {}
-        merged = {**DEFAULT_SETTINGS, **{k: v for k, v in saved.items() if k in DEFAULT_SETTINGS}}
-        for k, v in merged.items():
+        # قيم الـ backup تتجاوز الافتراضية، لكن لا نلمس قيم موجودة أصلاً في DB
+        for k, v in saved.items():
+            if k in DEFAULT_SETTINGS:
+                conn.execute(
+                    "INSERT OR REPLACE INTO ea_settings (key, value) VALUES (?, ?)",
+                    (k, str(v))
+                )
+        # الافتراضية فقط للمفاتيح الناقصة — INSERT OR IGNORE حتى لا تدهس قيم محفوظة
+        for k, v in DEFAULT_SETTINGS.items():
             conn.execute(
-                "INSERT OR REPLACE INTO ea_settings (key, value) VALUES (?, ?)",
+                "INSERT OR IGNORE INTO ea_settings (key, value) VALUES (?, ?)",
                 (k, str(v))
             )
         conn.commit()
@@ -179,7 +186,7 @@ def get_settings():
         return result
 
 
-def save_settings(new_settings):
+def save_settings(new_settings, mark_user_saved=True):
     with get_db() as conn:
         for k, v in new_settings.items():
             if k in DEFAULT_SETTINGS:
@@ -187,7 +194,25 @@ def save_settings(new_settings):
                     "INSERT INTO ea_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                     (k, str(v))
                 )
+        if mark_user_saved:
+            # علامة أن المستخدم حفظ إعدادات في عمر هذا الـ container —
+            # تمنع الـ agent seed من دهسها. تُمسح تلقائياً مع كل redeploy (وهذا مقصود)
+            conn.execute(
+                "INSERT OR REPLACE INTO ea_settings (key, value) VALUES ('_user_saved', '1')"
+            )
         conn.commit()
+    _write_settings_backup()
+
+
+def is_user_saved():
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT value FROM ea_settings WHERE key='_user_saved'"
+        ).fetchone()
+        return row is not None
+
+
+def _write_settings_backup():
     # اكتب backup JSON حتى تُستعاد بعد كل redeploy
     try:
         current = get_settings()
@@ -388,6 +413,32 @@ def api_save_settings():
         pass
 
     return jsonify({"status": "ok", "settings": get_settings()})
+
+
+@app.route("/api/settings/seed", methods=["POST"])
+def api_seed_settings():
+    """
+    الـ Agent يدفع إعداداته المحلية (GSX_Settings.json) هنا.
+    تُقبل فقط إذا كان الـ container جديداً (لم يحفظ المستخدم شيئاً بعد) —
+    هكذا تُستعاد الإعدادات الحقيقية بعد كل Railway redeploy،
+    ولا يستطيع ملف agent قديم أن يدهس حفظاً جديداً من الداشبورد.
+    """
+    if not check_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True)
+    if not body:
+        return jsonify({"error": "No data"}), 400
+    if is_user_saved():
+        return jsonify({"status": "ok", "applied": False, "settings": get_settings()})
+    try:
+        save_settings(body, mark_user_saved=False)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    try:
+        socketio.emit("settings", get_settings())
+    except Exception:
+        pass
+    return jsonify({"status": "ok", "applied": True, "settings": get_settings()})
 
 
 @app.route("/api/candles", methods=["POST"])
