@@ -16,7 +16,7 @@ input double          LotSize      = 0.5;      // Lot size
 input ENUM_TIMEFRAMES TF           = PERIOD_M1;// Working timeframe
 input int             MaxPositions = 5;        // Max open positions
 input int             MaxSpread    = 350;      // Max spread in points
-input int             PendingExpireCandles = 3;// إلغاء الأوردر بعد كم شمعة
+input int             PendingExpireCandles = 2;// إلغاء الأوردر بعد كم شمعة
 input int             OrderMode            = 0;// 0=Stop+Limit  1=Stop فقط  2=Limit فقط
 
 //--- constants
@@ -272,17 +272,17 @@ void CheckOCO()
 //+------------------------------------------------------------------+
 void PlacePendingOCO(int signal, double high1, double low1, double atr1)
   {
-   int    digs   = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
-   double pt     = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   long   sl0    = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
-   long   frz    = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_FREEZE_LEVEL);
-   double minDist= MathMax((double)(sl0+frz+5), 10.0) * pt;
-   long   spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
-   double lot    = NormalizeLot(g_lot);
+   int    digs    = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   double tickSz  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   long   sl0     = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   long   frz     = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_FREEZE_LEVEL);
+   double minDist = MathMax((double)(sl0+frz+5), 10.0) * tickSz;
+   long   spread  = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+   double lot     = NormalizeLot(g_lot);
 
-   double tpDist = MathMax(USDtoPrice(g_tpUSD), minDist * 2.0);
-   double slDist = MathMax(USDtoPrice(g_slUSD), minDist);
-   double offset = MathMax(25.0 * pt, (double)spread * pt * 1.5); // Stop offset فوق/تحت الـ High/Low
+   double tpDist  = MathMax(USDtoPrice(g_tpUSD), minDist * 2.0);
+   double slDist  = MathMax(USDtoPrice(g_slUSD), minDist);
+   double offset  = MathMax(atr1 * 0.1, minDist * 3.0); // offset ديناميكي بناءً على ATR
 
    double range  = high1 - low1;
    double mid    = (high1 + low1) / 2.0;
@@ -302,8 +302,7 @@ void PlacePendingOCO(int signal, double high1, double low1, double atr1)
          if(trade.BuyStop(lot, stopPrice, _Symbol, stopSL, stopTP, ORDER_TIME_GTC, 0, EA_NAME))
             g_stopTicket = trade.ResultOrder();
 
-      // Buy Limit — فقط لو المدى كافي (أكبر من 50 نقطة = 0.50$)
-      if(OrderMode != 1 && range >= 50.0 * pt && limitPrice > SymbolInfoDouble(_Symbol, SYMBOL_ASK) - 2*offset)
+      if(OrderMode != 1 && range >= minDist * 5 && limitPrice > SymbolInfoDouble(_Symbol, SYMBOL_ASK) - 2*offset)
         {
          if(trade.BuyLimit(lot, limitPrice, _Symbol, limitSL, limitTP, ORDER_TIME_GTC, 0, EA_NAME))
             g_limitTicket = trade.ResultOrder();
@@ -324,8 +323,7 @@ void PlacePendingOCO(int signal, double high1, double low1, double atr1)
          if(trade.SellStop(lot, stopPrice, _Symbol, stopSL, stopTP, ORDER_TIME_GTC, 0, EA_NAME))
             g_stopTicket = trade.ResultOrder();
 
-      // Sell Limit — فقط لو المدى كافي
-      if(OrderMode != 1 && range >= 50.0 * pt && limitPrice < SymbolInfoDouble(_Symbol, SYMBOL_BID) + 2*offset)
+      if(OrderMode != 1 && range >= minDist * 5 && limitPrice < SymbolInfoDouble(_Symbol, SYMBOL_BID) + 2*offset)
         {
          if(trade.SellLimit(lot, limitPrice, _Symbol, limitSL, limitTP, ORDER_TIME_GTC, 0, EA_NAME))
             g_limitTicket = trade.ResultOrder();
@@ -437,14 +435,13 @@ void OnTick()
 
    double atr1  = atr[1];
    double high1 = h[1], low1 = l[1], open1 = o[1], close1 = c[1];
-   double pt    = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-
    // ── إشارة الشمعة المغلقة ──
    int signal = 0;
    double bodySize = MathAbs(close1 - open1);
+   double range1   = high1 - low1;
 
-   // فلتر doji: تجاهل الشموع بجسم أقل من 10 نقاط
-   if(bodySize >= 10.0 * pt)
+   // فلتر doji: جسم أكبر من 10% من مدى الشمعة (يعمل على أي رمز)
+   if(bodySize >= range1 * 0.10 && range1 > 0)
      {
       if     (close1 > open1) signal =  1;  // شمعة خضراء → BUY
       else if(close1 < open1) signal = -1;  // شمعة حمراء → SELL
