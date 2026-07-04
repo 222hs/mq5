@@ -121,6 +121,10 @@ export default function Dashboard() {
       seenTickets.current = tickets;
       setData(d);
       setSettingsDraft(prev => (prev === null && d.settings) ? { ...d.settings } : prev);
+      // الشمعات تأتي داخل dashboard snapshot عند الاتصال الأول
+      if (Array.isArray(d.candles) && d.candles.length > 0) {
+        setCandleData({ candles: d.candles, sessions: d.sessions || {} });
+      }
     };
 
     socket.on('dashboard', handleDashboard);
