@@ -88,6 +88,7 @@ export default function Dashboard() {
   const [popup, setPopup] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsDraft, setSettingsDraft] = useState(null);
+  const settingsDirty = useRef(false);
   const [saveMsg, setSaveMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const [candleData, setCandleData] = useState({ candles: [], sessions: {} });
@@ -119,7 +120,7 @@ export default function Dashboard() {
       }
       seenTickets.current = tickets;
       setData(d);
-      setSettingsDraft(prev => (prev === null && d.settings) ? { ...d.settings } : prev);
+      if (d.settings && !settingsDirty.current) setSettingsDraft({ ...d.settings });
       // الشمعات تأتي داخل dashboard snapshot عند الاتصال الأول
       if (Array.isArray(d.candles) && d.candles.length > 0) {
         setCandleData({ candles: d.candles, sessions: d.sessions || {} });
@@ -158,6 +159,7 @@ export default function Dashboard() {
         headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
         body: JSON.stringify({ [key]: value }),
       });
+      if (r.ok) settingsDirty.current = false;
       setSaveMsg(r.ok ? `✓ ${key} SAVED` : 'ERROR');
     } catch (e) { setSaveMsg('ERROR'); }
     setBusy(false);
@@ -750,7 +752,7 @@ export default function Dashboard() {
                   <input
                     type="number" step="any"
                     value={settingsDraft[k]??''}
-                    onChange={e=>setSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}))}
+                    onChange={e=>{settingsDirty.current=true;setSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}));}}
                     style={{
                       fontFamily:C.mono, fontSize:12, width:88,
                       padding:'6px 8px', background:C.bg,
