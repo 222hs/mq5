@@ -194,8 +194,10 @@ export default function Dashboard() {
   const lastTrade = history[0] || null;
   const lastProfit= lastTrade ? netOf(lastTrade) : null;
   const balance   = account?.balance ?? null;
-  const bigPnl    = fmtBig(balance);
-  const pnlPos    = (balance ?? 0) >= 0;
+  const bigBal    = fmtBig(balance);
+  const balPos    = (balance ?? 0) >= 0;
+  const bigPnl    = fmtBig(stats.total_profit);
+  const pnlPos    = stats.total_profit >= 0;
 
   const recent30  = history.slice(0, 30).slice().reverse();
 
@@ -376,13 +378,13 @@ export default function Dashboard() {
               fontFamily:C.mono,
               fontVariantNumeric:'tabular-nums',
               lineHeight:1,
-              color: pnlPos ? C.neon : C.red,
-              textShadow: pnlPos
+              color: balPos ? C.neon : C.red,
+              textShadow: balPos
                 ? '0 0 40px rgba(0,255,65,0.7), 0 0 80px rgba(0,255,65,0.3)'
                 : '0 0 40px rgba(255,69,96,0.7), 0 0 80px rgba(255,69,96,0.3)',
             }}>
-              {bigPnl.neg ? '-$' : '$'}{bigPnl.dollars}
-              <span style={{fontSize:'35%', opacity:0.6}}>.{bigPnl.cents}</span>
+              {bigBal.neg ? '-$' : '$'}{bigBal.dollars}
+              <span style={{fontSize:'35%', opacity:0.6}}>.{bigBal.cents}</span>
             </div>
             <div style={{fontSize:14, color:C.muted, letterSpacing:'2px', textTransform:'uppercase'}}>
               {stats.total_trades.toLocaleString()} TRADES &nbsp;·&nbsp; {tradesPerDay.toFixed(1)}/DAY
