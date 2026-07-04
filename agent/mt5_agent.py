@@ -138,12 +138,14 @@ def get_recent_history(days=30):
 def send_update(data):
     try:
         response = requests.post(
-            f"{BACKEND_URL}/api/update", json=data, headers=HEADERS, timeout=5
+            f"{BACKEND_URL}/api/update", json=data, headers=HEADERS, timeout=20
         )
         if response.status_code == 200:
             print(f"✅ {datetime.now().strftime('%H:%M:%S')} - تم إرسال البيانات")
         else:
             print(f"⚠️ خطأ بالإرسال: {response.status_code}")
+    except requests.exceptions.Timeout:
+        print(f"⏳ {datetime.now().strftime('%H:%M:%S')} - timeout إرسال البيانات (Railway نائمة؟)")
     except Exception as e:
         print(f"❌ فشل الاتصال بالـ Backend: {e}")
 
@@ -155,10 +157,12 @@ def send_candles():
         response = requests.post(
             f"{BACKEND_URL}/api/candles",
             json={"candles": candles, "sessions": sessions},
-            headers=HEADERS, timeout=5
+            headers=HEADERS, timeout=20
         )
         if response.status_code == 200:
             print(f"🕯️  {datetime.now().strftime('%H:%M:%S')} - تم إرسال {len(candles)} شمعة")
+    except requests.exceptions.Timeout:
+        print("⏳ timeout إرسال الشمعات")
     except Exception as e:
         print(f"❌ فشل إرسال الشمعات: {e}")
 
@@ -175,29 +179,41 @@ def read_local_settings():
 
 
 def sync_settings():
-    """يسحب الإعدادات من الصفحة ويكتبها للبوت"""
-    try:
-        r = requests.get(f"{BACKEND_URL}/api/settings", headers=HEADERS, timeout=10)
-        if r.status_code != 200:
+    """يسحب الإعدادات من الصفحة ويكتبها للبوت — مع retry تلقائي"""
+    for attempt in range(3):
+        try:
+            r = requests.get(
+                f"{BACKEND_URL}/api/settings",
+                headers=HEADERS,
+                timeout=30,        # Railway قد تكون نائمة أول طلب
+            )
+            if r.status_code != 200:
+                return
+            settings = r.json()
+
+            tmp = SETTINGS_FILE + ".tmp"
+            os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(settings, f, indent=2)
+            os.replace(tmp, SETTINGS_FILE)
+
+            print(f"⚙️  TP$={settings.get('TP_USD','?')} "
+                  f"SL$={settings.get('SL_USD','?')} "
+                  f"Lot={settings.get('LotSize','?')} "
+                  f"MaxPos={settings.get('MaxPositions','?')}")
+            return  # نجح
+
+        except PermissionError:
+            print("⚠️  الملف مقفل من MT5 — سيُعاد في الدورة القادمة")
             return
-        settings = r.json()
-
-        # كتابة atomic: مؤقت ثم rename لتجنب Permission denied
-        tmp = SETTINGS_FILE + ".tmp"
-        os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(settings, f, indent=2)
-        os.replace(tmp, SETTINGS_FILE)
-
-        print(f"⚙️  TP$={settings.get('TP_USD','?')} "
-              f"SL$={settings.get('SL_USD','?')} "
-              f"Lot={settings.get('LotSize','?')} "
-              f"MaxPos={settings.get('MaxPositions','?')}")
-
-    except PermissionError:
-        print("⚠️  الملف مقفل من MT5 — سيُعاد في الدورة القادمة")
-    except Exception as e:
-        print(f"❌ فشل مزامنة الإعدادات: {e}")
+        except requests.exceptions.Timeout:
+            wait = (attempt + 1) * 5
+            print(f"⏳ مزامنة الإعدادات timeout (محاولة {attempt+1}/3) — انتظار {wait}s")
+            if attempt < 2:
+                time.sleep(wait)
+        except Exception as e:
+            print(f"❌ فشل مزامنة الإعدادات: {e}")
+            return
 
 
 def main():
