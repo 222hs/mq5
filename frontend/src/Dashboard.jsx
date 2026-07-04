@@ -111,9 +111,8 @@ export default function Dashboard() {
       if (seenTickets.current !== null) {
         const fresh = hist.filter(t => !seenTickets.current.has(t.ticket));
         if (fresh.length > 0) {
-          const t = fresh[0];
-          const net = (t.profit || 0) + (t.swap || 0) + (t.commission || 0);
-          setPopup({ profit: net });
+          const totalNet = fresh.reduce((sum, t) => sum + (t.profit || 0) + (t.swap || 0) + (t.commission || 0), 0);
+          setPopup({ profit: totalNet, count: fresh.length });
           clearTimeout(popupTimer.current);
           popupTimer.current = setTimeout(() => setPopup(null), 3500);
         }
@@ -873,7 +872,9 @@ export default function Dashboard() {
             animation:'popIn 0.25s ease-out',
             fontFamily:C.mono,
           }}>
-            <div style={bLabel({marginBottom:8, color:C.ink})}>TRADE CLOSED</div>
+            <div style={bLabel({marginBottom:8, color:C.ink})}>
+              {popup.count > 1 ? `${popup.count} TRADES CLOSED` : 'TRADE CLOSED'}
+            </div>
             <div style={{
               fontSize:72, fontWeight:'bold', letterSpacing:'-0.02em',
               color: popup.profit>=0 ? C.neon : C.red,
