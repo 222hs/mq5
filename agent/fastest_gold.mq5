@@ -62,7 +62,7 @@ double   g_slUSD        = 2.0;
 double   g_maxLossPerDay   = 50.0;
 double   g_maxProfitPerDay = 200.0;
 int      g_tradeHoursStart = 0;
-int      g_tradeHoursEnd   = 23;
+int      g_tradeHoursEnd   = 24;
 
 // Day P&L tracking
 double   g_dayPL   = 0.0;
@@ -118,7 +118,7 @@ void LoadSettings()
    g_maxLossPerDay   = ReadJsonValue("MaxLossPerDay",   50.0);
    g_maxProfitPerDay = ReadJsonValue("MaxProfitPerDay", 200.0);
    g_tradeHoursStart = (int)ReadJsonValue("TradeHoursStart", 0.0);
-   g_tradeHoursEnd   = (int)ReadJsonValue("TradeHoursEnd",  23.0);
+   g_tradeHoursEnd   = (int)ReadJsonValue("TradeHoursEnd",  24.0);
    g_botRunning      = (ReadJsonValue("BotRunning",  1.0) > 0.5);
    Print(EA_NAME," settings: lot=",g_lot," TP$=",g_tpUSD," SL$=",g_slUSD,
          " maxPos=",g_maxPositions," spread=",g_maxSpread,
@@ -129,10 +129,11 @@ void LoadSettings()
 //+------------------------------------------------------------------+
 bool InTradingHours()
   {
+   if(g_tradeHoursStart == 0 && g_tradeHoursEnd >= 24) return true; // 24/7
    MqlDateTime dt;
    TimeToStruct(TimeGMT(), dt);
    int h = dt.hour;
-   if(g_tradeHoursStart <= g_tradeHoursEnd)
+   if(g_tradeHoursStart < g_tradeHoursEnd)
       return (h >= g_tradeHoursStart && h < g_tradeHoursEnd);
    return (h >= g_tradeHoursStart || h < g_tradeHoursEnd); // overnight wrap
   }
