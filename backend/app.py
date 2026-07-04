@@ -43,6 +43,8 @@ DEFAULT_SETTINGS = {
     "LotSize":        0.5,
     "TP_USD":         4.0,
     "SL_USD":         2.0,
+    "TP_Points":      100,
+    "SL_Points":      200,
     "MaxSpread":      350,
     "MaxPositions":   5,
     "CooldownSecs":   0,
