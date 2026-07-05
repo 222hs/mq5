@@ -49,6 +49,71 @@ _MT5_COMMON = os.path.join(
 SETTINGS_FILE = os.path.join(_MT5_COMMON, "GSX_Settings.json")
 CURRENT_FILE  = os.path.join(_MT5_COMMON, "GSX_Current.json")  # الإعدادات الفعلية التي يكتبها البوت
 
+# ── قاعدة بيانات محلية على جهاز Windows ─────────────────────────────
+_LOCAL_DIR       = os.path.dirname(os.path.abspath(__file__))
+_LOCAL_SNAPSHOTS = os.path.join(_LOCAL_DIR, "local_snapshots.json")
+_LOCAL_HISTORY   = os.path.join(_LOCAL_DIR, "local_history.json")
+
+def _load_local_json(path):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _save_local_json(path, data):
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"⚠️ فشل حفظ {path}: {e}")
+
+def save_local_snapshot(snap):
+    """يحفظ snapshot محلياً بالـ ticket كـ key"""
+    tk = str(snap.get("ticket", ""))
+    if not tk:
+        return
+    db = _load_local_json(_LOCAL_SNAPSHOTS)
+    db[tk] = snap
+    # احتفظ بآخر 500 snapshot فقط
+    if len(db) > 500:
+        keys = sorted(db.keys())
+        for k in keys[:len(db)-500]:
+            del db[k]
+    _save_local_json(_LOCAL_SNAPSHOTS, db)
+
+def save_local_history(trades):
+    """يحفظ الـ history محلياً"""
+    if not trades:
+        return
+    db = _load_local_json(_LOCAL_HISTORY)
+    for t in trades:
+        tk = str(t.get("ticket", ""))
+        if tk:
+            db[tk] = t
+    # احتفظ بآخر 2000 صفقة
+    if len(db) > 2000:
+        keys = sorted(db.keys())
+        for k in keys[:len(db)-2000]:
+            del db[k]
+    _save_local_json(_LOCAL_HISTORY, db)
+
+def upload_local_snapshots():
+    """عند startup: يرفع كل الـ snapshots المحلية للبكند"""
+    db = _load_local_json(_LOCAL_SNAPSHOTS)
+    if not db:
+        return
+    print(f"📤 رفع {len(db)} snapshot محلي للبكند ...")
+    uploaded = 0
+    for snap in db.values():
+        try:
+            r = _session.post(f"{BACKEND_URL}/api/trade_snapshot", json=snap, timeout=(5, 8))
+            if r.status_code == 200:
+                uploaded += 1
+        except Exception:
+            pass
+    print(f"✅ تم رفع {uploaded}/{len(db)} snapshots")
+
 
 def connect_mt5():
     if not mt5.initialize():
@@ -413,7 +478,9 @@ def _calc_atr(candles, period=14):
 
 
 def _send_snapshot_bg(snapshot):
-    """يرسل snapshot في background thread — لا يوقف الـ loop الرئيسي"""
+    """يحفظ snapshot محلياً ويرسله للبكند في background"""
+    # حفظ محلي أولاً — يضمن البقاء حتى بعد Railway redeploy
+    save_local_snapshot(snapshot)
     try:
         r = _session.post(
             f"{BACKEND_URL}/api/trade_snapshot",
@@ -555,6 +622,9 @@ def main():
     if not connect_mt5():
         return
 
+    # رفع الـ snapshots المحفوظة محلياً للبكند (تعافي من Railway redeploy)
+    threading.Thread(target=upload_local_snapshots, daemon=True).start()
+
     print(f"📡 يرسل بيانات كل {UPDATE_INTERVAL}s | يسحب إعدادات كل {SETTINGS_CHECK_INTERVAL}s")
     print(f"   Backend: {BACKEND_URL}")
     print("اضغط Ctrl+C للإيقاف\n")
@@ -609,6 +679,8 @@ def main():
             if now - last_history_sync > 60:
                 history = get_recent_history(days=30)
                 last_history_sync = now
+                # حفظ الـ history محلياً
+                save_local_history(history)
                 # snapshot للصفقات المغلقة الجديدة (اللي ما أرسلنا لها snapshot بعد)
                 gold_sym = detect_gold_symbol()
                 c_list_snap = get_candles(gold_sym, mt5.TIMEFRAME_M1, 40)
