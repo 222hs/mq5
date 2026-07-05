@@ -428,8 +428,6 @@ def api_seed_settings():
     body = request.get_json(silent=True)
     if not body:
         return jsonify({"error": "No data"}), 400
-    if is_user_saved():
-        return jsonify({"status": "ok", "applied": False, "settings": get_settings()})
     try:
         save_settings(body, mark_user_saved=False)
     except Exception as e:
