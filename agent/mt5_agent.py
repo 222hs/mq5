@@ -268,17 +268,39 @@ def sync_settings():
             else:
                 print(f"   ✓ لا تغييرات")
 
-            tmp = SETTINGS_FILE + ".tmp"
+            content = json.dumps(settings, indent=2, ensure_ascii=False)
             os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(settings, f, indent=2)
-            os.replace(tmp, SETTINGS_FILE)
-            print(f"   📁 {SETTINGS_FILE}")
+
+            # محاولة الكتابة مع 3 retries (MT5 قد يقفل الملف لحظياً)
+            written = False
+            for w in range(3):
+                try:
+                    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+                        f.write(content)
+                    written = True
+                    break
+                except Exception as we:
+                    if w < 2:
+                        time.sleep(0.3)
+                    else:
+                        print(f"   ❌ فشل كتابة الملف بعد 3 محاولات: {we}")
+
+            if written:
+                # تحقق فعلي: اقرأ الملف وتأكد أن Lot صح
+                try:
+                    with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                        on_disk = json.load(f)
+                    lot_ok = str(on_disk.get("LotSize")) == str(settings.get("LotSize"))
+                    print(f"   📁 {SETTINGS_FILE}")
+                    print(f"   {'✅ تحقق: Lot على الديسك=' + str(on_disk.get('LotSize')) if lot_ok else '⚠️  MISMATCH! ديسك=' + str(on_disk.get('LotSize')) + ' Railway=' + str(settings.get('LotSize'))}")
+                except Exception as re:
+                    print(f"   ⚠️  فشل قراءة التحقق: {re}")
+
             print(f"{'='*55}\n")
             return
 
         except PermissionError:
-            print("⚠️  الملف مقفل من MT5 — سيُعاد في الدورة القادمة")
+            print("⚠️  خطأ صلاحيات عام — سيُعاد في الدورة القادمة")
             return
         except requests.exceptions.Timeout:
             wait = (attempt + 1) * 5
