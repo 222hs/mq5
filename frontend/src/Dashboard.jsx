@@ -218,11 +218,37 @@ export default function Dashboard() {
       <style>{`
         @keyframes popIn { from { transform: scale(0.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+        * { box-sizing: border-box; }
+        .gsx-topbar { display:flex; justify-content:space-between; align-items:flex-start; }
+        .gsx-hero { display:flex; gap:14px; }
+        .gsx-hero-main { flex: 0 0 70%; min-width:0; }
+        .gsx-hero-streak { flex:1; min-width:140px; }
+        .gsx-pnl { font-size:80px; font-weight:900; letter-spacing:-3px; line-height:1.05; white-space:nowrap; }
+        .gsx-row2 { display:flex; gap:14px; }
+        .gsx-row2 > * { flex:1; min-width:0; }
+        .gsx-row3 { display:flex; gap:14px; }
+        .gsx-row3 > * { flex:1; min-width:0; }
+        .gsx-pipeline { display:flex; gap:8px; }
+        .gsx-pipeline > * { flex:1; min-width:0; }
+        @media (max-width:900px) {
+          .gsx-hero { flex-direction:column; }
+          .gsx-hero-main { flex:none; width:100%; }
+          .gsx-hero-streak { flex:none; width:100%; display:flex; flex-direction:row; align-items:center; gap:16px; padding:12px; }
+          .gsx-pnl { font-size:clamp(36px, 10vw, 80px); }
+          .gsx-row2 { flex-direction:column; }
+          .gsx-row3 { flex-direction:column; }
+          .gsx-pipeline { flex-wrap:wrap; }
+          .gsx-pipeline > * { min-width:calc(33% - 8px); }
+          .gsx-topbar { flex-wrap:wrap; gap:6px; }
+        }
+        @media (max-width:480px) {
+          .gsx-pnl { font-size:clamp(28px, 12vw, 48px); }
+          .gsx-pipeline > * { min-width:calc(50% - 8px); }
+        }
       `}</style>
 
       {/* ============ 1. TOP BAR ============ */}
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+      <div className="gsx-topbar" style={{
         borderBottom: `1px solid ${C.border}`, paddingBottom: 8, marginBottom: 14,
       }}>
         <div>
@@ -245,16 +271,13 @@ export default function Dashboard() {
       </div>
 
       {/* ============ 2. HERO ============ */}
-      <div style={{ display: 'flex', gap: 14, marginBottom: 14 }}>
-        <div style={{ flex: '0 0 70%' }}>
+      <div className="gsx-hero" style={{ marginBottom: 14 }}>
+        <div className="gsx-hero-main">
           <div style={label()}>
             TOTAL · REALIZED PNL&nbsp;&nbsp;
             <span style={{ color: C.greenBright }}>● LIVE</span>
           </div>
-          <div style={{
-            fontSize: 80, fontWeight: 900, letterSpacing: -3, lineHeight: 1.05,
-            color: pnlColor, margin: '6px 0 2px 0', whiteSpace: 'nowrap',
-          }}>
+          <div className="gsx-pnl" style={{ color: pnlColor, margin: '6px 0 2px 0' }}>
             {bigPnl.neg ? '-' : ''}${bigPnl.dollars}
             <span style={{ fontSize: 34, fontWeight: 700, letterSpacing: 0, opacity: 0.7 }}>.{bigPnl.cents}</span>
           </div>
@@ -268,8 +291,8 @@ export default function Dashboard() {
         </div>
 
         {/* streak circle */}
-        <div style={panel({
-          flex: 1, display: 'flex', flexDirection: 'column',
+        <div className="gsx-hero-streak" style={panel({
+          display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center', background: C.panelLight,
         })}>
           <svg width="130" height="130" viewBox="0 0 130 130">
@@ -303,7 +326,7 @@ export default function Dashboard() {
       </div>
 
       {/* ============ 4. TWO CHART PANELS ============ */}
-      <div style={{ display: 'flex', gap: 14, marginBottom: 14 }}>
+      <div className="gsx-row2" style={{ marginBottom: 14 }}>
         {/* LEFT: cash flow bars */}
         <div style={panel({ flex: 1, background: C.panelLight })}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -422,7 +445,7 @@ export default function Dashboard() {
       </div>
 
       {/* ============ 6. EXECUTION PIPELINE ============ */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+      <div className="gsx-pipeline" style={{ marginBottom: 14 }}>
         {pipeline.map(step => (
           <div key={step.n} style={panel({ flex: 1, padding: 10 })}>
             <div style={label({ fontSize: 9 })}>{step.n}</div>
@@ -452,7 +475,7 @@ export default function Dashboard() {
       </div>
 
       {/* ============ 7. BOTTOM STATS ROW ============ */}
-      <div style={{ display: 'flex', gap: 14, marginBottom: 14 }}>
+      <div className="gsx-row3" style={{ marginBottom: 14 }}>
         {/* wins */}
         <div style={panel({ flex: 1, background: C.panelLight })}>
           <div style={label()}>WINS · TODAY / ALL TIME</div>
