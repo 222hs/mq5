@@ -54,7 +54,7 @@ DEFAULT_SETTINGS = {
     "MaxLossPerDay":  50.0,
     "MaxProfitPerDay":200.0,
     "TradeHoursStart":0,
-    "TradeHoursEnd":  23,
+    "TradeHoursEnd":  24,
     "ClaudeEnabled":  1,
 }
 
