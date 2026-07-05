@@ -195,11 +195,35 @@ def read_local_settings():
         return None
 
 
+def push_local_settings():
+    """
+    يدفع الإعدادات المحلية (GSX_Settings.json) للـ Backend.
+    الـ Backend يقبلها فقط إذا كان الـ container جديداً بعد Railway redeploy —
+    هكذا لا تضيع الإعدادات أبداً حتى بدون Railway Volume.
+    """
+    local = read_local_settings()
+    if not local:
+        return
+    try:
+        r = requests.post(
+            f"{BACKEND_URL}/api/settings/seed",
+            json=local, headers=HEADERS, timeout=15,
+        )
+        if r.status_code == 200 and r.json().get("applied"):
+            print(f"📤 {datetime.now().strftime('%H:%M:%S')} - Railway كان فارغاً — تم رفع الإعدادات المحلية")
+        elif r.status_code == 404:
+            pass  # backend قديم بدون endpoint — تجاهل
+    except Exception:
+        pass  # غير حرج — سيُعاد في الدورة القادمة
+
+
 _last_settings_hash = None  # نتتبع التغييرات
 
 def sync_settings():
     """يسحب الإعدادات من الصفحة ويكتبها للبوت — مع retry تلقائي"""
     global _last_settings_hash
+    # أولاً: seed — إذا Railway انعمل له redeploy، نرجّع إعداداتنا قبل السحب
+    push_local_settings()
     for attempt in range(3):
         try:
             r = requests.get(
