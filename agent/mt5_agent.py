@@ -524,31 +524,7 @@ def _send_snapshot_bg(snapshot):
 
 def send_trade_snapshot(ticket, position, candles_list, sessions):
     """يبني snapshot ويرسله في background — لا يعطل الـ loop الرئيسي"""
-    closes = [c['c'] for c in candles_list]
-    rsi    = _calc_rsi(closes)
-    ema9   = _calc_ema(closes, 9)
-    ema21  = _calc_ema(closes, 21)
-    atr    = _calc_atr(candles_list)
-    h      = sessions.get('utc_hour', 0)
-    if 7 <= h < 13:    sess = 'London'
-    elif 13 <= h < 22: sess = 'NY'
-    elif 0 <= h < 7:   sess = 'Tokyo'
-    else:              sess = 'Off'
-
-    snapshot = {
-        "ticket":      ticket,
-        "symbol":      position.get('symbol'),
-        "direction":   position.get('type'),
-        "entry_price": position.get('price_open'),
-        "candles":     candles_list[-30:],
-        "rsi":         rsi,
-        "ema_fast":    ema9,
-        "ema_slow":    ema21,
-        "ema_up":      ema9 > ema21,
-        "atr":         atr,
-        "session":     sess,
-        "time":        datetime.now().isoformat(),
-    }
+    snapshot = _build_snapshot(ticket, position, candles_list, sessions)
     threading.Thread(target=_send_snapshot_bg, args=(snapshot,), daemon=True).start()
 
 def sync_settings():
@@ -645,6 +621,83 @@ def sync_settings():
             return
 
 
+def bootstrap_snapshots():
+    """
+    عند startup: يبني snapshots من MT5 history مباشرة ويرفعها للبكند.
+    يشتغل مرة واحدة — يضمن وجود بيانات حتى لو local_snapshots.json فارغ.
+    """
+    # أولاً: رفع المحفوظات المحلية لو موجودة
+    upload_local_snapshots()
+
+    # ثانياً: تحقق كم عندنا في البكند
+    try:
+        rc = _session.get(f"{BACKEND_URL}/api/snapshots/count", timeout=(5, 8))
+        if rc.status_code == 200 and rc.json().get("count", 0) >= 10:
+            print(f"✅ البكند عنده {rc.json()['count']} snapshots — لا حاجة لـ bootstrap")
+            return
+    except Exception:
+        pass
+
+    print("🔄 bootstrap: يبني snapshots من MT5 history ...")
+    history = get_recent_history(days=60)
+    if not history:
+        print("⚠️ bootstrap: لا يوجد history في MT5")
+        return
+
+    gold_sym    = detect_gold_symbol()
+    c_list      = get_candles(gold_sym, mt5.TIMEFRAME_M1, 40)
+    sess        = get_trading_sessions()
+    sent        = 0
+
+    for t in history[:50]:
+        tk = t.get('ticket')
+        if not tk:
+            continue
+        fake_pos = {
+            'symbol':     t.get('symbol', gold_sym),
+            'type':       t.get('type', 'BUY'),
+            'price_open': t.get('price', 0),
+        }
+        snap = _build_snapshot(tk, fake_pos, c_list, sess)
+        save_local_snapshot(snap)
+        try:
+            r = _session.post(f"{BACKEND_URL}/api/trade_snapshot", json=snap, timeout=(5, 8))
+            if r.status_code == 200:
+                sent += 1
+        except Exception:
+            pass
+
+    print(f"✅ bootstrap: أرسل {sent}/{min(len(history),50)} snapshots")
+
+
+def _build_snapshot(ticket, position, candles_list, sessions):
+    """يبني snapshot dict بدون إرسال"""
+    closes = [c['c'] for c in candles_list]
+    rsi    = _calc_rsi(closes)
+    ema9   = _calc_ema(closes, 9)
+    ema21  = _calc_ema(closes, 21)
+    atr    = _calc_atr(candles_list)
+    h      = sessions.get('utc_hour', 0)
+    if 7 <= h < 13:    sess = 'London'
+    elif 13 <= h < 22: sess = 'NY'
+    elif 0 <= h < 7:   sess = 'Tokyo'
+    else:              sess = 'Off'
+    return {
+        "ticket":      ticket,
+        "symbol":      position.get('symbol'),
+        "direction":   position.get('type'),
+        "entry_price": position.get('price_open'),
+        "candles":     candles_list[-30:],
+        "rsi":         rsi,
+        "ema_fast":    ema9,
+        "ema_slow":    ema21,
+        "ema_up":      ema9 > ema21,
+        "atr":         atr,
+        "session":     sess,
+        "time":        datetime.now().isoformat(),
+    }
+
+
 def main():
     print("=" * 50)
     print("🚀 MT5 Dashboard Agent")
@@ -653,8 +706,8 @@ def main():
     if not connect_mt5():
         return
 
-    # رفع الـ snapshots المحفوظة محلياً للبكند (تعافي من Railway redeploy)
-    threading.Thread(target=upload_local_snapshots, daemon=True).start()
+    # بناء snapshots من MT5 history مباشرة ثم رفعها
+    threading.Thread(target=bootstrap_snapshots, daemon=True).start()
 
     print(f"📡 يرسل بيانات كل {UPDATE_INTERVAL}s | يسحب إعدادات كل {SETTINGS_CHECK_INTERVAL}s")
     print(f"   Backend: {BACKEND_URL}")
