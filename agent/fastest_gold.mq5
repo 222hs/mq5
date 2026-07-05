@@ -118,28 +118,42 @@ void WriteCurrentSettings()
    FileClose(fh);
   }
 
+string g_lastSettingsHash = "";
+
 void LoadSettings()
   {
-   g_lot             = ReadSetting("LotSize",        LotSize);
-   g_maxSpread       = ReadSetting("MaxSpread",       (double)MaxSpread);
-   g_maxPositions    = (int)ReadSetting("MaxPositions",(double)MaxPositions);
-   g_cooldownSecs    = (int)ReadSetting("CooldownSecs",(double)CooldownSecs);
-   g_tpUSD           = ReadSetting("TP_USD",          3.0);
-   g_slUSD           = ReadSetting("SL_USD",          2.0);
-   g_maxLossPerDay   = ReadSetting("MaxLossPerDay",  50.0);
-   g_maxProfitPerDay = ReadSetting("MaxProfitPerDay",200.0);
-   g_tradeHoursStart = (int)ReadSetting("TradeHoursStart", 0.0);
-   g_tradeHoursEnd   = (int)ReadSetting("TradeHoursEnd",  24.0);
-   g_botRunning      = (ReadSetting("BotRunning", 1.0) > 0.5);
-   Print(EA_NAME," ✅ إعدادات محملة:"
-         " Lot=",g_lot,
-         " TP$=",g_tpUSD,
-         " SL$=",g_slUSD,
-         " MaxPos=",g_maxPositions,
-         " Spread=",g_maxSpread,
-         " Hours=",g_tradeHoursStart,"-",g_tradeHoursEnd,
-         " Bot=",g_botRunning?"ON":"OFF");
-   WriteCurrentSettings();
+   double lot    = ReadSetting("LotSize",        LotSize);
+   double spread = ReadSetting("MaxSpread",       (double)MaxSpread);
+   int    maxPos = (int)ReadSetting("MaxPositions",(double)MaxPositions);
+   int    cd     = (int)ReadSetting("CooldownSecs",(double)CooldownSecs);
+   double tp     = ReadSetting("TP_USD",          3.0);
+   double sl     = ReadSetting("SL_USD",          2.0);
+   double maxL   = ReadSetting("MaxLossPerDay",  50.0);
+   double maxP   = ReadSetting("MaxProfitPerDay",200.0);
+   int    hStart = (int)ReadSetting("TradeHoursStart", 0.0);
+   int    hEnd   = (int)ReadSetting("TradeHoursEnd",  24.0);
+   bool   botOn  = (ReadSetting("BotRunning", 1.0) > 0.5);
+
+   // نطبع فقط لما تتغير الإعدادات
+   string hash = DoubleToString(lot,2)+DoubleToString(tp,2)+DoubleToString(sl,2)
+               + IntegerToString(maxPos)+DoubleToString(spread,0)
+               + IntegerToString(hStart)+IntegerToString(hEnd)+(botOn?"1":"0");
+   bool changed = (hash != g_lastSettingsHash);
+   g_lastSettingsHash = hash;
+
+   g_lot=lot; g_maxSpread=spread; g_maxPositions=maxPos; g_cooldownSecs=cd;
+   g_tpUSD=tp; g_slUSD=sl; g_maxLossPerDay=maxL; g_maxProfitPerDay=maxP;
+   g_tradeHoursStart=hStart; g_tradeHoursEnd=hEnd; g_botRunning=botOn;
+
+   if(changed)
+     {
+      Print(EA_NAME," ✅ إعدادات محملة:"
+            " Lot=",g_lot," TP$=",g_tpUSD," SL$=",g_slUSD,
+            " MaxPos=",g_maxPositions," Spread=",g_maxSpread,
+            " Hours=",g_tradeHoursStart,"-",g_tradeHoursEnd,
+            " Bot=",g_botRunning?"ON":"OFF");
+      WriteCurrentSettings();
+     }
   }
 
 //+------------------------------------------------------------------+
