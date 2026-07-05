@@ -17,6 +17,7 @@ input ENUM_TIMEFRAMES TF           = PERIOD_M1;// Working timeframe
 input int             MaxPositions = 5;        // Max open positions
 input int             MaxSpread    = 350;      // Max spread in points
 input int             PendingExpireCandles = 2;// إلغاء الأوردر بعد كم شمعة
+input int             OrderMode            = 0;// 0=Stop+Limit  1=Stop فقط  2=Limit فقط
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
@@ -297,11 +298,12 @@ void PlacePendingOCO(int signal, double high1, double low1, double atr1)
       double limitTP = NormalizeDouble(limitPrice + tpDist, digs);
 
       // Buy Stop
-      if(trade.BuyStop(lot, stopPrice, _Symbol, stopSL, stopTP, ORDER_TIME_GTC, 0, EA_NAME))
-         g_stopTicket = trade.ResultOrder();
+      if(OrderMode != 2)
+         if(trade.BuyStop(lot, stopPrice, _Symbol, stopSL, stopTP, ORDER_TIME_GTC, 0, EA_NAME))
+            g_stopTicket = trade.ResultOrder();
 
       // Buy Limit — فقط لو المدى كافي (أكبر من 50 نقطة = 0.50$)
-      if(range >= 50.0 * pt && limitPrice > SymbolInfoDouble(_Symbol, SYMBOL_ASK) - 2*offset)
+      if(OrderMode != 1 && range >= 50.0 * pt && limitPrice > SymbolInfoDouble(_Symbol, SYMBOL_ASK) - 2*offset)
         {
          if(trade.BuyLimit(lot, limitPrice, _Symbol, limitSL, limitTP, ORDER_TIME_GTC, 0, EA_NAME))
             g_limitTicket = trade.ResultOrder();
@@ -318,11 +320,12 @@ void PlacePendingOCO(int signal, double high1, double low1, double atr1)
       double limitTP = NormalizeDouble(limitPrice - tpDist, digs);
 
       // Sell Stop
-      if(trade.SellStop(lot, stopPrice, _Symbol, stopSL, stopTP, ORDER_TIME_GTC, 0, EA_NAME))
-         g_stopTicket = trade.ResultOrder();
+      if(OrderMode != 2)
+         if(trade.SellStop(lot, stopPrice, _Symbol, stopSL, stopTP, ORDER_TIME_GTC, 0, EA_NAME))
+            g_stopTicket = trade.ResultOrder();
 
       // Sell Limit — فقط لو المدى كافي
-      if(range >= 50.0 * pt && limitPrice < SymbolInfoDouble(_Symbol, SYMBOL_BID) + 2*offset)
+      if(OrderMode != 1 && range >= 50.0 * pt && limitPrice < SymbolInfoDouble(_Symbol, SYMBOL_BID) + 2*offset)
         {
          if(trade.SellLimit(lot, limitPrice, _Symbol, limitSL, limitTP, ORDER_TIME_GTC, 0, EA_NAME))
             g_limitTicket = trade.ResultOrder();
