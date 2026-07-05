@@ -203,6 +203,8 @@ void LoadSettings()
 
    string hash = DoubleToString(lot,2)+DoubleToString(tp,2)+DoubleToString(sl,2)
                + IntegerToString(maxPos)+DoubleToString(spread,0)
+               + IntegerToString(cd)
+               + DoubleToString(maxL,2)+DoubleToString(maxP,2)
                + IntegerToString(hStart)+IntegerToString(hEnd)
                + IntegerToString(ordTyp)+(botOn?"1":"0")
                + IntegerToString(rMode)+DoubleToString(rPct,1)
@@ -233,8 +235,9 @@ void LoadSettings()
             " Bot=",g_botRunning?"ON":"OFF",
             " Order=",otStr,
             " RSI=",g_rsiBuyMax,"/",g_rsiSellMin);
-      WriteCurrentSettings();
      }
+   // heartbeat دائم — الـ Agent يعتمد على mtime هذا الملف لكشف أن البوت حي
+   WriteCurrentSettings();
   }
 
 //+------------------------------------------------------------------+

@@ -539,23 +539,19 @@ def sync_btc_settings():
             if r.status_code != 200:
                 return
             settings = r.json()
+            import hashlib
+            new_hash = hashlib.md5(json.dumps(settings, sort_keys=True).encode()).hexdigest()
+            if new_hash == _last_btc_settings_hash:
+                return  # لا تغييرات — صمت
+            _last_btc_settings_hash = new_hash
             t = datetime.now().strftime('%H:%M:%S')
             ot = {0:'MARKET', 1:'LIMIT', 2:'STOP', 3:'BASKET'}.get(int(settings.get('OrderType', 0)), 'MARKET')
             dr = 'ON' if int(settings.get('DynamicRisk', 0)) == 1 else 'OFF'
             print(f"\n{'='*55}")
-            print(f"₿  [{t}] إعدادات البتكوين:")
+            print(f"₿  [{t}] إعدادات بتكوين جديدة:")
             print(f"   Lot={settings.get('LotSize')}  TP$={settings.get('TP_USD')}  SL$={settings.get('SL_USD')}")
             print(f"   MaxSpread={settings.get('MaxSpread')}  MaxPos={settings.get('MaxPositions')}  CD={settings.get('CooldownSecs')}s")
             print(f"   OrderType={ot}  Bot={'ON' if settings.get('BotRunning') else 'OFF'}  SL/TP Dynamic={dr}")
-            import hashlib
-            new_hash = hashlib.md5(json.dumps(settings, sort_keys=True).encode()).hexdigest()
-            changed = new_hash != _last_btc_settings_hash
-            if not changed:
-                print(f"   ✓ لا تغييرات")
-                print(f"{'='*55}\n")
-                return
-            print(f"   🔄 تغييرات مكتشفة — يُكتب BSX_*.txt")
-            _last_btc_settings_hash = new_hash
             btc_keys = [
                 "LotSize", "TP_USD", "SL_USD", "MaxSpread", "MaxPositions",
                 "CooldownSecs", "MaxLossPerDay", "MaxProfitPerDay",
@@ -593,29 +589,25 @@ def sync_settings():
                 return
             settings = r.json()
 
-            # نطبع دائماً الإعدادات الحالية بشكل واضح
+            # نتحقق أولاً — لا طباعة إذا لا تغيير
+            import hashlib
+            new_hash = hashlib.md5(json.dumps(settings, sort_keys=True).encode()).hexdigest()
+            if new_hash == _last_settings_hash:
+                return  # لا تغييرات — صمت تام
+            _last_settings_hash = new_hash
+
             t = datetime.now().strftime('%H:%M:%S')
             print(f"\n{'='*55}")
-            print(f"⚙️  [{t}] إعدادات من الداشبورد:")
+            print(f"⚙️  [{t}] إعدادات جديدة من الداشبورد:")
             print(f"   Lot={settings.get('LotSize')}  TP$={settings.get('TP_USD')}  SL$={settings.get('SL_USD')}")
             print(f"   MaxPos={settings.get('MaxPositions')}  Spread={settings.get('MaxSpread')}  CD={settings.get('CooldownSecs')}s")
-            print(f"   MaxLoss$={settings.get('MaxLossPerDay')}  MaxProfit$={settings.get('MaxProfitPerDay')}")
             ot  = {0:'MARKET', 1:'LIMIT', 2:'STOP', 3:'BASKET'}.get(int(settings.get('OrderType', 0)), 'MARKET')
             rm  = {0:'FIXED LOT', 1:'DYNAMIC %'}.get(int(settings.get('RiskMode', 0)), 'FIXED LOT')
             dr  = 'ON' if int(settings.get('DynamicRisk', 0)) == 1 else 'OFF'
             print(f"   Hours={settings.get('TradeHoursStart')}-{settings.get('TradeHoursEnd')}  Bot={'ON' if settings.get('BotRunning') else 'OFF'}  OrderType={ot}")
             print(f"   LotMode={rm}  RiskPct={settings.get('RiskPercent','?')}%  SL/TP Dynamic={dr}  BaseLot={settings.get('BaseLot','?')}")
             print(f"   RSI BuyMax={settings.get('RSIBuyMax','?')}  RSI SellMin={settings.get('RSISellMin','?')}  Claude={'ON' if settings.get('ClaudeEnabled',1) else 'OFF'}")
-
-            # نتحقق إذا تغيرت الإعدادات
-            import hashlib
-            new_hash = hashlib.md5(json.dumps(settings, sort_keys=True).encode()).hexdigest()
-            if new_hash == _last_settings_hash:
-                print(f"   ✓ لا تغييرات")
-                print(f"{'='*55}\n")
-                return
             print(f"   🔄 تغييرات مكتشفة — يُكتب الملف")
-            _last_settings_hash = new_hash
 
             content = json.dumps(settings, indent=2, ensure_ascii=False)
             os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
@@ -804,15 +796,11 @@ def main():
             now = time.time()
 
             if now - last_settings_sync >= SETTINGS_CHECK_INTERVAL:
-                gold_active, btc_active = detect_active_bots()
-                if gold_active or not btc_active:  # always sync gold if no bot detected
-                    sync_settings()
+                sync_settings()          # الذهب دائماً — لا يُربط بكشف النشاط
+                _, btc_active = detect_active_bots()
                 if btc_active:
                     sync_btc_settings()
-                if gold_active or btc_active:
-                    last_settings_sync = now
-                else:
-                    last_settings_sync = now  # sync anyway to keep files fresh
+                last_settings_sync = now
 
             # فلتر الأخبار كل دقيقة
             if now - last_news_sync >= 60:
