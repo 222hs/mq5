@@ -3,7 +3,8 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v2.6';
+const DASH_VERSION = 'v2.7';
+const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
 const C = {
@@ -115,6 +116,30 @@ export default function Dashboard() {
     const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
     if (atBottom) box.scrollTop = box.scrollHeight;
   }, [logs]);
+
+  // HTTP poll — سريع وموثوق، بديل WebSocket للبيانات الرئيسية
+  useEffect(() => {
+    let active = true;
+    const poll = async () => {
+      try {
+        const r = await fetch(`${API_URL}/api/dashboard`, {
+          headers: { 'X-API-Key': API_KEY },
+          signal: AbortSignal.timeout(3000),
+        });
+        if (!active) return;
+        if (r.ok) {
+          const d = await r.json();
+          setData(d);
+          if (d.settings && !settingsDirty.current) setSettingsDraft({ ...d.settings });
+          if (Array.isArray(d.candles) && d.candles.length > 0)
+            setCandleData({ candles: d.candles, sessions: d.sessions || {} });
+        }
+      } catch (_) {}
+      if (active) setTimeout(poll, POLL_MS);
+    };
+    poll();
+    return () => { active = false; };
+  }, []);
 
   // keep-alive: ping backend every 25s so Railway doesn't sleep
   useEffect(() => {
