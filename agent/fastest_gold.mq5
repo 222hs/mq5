@@ -341,7 +341,7 @@ void OnTick()
    bool dayOK    = !DayLimitHit();
    bool allOK    = spreadOK && coolOK && slotsOK && sessOK && dayOK && atr1 > 0.0;
 
-   if(signal != 0 && allOK && g_botRunning)
+   if(signal != 0 && allOK && g_botRunning && SymbolTradable())
      {
       // حفظ snapshot الإشارات لإرسالها مع الصفقة
       g_snapRSI   = rsi1;
@@ -363,6 +363,14 @@ void OnTick()
       emaUp?1:-1, rsi1, sessOK, signal,
       blocked, cdLeft, CountMyPositions(), atr1, spread
    );
+  }
+
+//+------------------------------------------------------------------+
+bool SymbolTradable()
+  {
+   long mode = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_MODE);
+   return (mode == SYMBOL_TRADE_MODE_FULL || mode == SYMBOL_TRADE_MODE_LONGONLY
+           || mode == SYMBOL_TRADE_MODE_SHORTONLY);
   }
 
 //+------------------------------------------------------------------+
