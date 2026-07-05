@@ -170,7 +170,7 @@ def write_global_variables(settings):
     }
     ok = 0
     for name, value in mapping.items():
-        if mt5.global_variable_set(name, value):
+        if mt5.globalvariable_set(name, value):
             ok += 1
     print(f"   🔧 Global Variables: {ok}/{len(mapping)} مكتوبة | Lot={mapping['GSX_LotSize']}")
 

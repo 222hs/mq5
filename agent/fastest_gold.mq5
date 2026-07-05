@@ -186,7 +186,7 @@ int OnInit()
 
    LoadSettings();
    CreateDashboard();
-   EventSetTimer(10);
+   EventSetTimer(2);
    Print(EA_NAME," v",EA_VERSION," | Magic=",g_magic," | TF=",EnumToString(TF));
    return(INIT_SUCCEEDED);
   }
