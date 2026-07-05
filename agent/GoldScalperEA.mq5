@@ -1,10 +1,10 @@
 //+------------------------------------------------------------------+
 //|                                                GoldScalperEA.mq5 |
-//|                                        GoldScalperX version 9.41 |
+//|                                        GoldScalperX version 9.50 |
 //|  Gold scalper — bar-gated, closed-bar signals, trailing stop     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.41"
+#property version   "9.50"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.41"
+#define EA_VERSION    "9.50"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -269,24 +269,21 @@ void OnTick()
    double ema91= ema9[1], ema211= ema21[1];
    double atr1 = atr[1];
 
-   // ── SIGNAL: اتجاه الشمعة الأخيرة المغلقة (بسيط وفعّال) ──
-   double range1 = h[1] - l[1] + 1e-10;
-   double body1  = MathAbs(c[1] - o[1]);
+   // ── STRATEGY: EMA21 Price Cross ──
+   // السعر يتجاوز EMA21 = تغيير اتجاه حقيقي
+   // bar[2] = قبل الكسر، bar[1] = بعد الكسر
+   bool crossUp = (c[2] < ema21[2]) && (c[1] > ema21[1]);  // كسر EMA21 لأعلى → BUY
+   bool crossDn = (c[2] > ema21[2]) && (c[1] < ema21[1]);  // كسر EMA21 لأسفل → SELL
 
-   // شمعة صالحة: جسم >= 30% من المدى، ليست spike ضخمة، ليست صغيرة جداً
-   bool validCandle = (body1/range1 >= 0.30)
-                   && (range1 >= 0.30*atr1)
-                   && (range1 <= 4.0*atr1);
-
-   // فلتر RSI للحالات المتطرفة فقط
-   bool rsiBuyOK  = (rsi1 < 75.0);
-   bool rsiSellOK = (rsi1 > 25.0);
+   // تأكيد إضافي: EMA9 في نفس الاتجاه (تجنب الإشارات الكاذبة وسط الضوضاء)
+   bool ema9Up = (ema9[1] > ema9[2]);
+   bool ema9Dn = (ema9[1] < ema9[2]);
 
    int signal = 0;
-   if(validCandle && c[1] > o[1] && rsiBuyOK)  signal =  1;  // شمعة صاعدة  → BUY
-   else if(validCandle && c[1] < o[1] && rsiSellOK) signal = -1; // شمعة هابطة → SELL
+   if(crossUp && ema9Up) signal =  1;
+   else if(crossDn && ema9Dn) signal = -1;
 
-   // Reversal: إذا آخر صفقة خسرت اقلب الاتجاه
+   // Reversal: إذا آخر صفقة خسرت وما في إشارة جديدة، اعكس الاتجاه
    if(g_lastWasLoss && signal == 0) signal = -g_lastLossDir;
    else if(g_lastWasLoss && signal != 0) g_lastWasLoss = false;
 
