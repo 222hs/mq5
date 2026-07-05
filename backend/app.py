@@ -18,9 +18,9 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
-    async_mode="threading",
-    ping_interval=20,    # server pings client every 20s
-    ping_timeout=60,     # wait 60s before declaring disconnect
+    async_mode="eventlet",
+    ping_interval=20,
+    ping_timeout=60,
 )
 
 # ============== Live Log ==============
