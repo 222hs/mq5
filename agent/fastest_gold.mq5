@@ -77,6 +77,7 @@ double   g_rsiBuyMax       = 65.0; // Claude auto-adjust: حد RSI لـ BUY
 double   g_rsiSellMin      = 35.0; // Claude auto-adjust: حد RSI لـ SELL
 bool     g_dynamicRisk     = false; // SL/TP تتناسب مع حجم اللوت
 double   g_baseLot         = 0.5;   // اللوت الأساسي اللي ضُبطت عليه SL/TP
+bool     g_useH1Filter     = true;  // فلتر اتجاه H1 EMA21
 
 // Day P&L tracking
 double   g_dayPL   = 0.0;
@@ -128,6 +129,7 @@ void WriteCurrentSettings()
    j += "  \"BotRunning\": "     + (g_botRunning ? "1" : "0")        + ",\n";
    j += "  \"DynamicRisk\": "   + (g_dynamicRisk ? "1" : "0")       + ",\n";
    j += "  \"BaseLot\": "       + DoubleToString(g_baseLot,2)        + ",\n";
+   j += "  \"UseH1Filter\": "   + (g_useH1Filter ? "1" : "0")       + ",\n";
    j += "  \"OrderType\": "     + IntegerToString(g_orderType)       + "\n";
    j += "}";
    FileWriteString(fh, j);
@@ -205,6 +207,7 @@ void LoadSettings()
    double rsiSM  = ReadSetting("RSISellMin",     35.0);
    bool   dynR   = (ReadSetting("DynamicRisk",   0.0) > 0.5);
    double baseL  = ReadSetting("BaseLot",        0.5);
+   bool   useH1  = (ReadSetting("UseH1Filter",   1.0) > 0.5);
 
    string hash = DoubleToString(lot,2)+DoubleToString(tp,2)+DoubleToString(sl,2)
                + IntegerToString(maxPos)+DoubleToString(spread,0)
@@ -212,7 +215,7 @@ void LoadSettings()
                + IntegerToString(ordTyp)+(botOn ? "1" : "0")
                + IntegerToString(rMode)+DoubleToString(rPct,1)
                + DoubleToString(rsiBM,1)+DoubleToString(rsiSM,1)
-               + (dynR?"1":"0")+DoubleToString(baseL,2);
+               + (dynR?"1":"0")+DoubleToString(baseL,2)+(useH1?"1":"0");
    bool changed = (hash != g_lastSettingsHash);
    g_lastSettingsHash = hash;
 
@@ -222,6 +225,7 @@ void LoadSettings()
    g_orderType=ordTyp; g_riskMode=rMode; g_riskPct=rPct;
    g_rsiBuyMax=rsiBM; g_rsiSellMin=rsiSM;
    g_dynamicRisk=dynR; g_baseLot=(baseL>0?baseL:0.01);
+   g_useH1Filter=useH1;
    LoadNewsBlock();
 
    if(changed)
@@ -418,8 +422,10 @@ void OnTick()
 
    // ── H1 BIAS FILTER: فقط مع الاتجاه الرئيسي ──────────────────────
    int signal = 0;
-   if(bullBar && rsiBuyOK  &&  h1BullBias) signal =  1; // BUY  — H1 صاعد + RSI مناسب
-   else if(bearBar && rsiSellOK && !h1BullBias) signal = -1; // SELL — H1 هابط + RSI مناسب
+   bool h1BuyOK  = !g_useH1Filter ||  h1BullBias;
+   bool h1SellOK = !g_useH1Filter || !h1BullBias;
+   if(bullBar && rsiBuyOK  && h1BuyOK)  signal =  1;
+   else if(bearBar && rsiSellOK && h1SellOK) signal = -1;
 
    long spread   = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    bool spreadOK = (spread <= (long)g_maxSpread);
@@ -940,7 +946,9 @@ void UpdateDashboard(const int trend,const double rsi,
    ArraySetAsSeries(h1e,true);
    string h1Txt = "H1: --";
    color  h1Clr = CLR_NEUTRAL;
-   if(CopyBuffer(hH1EMA,0,0,3,h1e)>=3)
+   if(!g_useH1Filter)
+     { h1Txt = "H1 FILTER: OFF"; h1Clr = clrOrange; }
+   else if(CopyBuffer(hH1EMA,0,0,3,h1e)>=3)
      {
       bool up = h1e[1]>=h1e[2];
       h1Txt = up ? "H1 BIAS: ↑ BUY" : "H1 BIAS: ↓ SELL";

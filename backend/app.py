@@ -94,6 +94,7 @@ DEFAULT_SETTINGS = {
     "RSISellMin":     35.0,
     "DynamicRisk":    0,
     "BaseLot":        0.5,
+    "UseH1Filter":    1,
 }
 
 BTC_DEFAULT_SETTINGS = {
@@ -115,6 +116,7 @@ BTC_DEFAULT_SETTINGS = {
     "RSISellMin":     35.0,
     "DynamicRisk":    0,
     "BaseLot":        0.01,
+    "UseH1Filter":    1,
 }
 
 

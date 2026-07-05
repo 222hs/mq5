@@ -560,7 +560,7 @@ def sync_btc_settings():
                 "CooldownSecs", "MaxLossPerDay", "MaxProfitPerDay",
                 "TradeHoursStart", "TradeHoursEnd", "BotRunning",
                 "OrderType", "RiskMode", "RiskPercent",
-                "RSIBuyMax", "RSISellMin", "DynamicRisk", "BaseLot",
+                "RSIBuyMax", "RSISellMin", "DynamicRisk", "BaseLot", "UseH1Filter",
             ]
             for k in btc_keys:
                 if k in settings:
@@ -640,7 +640,7 @@ def sync_settings():
                 "CooldownSecs", "MaxLossPerDay", "MaxProfitPerDay",
                 "TradeHoursStart", "TradeHoursEnd", "BotRunning",
                 "OrderType", "RiskMode", "RiskPercent",
-                "RSIBuyMax", "RSISellMin", "DynamicRisk", "BaseLot",
+                "RSIBuyMax", "RSISellMin", "DynamicRisk", "BaseLot", "UseH1Filter",
             ]
             for k in gold_keys:
                 if k in settings:
@@ -656,7 +656,7 @@ def sync_settings():
             btc_shared_keys = [
                 "BotRunning", "OrderType", "TradeHoursStart", "TradeHoursEnd",
                 "RiskMode", "RiskPercent", "DynamicRisk",
-                "RSIBuyMax", "RSISellMin",
+                "RSIBuyMax", "RSISellMin", "UseH1Filter",
             ]
             for k in btc_shared_keys:
                 if k in settings:

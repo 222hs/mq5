@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.3';
+const DASH_VERSION = 'v3.4';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -1222,6 +1222,16 @@ export default function Dashboard() {
                       </button>
                       <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>BaseLot={settingsDraft.BaseLot??0.5}</div>
                     </div>
+                    {/* Gold H1 Filter toggle */}
+                    <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                      <div style={bLabel({fontSize:9, color:'#f0a500'})}>H1 BIAS FILTER</div>
+                      <button className="bbtn"
+                        onClick={()=>{ const v=(settingsDraft.UseH1Filter??1)===1?0:1; setSettingsDraft(d=>({...d,UseH1Filter:v})); saveSingle('UseH1Filter',v); }}
+                        style={bBtn((settingsDraft.UseH1Filter??1)===1,{padding:'6px 14px', borderColor:'#f0a500', color:(settingsDraft.UseH1Filter??1)===1?'#000':'#f0a500'})}>
+                        {(settingsDraft.UseH1Filter??1)===1?'ON':'OFF'}
+                      </button>
+                      <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>H1 EMA21</div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1261,6 +1271,16 @@ export default function Dashboard() {
                       {(btcSettingsDraft.DynamicRisk??0)===1?'ON':'OFF'}
                     </button>
                     <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>BaseLot={btcSettingsDraft.BaseLot??0.01}</div>
+                  </div>
+                  {/* BTC H1 Filter toggle */}
+                  <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                    <div style={bLabel({fontSize:9, color:'#f0a500'})}>H1 BIAS FILTER</div>
+                    <button className="bbtn"
+                      onClick={()=>{ const v=(btcSettingsDraft.UseH1Filter??1)===1?0:1; setBtcSettingsDraft(d=>({...d,UseH1Filter:v})); saveBtcSingle('UseH1Filter',v); }}
+                      style={bBtn((btcSettingsDraft.UseH1Filter??1)===1,{padding:'6px 14px', borderColor:'#f0a500', color:(btcSettingsDraft.UseH1Filter??1)===1?'#000':'#f0a500'})}>
+                      {(btcSettingsDraft.UseH1Filter??1)===1?'ON':'OFF'}
+                    </button>
+                    <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>H1 EMA21</div>
                   </div>
                 </div>
               </div>
