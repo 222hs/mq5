@@ -61,6 +61,7 @@ DEFAULT_SETTINGS = {
     "TradeHoursStart":0,
     "TradeHoursEnd":  24,
     "ClaudeEnabled":  1,
+    "OrderType":      0,
 }
 
 
