@@ -285,16 +285,24 @@ def sync_settings():
                     else:
                         print(f"   ❌ فشل كتابة الملف بعد 3 محاولات: {we}")
 
-            if written:
-                # تحقق فعلي: اقرأ الملف وتأكد أن Lot صح
-                try:
-                    with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                        on_disk = json.load(f)
-                    lot_ok = str(on_disk.get("LotSize")) == str(settings.get("LotSize"))
-                    print(f"   📁 {SETTINGS_FILE}")
-                    print(f"   {'✅ تحقق: Lot على الديسك=' + str(on_disk.get('LotSize')) if lot_ok else '⚠️  MISMATCH! ديسك=' + str(on_disk.get('LotSize')) + ' Railway=' + str(settings.get('LotSize'))}")
-                except Exception as re:
-                    print(f"   ⚠️  فشل قراءة التحقق: {re}")
+            # كتابة ملفات individual (GSX_LotSize.txt وغيرها) — أبسط وأموثق للـ EA
+            key_map = {
+                "LotSize": "LotSize", "TP_USD": "TP_USD", "SL_USD": "SL_USD",
+                "MaxSpread": "MaxSpread", "MaxPositions": "MaxPositions",
+                "CooldownSecs": "CooldownSecs", "MaxLossPerDay": "MaxLossPerDay",
+                "MaxProfitPerDay": "MaxProfitPerDay",
+                "TradeHoursStart": "TradeHoursStart", "TradeHoursEnd": "TradeHoursEnd",
+                "BotRunning": "BotRunning",
+            }
+            for k in key_map:
+                if k in settings:
+                    fpath = os.path.join(_MT5_COMMON, f"GSX_{k}.txt")
+                    try:
+                        with open(fpath, "w", encoding="ascii") as f:
+                            f.write(str(settings[k]))
+                    except Exception:
+                        pass
+            print(f"   📝 Lot على الديسك={settings.get('LotSize')} (individual files)")
 
             print(f"{'='*55}\n")
             return

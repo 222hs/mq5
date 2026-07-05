@@ -80,46 +80,16 @@ long MagicFromSymbol(const string sym)
   }
 
 //+------------------------------------------------------------------+
-string g_settingsContent = "";  // محتوى الملف يُقرأ مرة واحدة في LoadSettings
-
-double ParseJsonValue(const string key, const double fallback)
+double ReadSetting(const string name, const double fallback)
   {
-   string search = "\"" + key + "\"";
-   int pos = StringFind(g_settingsContent, search);
-   if(pos < 0) return fallback;
-   pos += StringLen(search);
-   int len = StringLen(g_settingsContent);
-   while(pos < len && (StringGetCharacter(g_settingsContent,pos)==' ' ||
-         StringGetCharacter(g_settingsContent,pos)==':' ||
-         StringGetCharacter(g_settingsContent,pos)=='\t' ||
-         StringGetCharacter(g_settingsContent,pos)=='\r' ||
-         StringGetCharacter(g_settingsContent,pos)=='\n'))
-      pos++;
-   string num = "";
-   while(pos < len)
-     {
-      ushort c = StringGetCharacter(g_settingsContent, pos);
-      if(c=='-'||c=='.'||(c>='0'&&c<='9')) { num+=ShortToString(c); pos++; }
-      else break;
-     }
-   return StringLen(num)==0 ? fallback : StringToDouble(num);
-  }
-
-bool LoadSettingsFile()
-  {
-   // يفتح الملف كـ binary لقراءة المحتوى كاملاً دفعة واحدة
-   int fh = FileOpen(SETTINGS_FILE, FILE_READ|FILE_ANSI|FILE_COMMON);
-   if(fh == INVALID_HANDLE)
-     {
-      Print(EA_NAME,": ⚠️ فشل فتح ",SETTINGS_FILE," — خطأ ",GetLastError()," — الـ inputs defaults");
-      g_settingsContent = "";
-      return false;
-     }
-   ulong sz = FileSize(fh);
-   g_settingsContent = FileReadString(fh, (int)sz);
+   // كل إعداد في ملف نصي منفصل — سطر واحد فقط يحتوي الرقم
+   string fname = "GSX_" + name + ".txt";
+   int fh = FileOpen(fname, FILE_READ|FILE_ANSI|FILE_COMMON);
+   if(fh == INVALID_HANDLE) return fallback;
+   string s = FileReadString(fh);
    FileClose(fh);
-   Print(EA_NAME,": 📄 ملف محمّل (",sz," bytes) Lot=",ParseJsonValue("LotSize",LotSize));
-   return true;
+   double v = StringToDouble(s);
+   return (s == "" || v == 0.0 && s != "0" && s != "0.0") ? fallback : v;
   }
 
 //+------------------------------------------------------------------+
@@ -150,18 +120,17 @@ void WriteCurrentSettings()
 
 void LoadSettings()
   {
-   LoadSettingsFile();
-   g_lot             = ParseJsonValue("LotSize",        LotSize);
-   g_maxSpread       = ParseJsonValue("MaxSpread",       (double)MaxSpread);
-   g_maxPositions    = (int)ParseJsonValue("MaxPositions",(double)MaxPositions);
-   g_cooldownSecs    = (int)ParseJsonValue("CooldownSecs",(double)CooldownSecs);
-   g_tpUSD           = ParseJsonValue("TP_USD",          3.0);
-   g_slUSD           = ParseJsonValue("SL_USD",          2.0);
-   g_maxLossPerDay   = ParseJsonValue("MaxLossPerDay",  50.0);
-   g_maxProfitPerDay = ParseJsonValue("MaxProfitPerDay",200.0);
-   g_tradeHoursStart = (int)ParseJsonValue("TradeHoursStart", 0.0);
-   g_tradeHoursEnd   = (int)ParseJsonValue("TradeHoursEnd",  24.0);
-   g_botRunning      = (ParseJsonValue("BotRunning", 1.0) > 0.5);
+   g_lot             = ReadSetting("LotSize",        LotSize);
+   g_maxSpread       = ReadSetting("MaxSpread",       (double)MaxSpread);
+   g_maxPositions    = (int)ReadSetting("MaxPositions",(double)MaxPositions);
+   g_cooldownSecs    = (int)ReadSetting("CooldownSecs",(double)CooldownSecs);
+   g_tpUSD           = ReadSetting("TP_USD",          3.0);
+   g_slUSD           = ReadSetting("SL_USD",          2.0);
+   g_maxLossPerDay   = ReadSetting("MaxLossPerDay",  50.0);
+   g_maxProfitPerDay = ReadSetting("MaxProfitPerDay",200.0);
+   g_tradeHoursStart = (int)ReadSetting("TradeHoursStart", 0.0);
+   g_tradeHoursEnd   = (int)ReadSetting("TradeHoursEnd",  24.0);
+   g_botRunning      = (ReadSetting("BotRunning", 1.0) > 0.5);
    Print(EA_NAME," ✅ إعدادات محملة:"
          " Lot=",g_lot,
          " TP$=",g_tpUSD,
