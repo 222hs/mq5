@@ -249,11 +249,12 @@ void OnTick()
    if(barTime==g_lastBar) return;
    g_lastBar=barTime;
 
-   if(CountPos()>0) return;
+   if(CountPos()>0) { Print("GR: waiting — position open"); return; }
 
    long sp=SymbolInfoInteger(_Symbol,SYMBOL_SPREAD);
-   if(sp>InpMaxSpread) return;
+   if(sp>InpMaxSpread) { Print("GR: spread too high = ",sp); return; }
 
+   Print("GR: opening trade, lastWasBuy=",g_lastWasBuy);
    if(g_lastWasBuy) OpenTrade(ORDER_TYPE_SELL);
    else             OpenTrade(ORDER_TYPE_BUY);
   }
