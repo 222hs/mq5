@@ -5,6 +5,8 @@ input double LotSize     = 0.01;
 input int    TakeProfit  = 20;   // نقاط ربح
 input int    StopLoss    = 30;   // نقاط خسارة
 input int    RSI_Period  = 7;    // RSI سريع
+input int    RSI_Buy     = 40;   // فتح شراء إذا RSI تحت هذا
+input int    RSI_Sell    = 60;   // فتح بيع إذا RSI فوق هذا
 input int    MaxSpread   = 30;   // أقصى سبريد
 
 int      rsiHandle;
@@ -100,12 +102,12 @@ void OnTick()
    double rsi[2];
    if(CopyBuffer(rsiHandle, 0, 1, 2, rsi) < 2) return;
 
-   // شراء: RSI كان تحت 30 وارتد للأعلى
-   if(rsi[1] < 30 && rsi[0] > rsi[1])
+   // شراء: RSI تحت الحد وارتد للأعلى
+   if(rsi[1] < RSI_Buy && rsi[0] > rsi[1])
       OpenTrade(ORDER_TYPE_BUY);
 
-   // بيع: RSI كان فوق 70 وانعكس للأسفل
-   if(rsi[1] > 70 && rsi[0] < rsi[1])
+   // بيع: RSI فوق الحد وانعكس للأسفل
+   if(rsi[1] > RSI_Sell && rsi[0] < rsi[1])
       OpenTrade(ORDER_TYPE_SELL);
   }
 //+------------------------------------------------------------------+
