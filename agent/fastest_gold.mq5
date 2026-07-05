@@ -178,7 +178,7 @@ void LoadSettings()
 
    if(changed)
      {
-      string otStr = g_orderType==1?"LIMIT":g_orderType==2?"STOP":"MARKET";
+      string otStr = g_orderType==3?"BASKET":g_orderType==1?"LIMIT":g_orderType==2?"STOP":"MARKET";
       Print(EA_NAME," ✅ إعدادات محملة:"
             " Lot=",g_lot," TP$=",g_tpUSD," SL$=",g_slUSD,
             " MaxPos=",g_maxPositions," Spread=",g_maxSpread,
@@ -850,8 +850,8 @@ void UpdateDashboard(const int trend,const double rsi,
    DLabel("V_SPREAD",string(spreadPts)+" pts",xV,y,spClr); y+=ROW_H;
 
    DLabel("V_ATR",DoubleToString(atrVal,_Digits),xV,y,CLR_HILITE); y+=ROW_H;
-   string otTxt = g_orderType==1?"LIMIT":g_orderType==2?"STOP":"MARKET";
-   color  otClr = g_orderType==1?clrDodgerBlue:g_orderType==2?clrOrange:CLR_GOOD;
+   string otTxt = g_orderType==3?"BASKET":g_orderType==1?"LIMIT":g_orderType==2?"STOP":"MARKET";
+   color  otClr = g_orderType==3?clrGold:g_orderType==1?clrDodgerBlue:g_orderType==2?clrOrange:CLR_GOOD;
    DLabel("V_ORDTYP",otTxt,xV,y,otClr); y+=ROW_H;
    string newsTxt = g_newsBlock ? ("NEWS: "+g_newsTitle) : "NO NEWS";
    color  newsClr = g_newsBlock ? CLR_BAD : CLR_NEUTRAL;

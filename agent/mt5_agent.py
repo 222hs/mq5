@@ -478,7 +478,7 @@ def sync_settings():
             print(f"   Lot={settings.get('LotSize')}  TP$={settings.get('TP_USD')}  SL$={settings.get('SL_USD')}")
             print(f"   MaxPos={settings.get('MaxPositions')}  Spread={settings.get('MaxSpread')}  CD={settings.get('CooldownSecs')}s")
             print(f"   MaxLoss$={settings.get('MaxLossPerDay')}  MaxProfit$={settings.get('MaxProfitPerDay')}")
-            ot = {0:'MARKET', 1:'LIMIT', 2:'STOP'}.get(int(settings.get('OrderType', 0)), 'MARKET')
+            ot = {0:'MARKET', 1:'LIMIT', 2:'STOP', 3:'BASKET'}.get(int(settings.get('OrderType', 0)), 'MARKET')
             print(f"   Hours={settings.get('TradeHoursStart')}-{settings.get('TradeHoursEnd')}  Bot={'ON' if settings.get('BotRunning') else 'OFF'}  OrderType={ot}")
 
             # نتحقق إذا تغيرت الإعدادات
