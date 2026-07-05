@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v2.5';
+const DASH_VERSION = 'v2.6';
 
 // ── Terminal palette (matches reference design) ─────────────────────
 const C = {
@@ -101,16 +101,19 @@ export default function Dashboard() {
   const [connState, setConnState] = useState('connecting');
   const socketRef = useRef(null);
   const [logs, setLogs] = useState([]);
-  const logEndRef = useRef(null);
+  const logBoxRef = useRef(null);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  // auto-scroll log to bottom
+  // auto-scroll داخل صندوق اللوج فقط — لا يحرك الصفحة
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const box = logBoxRef.current;
+    if (!box) return;
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+    if (atBottom) box.scrollTop = box.scrollHeight;
   }, [logs]);
 
   // keep-alive: ping backend every 25s so Railway doesn't sleep
@@ -1044,7 +1047,7 @@ export default function Dashboard() {
               style={{fontSize:9,padding:'2px 8px',letterSpacing:'1px',border:`1px solid ${C.muted}`,color:C.muted,background:'transparent',fontFamily:C.mono,cursor:'pointer'}}
               onClick={()=>setLogs([])}>CLEAR</button>
           </div>
-          <div style={{
+          <div ref={logBoxRef} style={{
             height:160, overflowY:'auto', fontFamily:C.mono, fontSize:10,
             background:C.bg, border:C.border, padding:'8px 10px',
             display:'flex', flexDirection:'column', gap:2,
@@ -1061,7 +1064,6 @@ export default function Dashboard() {
                   );
                 })
             }
-            <div ref={logEndRef}/>
           </div>
         </div>
 
