@@ -377,65 +377,105 @@ def call_claude(consecutive_losses, recent_trades, account):
 
 
 def analyze_patterns():
-    """يحلل trade snapshots ويستخرج patterns — يُستدعى كل 20 صفقة"""
+    """
+    تحليل كلود الشامل — يُستدعى كل 10 صفقات مغلقة.
+    يبني صورة كاملة من snapshots + نتائج ويرجع 4 insights مفصّلة:
+      1. أفضل وقت (session)
+      2. RSI range الأمثل للدخول
+      3. EMA + اتجاه الفلتر
+      4. توصية فورية للإعدادات
+    """
     if not ANTHROPIC_API_KEY:
         return
 
-    trades     = get_history(100)
-    trade_map  = {t["ticket"]: t for t in trades}
-    snaps      = get_snapshots(60)
+    trades    = get_history(200)
+    trade_map = {t["ticket"]: t for t in trades}
+    snaps     = get_snapshots(100)
 
-    # ربط الـ snapshots بنتائج الصفقات
+    # ─── ربط الـ snapshots بنتائج الصفقات ───────────────────────────
     enriched = []
     for s in snaps:
         t = trade_map.get(s.get("ticket"))
-        if t:
-            enriched.append({
-                "rsi":       s.get("rsi"),
-                "ema_up":    s.get("ema_up"),
-                "atr":       s.get("atr"),
-                "session":   s.get("session"),
-                "direction": s.get("direction"),
-                "profit":    t.get("profit", 0),
-            })
+        if not t:
+            continue
+        profit = t.get("profit", 0) + t.get("swap", 0) + t.get("commission", 0)
+        enriched.append({
+            "rsi":       s.get("rsi", 50),
+            "ema_up":    s.get("ema_up", True),
+            "atr":       s.get("atr", 0),
+            "session":   s.get("session", "Unknown"),
+            "direction": s.get("direction", "BUY"),
+            "profit":    round(profit, 2),
+            "win":       profit > 0,
+        })
 
-    # fallback للـ comment-based إذا snapshots ناقصة
-    if len(enriched) < 8:
-        comment_trades = [t for t in trades if t.get("comment") and "RSI=" in (t.get("comment") or "")]
-        if len(comment_trades) < 8:
+    # ─── fallback: comment-based إذا snapshots ناقصة ────────────────
+    if len(enriched) < 5:
+        comment_trades = [
+            t for t in trades
+            if t.get("comment") and "RSI=" in (t.get("comment") or "")
+        ]
+        if len(comment_trades) < 5:
             return
-        wins  = [t for t in comment_trades if (t["profit"] or 0) > 0]
-        loses = [t for t in comment_trades if (t["profit"] or 0) <= 0]
-        def fmt_c(lst):
-            return " | ".join([t["comment"] for t in lst[:8]])
+        wins  = [t for t in comment_trades if (t.get("profit", 0)) > 0]
+        loses = [t for t in comment_trades if (t.get("profit", 0)) <= 0]
         prompt = (
-            f"XAUUSD M1 scalping. WIN ({len(wins)}): {fmt_c(wins)}\n"
-            f"LOSS ({len(loses)}): {fmt_c(loses)}\n"
-            f"RSI/EMA=U‑D/ATR/S=session. ONE pattern insight max 25 words."
+            f"XAUUSD M1 scalping bot. {len(comment_trades)} closed trades.\n"
+            f"WIN ({len(wins)}): " + " | ".join(t["comment"] for t in wins[:10]) + "\n"
+            f"LOSS ({len(loses)}): " + " | ".join(t["comment"] for t in loses[:10]) + "\n\n"
+            "Format your response EXACTLY as:\n"
+            "BEST SESSION: [answer]\n"
+            "BEST RSI: [answer]\n"
+            "EMA RULE: [answer]\n"
+            "ACTION: [one sentence]\n"
+            "Be specific with numbers. Max 12 words per line."
         )
     else:
-        wins  = [e for e in enriched if e["profit"] > 0]
-        loses = [e for e in enriched if e["profit"] <= 0]
+        wins  = [e for e in enriched if e["win"]]
+        loses = [e for e in enriched if not e["win"]]
 
-        def fmt_e(lst):
-            return " | ".join(
-                f"RSI={e['rsi']} EMA={'U' if e['ema_up'] else 'D'} ATR={e['atr']} S={e['session']}"
-                for e in lst[:12]
+        def summarize(lst, label):
+            if not lst:
+                return f"{label}: no data"
+            sessions = {}
+            rsi_sum  = 0
+            ema_up_c = 0
+            for e in lst:
+                sessions[e["session"]] = sessions.get(e["session"], 0) + 1
+                rsi_sum  += e["rsi"]
+                ema_up_c += 1 if e["ema_up"] else 0
+            best_sess = max(sessions, key=sessions.get)
+            avg_rsi   = round(rsi_sum / len(lst), 1)
+            ema_pct   = round(ema_up_c / len(lst) * 100)
+            samples   = " | ".join(
+                f"RSI={e['rsi']} EMA={'↑' if e['ema_up'] else '↓'} S={e['session']} P=${e['profit']}"
+                for e in lst[:8]
+            )
+            return (
+                f"{label} ({len(lst)}): best_session={best_sess} avg_rsi={avg_rsi} "
+                f"ema_up={ema_pct}% | samples: {samples}"
             )
 
+        win_rate = round(len(wins) / len(enriched) * 100, 1) if enriched else 0
+        total_pnl = round(sum(e["profit"] for e in enriched), 2)
+
         prompt = (
-            f"XAUUSD M1 scalping bot — {len(enriched)} trades with entry snapshots.\n"
-            f"WINS ({len(wins)}): {fmt_e(wins)}\n"
-            f"LOSSES ({len(loses)}): {fmt_e(loses)}\n\n"
-            f"Analyze RSI levels, EMA direction (U=up/D=down), ATR volatility range, "
-            f"and session timing vs trade outcomes.\n"
-            f"ONE specific actionable insight max 25 words. Cite specific values."
+            f"XAUUSD M1 scalping bot analysis. {len(enriched)} trades, "
+            f"win_rate={win_rate}%, total_pnl=${total_pnl}\n\n"
+            f"{summarize(wins,  'WINS')}\n"
+            f"{summarize(loses, 'LOSSES')}\n\n"
+            "Based on this data, format your response EXACTLY as:\n"
+            "BEST SESSION: [which session wins most and %]\n"
+            "BEST RSI: [optimal RSI range at entry e.g. 40-60]\n"
+            "EMA RULE: [should EMA be up or down for BUY/SELL]\n"
+            "ACTION: [one specific setting change to improve win rate]\n"
+            "Be specific with numbers from the data. Max 15 words per line."
         )
 
     try:
         body = json.dumps({
             "model": "claude-haiku-4-5-20251001",
-            "max_tokens": 120,
+            "max_tokens": 200,
             "messages": [{"role": "user", "content": prompt}]
         }).encode()
         req = urllib.request.Request(
@@ -447,14 +487,14 @@ def analyze_patterns():
                 "content-type": "application/json",
             }
         )
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with urllib.request.urlopen(req, timeout=25) as resp:
             result = json.loads(resp.read())["content"][0]["text"].strip()
         with data_lock:
             latest_data["pattern_advice"] = result
             latest_data["pattern_time"]   = datetime.now().isoformat()
         socketio.emit("dashboard", build_dashboard_payload())
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Claude pattern error: {e}")
 
 
 # ---------- WebSocket events ----------
@@ -528,10 +568,10 @@ def update_data():
                 with data_lock:
                     latest_data["claude_advice"] = advice
                     latest_data["claude_time"]   = now
-        # 2) تحليل patterns كل 20 صفقة جديدة
+        # 2) تحليل patterns كل 10 صفقات جديدة
         global _last_pattern_count
         total = len(get_history(1000))
-        if total - _last_pattern_count >= 20:
+        if total - _last_pattern_count >= 10:
             _last_pattern_count = total
             import threading
             threading.Thread(target=analyze_patterns, daemon=True).start()
