@@ -1,10 +1,10 @@
 //+------------------------------------------------------------------+
 //|                                                GoldScalperEA.mq5 |
-//|                                        GoldScalperX version 9.60 |
+//|                                        GoldScalperX version 9.70 |
 //|  Gold scalper — bar-gated, closed-bar signals, trailing stop     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.60"
+#property version   "9.70"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.60"
+#define EA_VERSION    "9.70"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -116,9 +116,9 @@ void LoadSettings()
    g_maxSpread    = ReadJsonValue("MaxSpread",    (double)MaxSpread);
    g_maxPositions = (int)ReadJsonValue("MaxPositions",(double)MaxPositions);
    g_cooldownSecs = (int)ReadJsonValue("CooldownSecs",(double)CooldownSecs);
-   g_tpUSD        = ReadJsonValue("TP_USD",       3.0);
-   g_slUSD        = ReadJsonValue("SL_USD",       2.0);
-   g_trailUSD     = ReadJsonValue("TrailUSD",     0.5);
+   g_tpUSD        = ReadJsonValue("TP_USD",       2.0);
+   g_slUSD        = ReadJsonValue("SL_USD",       3.0);
+   g_trailUSD     = ReadJsonValue("TrailUSD",     0.0);
    g_botRunning   = (ReadJsonValue("BotRunning",  1.0) > 0.5);
 
    // كتابة الإعدادات الفعلية في ملف مؤقت ثم rename (atomic — يتجنب تعارض القراءة)
@@ -255,58 +255,28 @@ void OnTick()
    g_lastBar = barTime;
    LoadSettings();
 
-   double rsi[], ema9[], ema21[], atr[];
-   double bbU[], bbL[], bbM[];
-   double stochK[], stochD[];
-   double o[], h[], l[], c[];
-   ArraySetAsSeries(rsi,true);   ArraySetAsSeries(ema9,true);
-   ArraySetAsSeries(ema21,true); ArraySetAsSeries(atr,true);
-   ArraySetAsSeries(bbU,true);   ArraySetAsSeries(bbL,true); ArraySetAsSeries(bbM,true);
-   ArraySetAsSeries(stochK,true);ArraySetAsSeries(stochD,true);
-   ArraySetAsSeries(o,true); ArraySetAsSeries(h,true);
-   ArraySetAsSeries(l,true); ArraySetAsSeries(c,true);
+   double atr[];
+   double o[], c[];
+   ArraySetAsSeries(atr,true);
+   ArraySetAsSeries(o,true); ArraySetAsSeries(c,true);
 
-   if(CopyBuffer(hRSI,  0,0,4,rsi)   <4) return;
-   if(CopyBuffer(hEMA9, 0,0,4,ema9)  <4) return;
-   if(CopyBuffer(hEMA21,0,0,4,ema21) <4) return;
-   if(CopyBuffer(hATR,  0,0,3,atr)   <3) return;
-   if(CopyBuffer(hBB,   1,0,4,bbU)   <4) return;  // upper band
-   if(CopyBuffer(hBB,   2,0,4,bbL)   <4) return;  // lower band
-   if(CopyBuffer(hBB,   0,0,4,bbM)   <4) return;  // middle band
-   if(CopyBuffer(hStoch,0,0,4,stochK)<4) return;  // %K
-   if(CopyBuffer(hStoch,1,0,4,stochD)<4) return;  // %D
-   if(CopyOpen (_Symbol,TF,0,4,o)<4)     return;
-   if(CopyHigh (_Symbol,TF,0,4,h)<4)     return;
-   if(CopyLow  (_Symbol,TF,0,4,l)<4)     return;
-   if(CopyClose(_Symbol,TF,0,4,c)<4)     return;
+   if(CopyBuffer(hATR, 0,0,2,atr) <2) return;
+   if(CopyOpen (_Symbol,TF,0,2,o) <2) return;
+   if(CopyClose(_Symbol,TF,0,2,c) <2) return;
 
-   double rsi1  = rsi[1];
-   double ema91 = ema9[1], ema211 = ema21[1];
    double atr1  = atr[1];
+   double ema91 = 0, ema211 = 0, rsi1 = 50; // dashboard only
 
-   // ── STRATEGY: Bollinger Bands + Stochastic ──
-   // السعر يلمس الباند السفلي + Stochastic oversold → BUY (ارتداد لأعلى)
-   // السعر يلمس الباند العلوي + Stochastic overbought → SELL (ارتداد لأسفل)
+   double ema9tmp[], ema21tmp[], rsitmp[];
+   ArraySetAsSeries(ema9tmp,true); ArraySetAsSeries(ema21tmp,true); ArraySetAsSeries(rsitmp,true);
+   if(CopyBuffer(hEMA9, 0,0,2,ema9tmp)  == 2) ema91  = ema9tmp[1];
+   if(CopyBuffer(hEMA21,0,0,2,ema21tmp) == 2) ema211 = ema21tmp[1];
+   if(CopyBuffer(hRSI,  0,0,2,rsitmp)   == 2) rsi1   = rsitmp[1];
 
-   // لمس الباند: الشمعة المغلقة أغلقت داخل/خارج الباند
-   bool touchedLower = (l[1] <= bbL[1]);   // لمس أو اخترق الباند السفلي
-   bool touchedUpper = (h[1] >= bbU[1]);   // لمس أو اخترق الباند العلوي
-
-   // Stochastic: %K يتقاطع مع %D في المنطقة المناسبة
-   bool stochBuy  = (stochK[1] < 25.0) && (stochK[1] > stochK[2]); // oversold + يرتد
-   bool stochSell = (stochK[1] > 75.0) && (stochK[1] < stochK[2]); // overbought + ينزل
-
-   // شمعة الإغلاق تؤكد الاتجاه (ارتداد من الباند)
-   bool candleBuy  = (c[1] > o[1]);  // شمعة خضراء (ارتداد من أسفل)
-   bool candleSell = (c[1] < o[1]);  // شمعة حمراء (ارتداد من أعلى)
-
+   // ── SIGNAL: اتجاه الشمعة الأخيرة — أبسط شيء ممكن ──
    int signal = 0;
-   if(touchedLower && stochBuy  && candleBuy)  signal =  1;
-   else if(touchedUpper && stochSell && candleSell) signal = -1;
-
-   // Reversal: إذا آخر صفقة خسرت وما في إشارة جديدة، اعكس الاتجاه
-   if(g_lastWasLoss && signal == 0) signal = -g_lastLossDir;
-   else if(g_lastWasLoss && signal != 0) g_lastWasLoss = false;
+   if(c[1] > o[1]) signal =  1;  // شمعة ترتفع → BUY
+   else if(c[1] < o[1]) signal = -1;  // شمعة تنزل  → SELL
 
    long spread   = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    bool spreadOK = (spread <= (long)g_maxSpread);
