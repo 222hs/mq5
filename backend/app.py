@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 from threading import Lock
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder="static", static_url_path="/assets")
 CORS(app)
 
 # ============== الإعدادات ==============
@@ -57,8 +57,18 @@ def check_api_key():
     return key == API_KEY
 
 
-@app.route("/", methods=["GET"])
-def index():
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def index(path):
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    file_path = os.path.join(static_dir, path)
+    if path and os.path.exists(file_path):
+        return app.send_static_file(path)
+    index_file = os.path.join(static_dir, "index.html")
+    if os.path.exists(index_file):
+        with open(index_file) as f:
+            from flask import Response
+            return Response(f.read(), mimetype="text/html")
     return jsonify({"status": "ok", "message": "MT5 Dashboard API is running"})
 
 
