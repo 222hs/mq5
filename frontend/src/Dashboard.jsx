@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v2.2';
+const DASH_VERSION = 'v2.3';
 
 // ── Terminal palette (matches reference design) ─────────────────────
 const C = {
@@ -98,16 +98,35 @@ export default function Dashboard() {
   const seenTickets = useRef(null);
   const prevPositions = useRef(null);
   const popupTimer = useRef(null);
+  const [connState, setConnState] = useState('connecting'); // 'connected' | 'connecting' | 'disconnected'
+  const socketRef = useRef(null);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
 
+  // keep-alive: ping backend every 25s so Railway doesn't sleep
+  useEffect(() => {
+    const ping = () => fetch(`${API_URL}/api/ping`, { method: 'GET' }).catch(() => {});
+    ping();
+    const t = setInterval(ping, 25000);
+    return () => clearInterval(t);
+  }, []);
+
   useEffect(() => {
     const socket = io(API_URL || window.location.origin, {
       transports: ['websocket', 'polling'],
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: Infinity,
+      timeout: 10000,
     });
+    socketRef.current = socket;
+
+    socket.on('connect',    () => setConnState('connected'));
+    socket.on('disconnect', () => setConnState('disconnected'));
+    socket.on('connect_error', () => setConnState('connecting'));
 
     const handleDashboard = (d) => {
       // Popup: detect closed positions (updates every 2s) — أسرع من history (60s)
@@ -142,6 +161,9 @@ export default function Dashboard() {
       socket.off('dashboard', handleDashboard);
       socket.off('candles');
       socket.off('settings');
+      socket.off('connect');
+      socket.off('disconnect');
+      socket.off('connect_error');
       socket.disconnect();
       clearTimeout(popupTimer.current);
     };
@@ -324,6 +346,17 @@ export default function Dashboard() {
             boxShadow: isOnline ? '0 0 10px rgba(0,255,65,0.5)' : 'none',
           }}>
             <span style={{animation: isOnline?'blink 2s infinite':'none', display:'inline-block'}}>■</span> {isOnline ? 'LIVE' : 'OFFLINE'}
+          </div>
+          {/* WebSocket connection state */}
+          <div style={{
+            fontSize:9, fontWeight:'bold', letterSpacing:'1px',
+            padding:'2px 8px',
+            border:`1px solid ${connState==='connected'?'rgba(0,255,65,0.4)':connState==='connecting'?'rgba(240,180,41,0.4)':'rgba(255,69,96,0.4)'}`,
+            color: connState==='connected'?C.neon : connState==='connecting'?C.yellow : C.red,
+            background: connState==='connected'?'rgba(0,255,65,0.06)':connState==='connecting'?'rgba(240,180,41,0.06)':'rgba(255,69,96,0.06)',
+            animation: connState==='connecting'?'blink 1s infinite':'none',
+          }}>
+            WS: {connState==='connected'?'●':connState==='connecting'?'◌':'✕'} {connState.toUpperCase()}
           </div>
           {newsFilter.blocked && (
             <div style={{

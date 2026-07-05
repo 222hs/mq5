@@ -15,7 +15,13 @@ import urllib.request
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app, resources={r"/*": {"origins": "*"}})
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    async_mode="threading",
+    ping_interval=20,    # server pings client every 20s
+    ping_timeout=60,     # wait 60s before declaring disconnect
+)
 
 # ============== الإعدادات ==============
 API_KEY           = os.environ.get("API_KEY", "mysecretkey123")
@@ -592,6 +598,11 @@ def update_data():
         pass
 
     return jsonify({"status": "ok"})
+
+
+@app.route("/api/ping", methods=["GET"])
+def ping():
+    return jsonify({"ok": True})
 
 
 @app.route("/api/dashboard", methods=["GET"])
