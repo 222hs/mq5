@@ -17,7 +17,7 @@ const C = {
   red:     '#ff0040',
   yellow:  '#ffff00',
   mono:    "'Courier New','Courier',monospace",
-  shadow:  '4px 4px 0px #00ff41',
+  shadow:  '4px 4px 0px #000000',
   border:  '2px solid #ffffff',
 };
 
@@ -258,7 +258,7 @@ export default function Dashboard() {
           content:''; position:fixed; inset:0; pointer-events:none; z-index:900;
           background: repeating-linear-gradient(to bottom, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 4px);
         }
-        .bcard:hover { box-shadow: 6px 6px 0px #00ff41; }
+        .bcard:hover { box-shadow: 6px 6px 0px #000000; }
         .bbtn:hover  { background:#000 !important; color:#00ff41 !important; border:2px solid #00ff41 !important; }
         .bbtn:active { box-shadow: 0 0 12px #00ff41; }
         .bbtn-red:hover { background:#000 !important; color:#ff0040 !important; border:2px solid #ff0040 !important; }
@@ -592,7 +592,7 @@ export default function Dashboard() {
             </div>
 
             {/* Claude AI */}
-            <div className="bcard" style={bCard({border:'2px solid #00ff41', boxShadow:'4px 4px 0px #ffffff'})}>
+            <div className="bcard" style={bCard({border:'2px solid #00ff41', boxShadow:'4px 4px 0px #000000'})}>
               <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:10}}>
                 <span style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:C.neon}}>◆ CLAUDE_AI</span>
                 {claudeTime && <span style={{fontSize:9, color:C.muted}}>{new Date(claudeTime).toLocaleTimeString()}</span>}
