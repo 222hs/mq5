@@ -36,6 +36,8 @@ latest_data = {
     "positions": [],
     "pending_orders": [],
     "news_filter": {"blocked": False, "title": ""},
+    "h1_bias_up": None,
+    "last_rsi": None,
     "last_update": None,
     "candles": [],
     "sessions": {},
@@ -316,6 +318,8 @@ def build_dashboard_payload():
             "positions":      latest_data["positions"],
             "pending_orders": latest_data["pending_orders"],
             "news_filter":    latest_data["news_filter"],
+            "h1_bias_up":     latest_data["h1_bias_up"],
+            "last_rsi":       latest_data["last_rsi"],
             "history":        closed_trades[:50],
             "is_online":    is_online,
             "last_update":  latest_data["last_update"],
@@ -542,6 +546,10 @@ def update_data():
         latest_data["positions"]      = payload.get("positions", [])
         latest_data["pending_orders"] = payload.get("pending_orders", [])
         latest_data["news_filter"]    = payload.get("news_filter", {"blocked": False, "title": ""})
+        if payload.get("h1_bias_up") is not None:
+            latest_data["h1_bias_up"] = payload.get("h1_bias_up")
+        if payload.get("last_rsi") is not None:
+            latest_data["last_rsi"]   = payload.get("last_rsi")
         latest_data["last_update"]    = now
 
         if latest_data["account"]:

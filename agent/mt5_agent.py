@@ -157,6 +157,18 @@ def get_trading_sessions():
     }
 
 
+def get_h1_bias(symbol):
+    """يحسب H1 EMA21 bias — True=صاعد (BUY bias) / False=هابط (SELL bias)"""
+    rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_H1, 0, 30)
+    if rates is None or len(rates) < 25:
+        return None
+    closes = [float(r["close"]) for r in rates]
+    ema = _calc_ema(closes, 21)
+    # مقارنة EMA الحالية بالسابقة — حساب EMA على آخر 29 شمعة للمقارنة
+    ema_prev = _calc_ema(closes[:-1], 21)
+    return ema >= ema_prev
+
+
 def get_recent_history(days=30):
     from_date = datetime.now().timestamp() - (days * 24 * 60 * 60)
     deals = mt5.history_deals_get(datetime.fromtimestamp(from_date), datetime.now())
@@ -549,8 +561,16 @@ def main():
                 send_candles()
                 last_candles_sync = now
 
-            account   = get_account_info()
-            positions = get_open_positions()
+            account    = get_account_info()
+            positions  = get_open_positions()
+            gold_sym   = detect_gold_symbol()
+            h1_bias    = get_h1_bias(gold_sym)
+            # RSI من آخر شمعة M1
+            m1_rates   = mt5.copy_rates_from_pos(gold_sym, mt5.TIMEFRAME_M1, 0, 20)
+            last_rsi   = None
+            if m1_rates is not None and len(m1_rates) >= 16:
+                closes_m1 = [float(r["close"]) for r in m1_rates]
+                last_rsi  = _calc_rsi(closes_m1)
 
             # كشف الصفقات الجديدة وإرسال snapshot فوري
             for pos in positions:
@@ -574,6 +594,8 @@ def main():
                 "positions":      positions,
                 "pending_orders": pending,
                 "news_filter":    news_status,
+                "h1_bias_up":     h1_bias,
+                "last_rsi":       last_rsi,
                 "history":        history if history else None,
                 "timestamp":      datetime.now().isoformat(),
             })

@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v2.0';
+const DASH_VERSION = 'v2.1';
 
 // ── Terminal palette (matches reference design) ─────────────────────
 const C = {
@@ -664,6 +664,28 @@ export default function Dashboard() {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* H1 Bias + Filters Status */}
+            <div className="bcard" style={bCard({padding:'0.9rem'})}>
+              <div style={bLabel({color:C.ink, marginBottom:8})}>&gt; SIGNAL FILTERS</div>
+              <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+                {[
+                  { label:'H1 BIAS', value: data?.h1_bias_up == null ? '--' : data.h1_bias_up ? '↑ BUY' : '↓ SELL',
+                    color: data?.h1_bias_up == null ? C.muted : data.h1_bias_up ? C.neon : C.red },
+                  { label:'RSI', value: data?.last_rsi != null ? `${data.last_rsi}` : '--',
+                    color: data?.last_rsi > 65 ? C.red : data?.last_rsi < 35 ? C.red : C.neon },
+                  { label:'SPREAD', value: data?.account ? `${Math.round((data.account.spread||0))}` : '--',
+                    color: C.muted },
+                  { label:'NEWS', value: newsFilter.blocked ? '🚫 BLOCK' : '✓ CLEAR',
+                    color: newsFilter.blocked ? C.red : C.neon },
+                ].map(f => (
+                  <div key={f.label} style={{flex:1, minWidth:60, textAlign:'center', padding:'6px 4px', background:C.faint}}>
+                    <div style={{fontSize:8, color:C.muted, letterSpacing:'2px', marginBottom:2}}>{f.label}</div>
+                    <div style={{fontSize:12, fontWeight:'bold', color:f.color}}>{f.value}</div>
+                  </div>
+                ))}
               </div>
             </div>
 

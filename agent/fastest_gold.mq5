@@ -4,7 +4,7 @@
 //|  Gold scalper — bar-gated, closed-bar signals, smart filters     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.14"
+#property version   "9.15"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -14,13 +14,13 @@
 input double          LotSize      = 0.5;      // Lot size
 input ENUM_TIMEFRAMES TF           = PERIOD_M1;// Working timeframe
 input int             MaxPositions = 10;       // Max open positions
-input int             CooldownSecs = 0;        // Cooldown between entries (sec)
+input int             CooldownSecs = 60;       // Cooldown between entries (sec)
 input int             MaxSpread    = 350;      // Max spread in points
 input bool            UseSession   = false;    // Session filter (false=trade 24h)
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.14"
+#define EA_VERSION    "9.15"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE   "GSX_Settings.json"
 #define CURRENT_FILE    "GSX_Current.json"
@@ -49,7 +49,8 @@ CPositionInfo  posInfo;
 
 long     g_magic         = 0;
 int      hRSI = INVALID_HANDLE, hEMA9 = INVALID_HANDLE,
-         hEMA21 = INVALID_HANDLE, hATR = INVALID_HANDLE;
+         hEMA21 = INVALID_HANDLE, hATR = INVALID_HANDLE,
+         hH1EMA = INVALID_HANDLE;   // H1 EMA21 — bias filter
 datetime g_lastEntryTime = 0;
 datetime g_lastBar       = 0;
 double   g_snapRSI       = 50.0;
@@ -61,7 +62,7 @@ double   g_lot          = 0.5;
 int      g_maxPositions = 10;
 int      g_cooldownSecs = 0;
 double   g_maxSpread    = 350.0;
-double   g_tpUSD        = 3.0;
+double   g_tpUSD        = 4.0;   // default 1:2 ratio with SL
 double   g_slUSD        = 2.0;
 double   g_maxLossPerDay   = 50.0;
 double   g_maxProfitPerDay = 200.0;
@@ -226,13 +227,14 @@ int OnInit()
    trade.SetDeviationInPoints(50);
    trade.SetTypeFillingBySymbol(_Symbol);
 
-   hRSI   = iRSI(_Symbol, TF, 7,  PRICE_CLOSE);
-   hEMA9  = iMA (_Symbol, TF, 9,  0, MODE_EMA, PRICE_CLOSE);
-   hEMA21 = iMA (_Symbol, TF, 21, 0, MODE_EMA, PRICE_CLOSE);
-   hATR   = iATR(_Symbol, TF, 14);
+   hRSI   = iRSI(_Symbol, TF,         7,  PRICE_CLOSE);
+   hEMA9  = iMA (_Symbol, TF,         9,  0, MODE_EMA, PRICE_CLOSE);
+   hEMA21 = iMA (_Symbol, TF,         21, 0, MODE_EMA, PRICE_CLOSE);
+   hATR   = iATR(_Symbol, TF,         14);
+   hH1EMA = iMA (_Symbol, PERIOD_H1,  21, 0, MODE_EMA, PRICE_CLOSE); // H1 bias
 
    if(hRSI==INVALID_HANDLE||hEMA9==INVALID_HANDLE||
-      hEMA21==INVALID_HANDLE||hATR==INVALID_HANDLE)
+      hEMA21==INVALID_HANDLE||hATR==INVALID_HANDLE||hH1EMA==INVALID_HANDLE)
      { Print(EA_NAME,": indicator init failed"); return(INIT_FAILED); }
 
    LoadSettings();
@@ -345,15 +347,29 @@ void OnTick()
    double ema91= ema9[1], ema211= ema21[1];
    double atr1 = atr[1];
 
+   // ── H1 BIAS: يحدد الاتجاه الرئيسي ───────────────────────────────
+   // نأخذ H1 EMA21[1] و[2] لنعرف هل الـ EMA صاعد أو هابط
+   double h1ema[];
+   ArraySetAsSeries(h1ema, true);
+   bool h1BullBias = true; // fallback: لو فشل القراءة نتداول بحرية
+   if(CopyBuffer(hH1EMA, 0, 0, 3, h1ema) >= 3)
+      h1BullBias = (h1ema[1] >= h1ema[2]); // H1 EMA صاعد = BUY bias
+
    // ── CANDLE MOMENTUM: follow the last closed candle direction ──
    bool bullBar = (c[1] > o[1]) && ((c[1]-o[1])/(h[1]-l[1]+1e-10) >= 0.25)
                && (h[1]-l[1]) <= 5.0*atr1;
    bool bearBar = (c[1] < o[1]) && ((o[1]-c[1])/(h[1]-l[1]+1e-10) >= 0.25)
                && (h[1]-l[1]) <= 5.0*atr1;
 
+   // ── RSI FILTER: تجنب الدخول في مناطق متطرفة ─────────────────────
+   // لا BUY إذا RSI > 65 (overbought) · لا SELL إذا RSI < 35 (oversold)
+   bool rsiBuyOK  = (rsi1 <= 65.0);
+   bool rsiSellOK = (rsi1 >= 35.0);
+
+   // ── H1 BIAS FILTER: فقط مع الاتجاه الرئيسي ──────────────────────
    int signal = 0;
-   if(bullBar) signal =  1; // BUY — candle closed up
-   else if(bearBar) signal = -1; // SELL — candle closed down
+   if(bullBar && rsiBuyOK  &&  h1BullBias) signal =  1; // BUY  — H1 صاعد + RSI مناسب
+   else if(bearBar && rsiSellOK && !h1BullBias) signal = -1; // SELL — H1 هابط + RSI مناسب
 
    long spread   = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    bool spreadOK = (spread <= (long)g_maxSpread);
@@ -382,6 +398,12 @@ void OnTick()
    bool blocked = !(spreadOK && slotsOK && sessOK && dayOK);
 
    bool emaUp = ema91 > ema211;
+   // نطبع سبب رفض الإشارة لو كان bullBar/bearBar بدون signal
+   if(bullBar && signal == 0)
+      Print(EA_NAME,": BUY skipped — H1=",h1BullBias?"↑":"↓"," RSI=",DoubleToString(rsi1,0));
+   if(bearBar && signal == 0)
+      Print(EA_NAME,": SELL skipped — H1=",h1BullBias?"↑":"↓"," RSI=",DoubleToString(rsi1,0));
+
    UpdateDashboard(
       emaUp?1:-1, rsi1, sessOK, signal,
       blocked, cdLeft, CountMyPositions(), atr1, spread
@@ -824,7 +846,20 @@ void UpdateDashboard(const int trend,const double rsi,
    DLabel("V_ORDTYP",otTxt,xV,y,otClr); y+=ROW_H;
    string newsTxt = g_newsBlock ? ("NEWS: "+g_newsTitle) : "NO NEWS";
    color  newsClr = g_newsBlock ? CLR_BAD : CLR_NEUTRAL;
-   DLabel("V_NEWS",newsTxt,xV,y,newsClr);
+   DLabel("V_NEWS",newsTxt,xV,y,newsClr); y+=ROW_H;
+
+   // H1 bias indicator
+   double h1e[];
+   ArraySetAsSeries(h1e,true);
+   string h1Txt = "H1: --";
+   color  h1Clr = CLR_NEUTRAL;
+   if(CopyBuffer(hH1EMA,0,0,3,h1e)>=3)
+     {
+      bool up = h1e[1]>=h1e[2];
+      h1Txt = up ? "H1 BIAS: ↑ BUY" : "H1 BIAS: ↓ SELL";
+      h1Clr = up ? CLR_GOOD : CLR_BAD;
+     }
+   DLabel("V_H1BIAS",h1Txt,xV,y,h1Clr);
    ChartRedraw();
   }
 //+------------------------------------------------------------------+
