@@ -32,15 +32,12 @@ latest_data = {
 }
 
 DEFAULT_SETTINGS = {
-    "LotSize":      0.01,
-    "TP":           30,
-    "SL":           40,
+    "LotSize":      0.5,
+    "TP_USD":       3.0,
+    "SL_USD":       2.0,
     "MaxSpread":    350,
-    "MaxPositions": 3,
-    "RSI_Period":   7,
-    "EMA_Fast":     8,
-    "EMA_Slow":     21,
-    "CandleConf":   2,
+    "MaxPositions": 5,
+    "CooldownSecs": 30,
     "BotRunning":   1,
 }
 
