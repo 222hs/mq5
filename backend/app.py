@@ -902,6 +902,14 @@ def bot_control():
     return jsonify({"status": "ok", "BotRunning": 1 if action == "start" else 0})
 
 
+@app.route("/api/snapshots/count", methods=["GET"])
+def api_snapshots_count():
+    with get_db() as conn:
+        row = conn.execute("SELECT COUNT(*) as n FROM trade_snapshots").fetchone()
+        n = row["n"] if row else 0
+    return jsonify({"count": n})
+
+
 @app.route("/api/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok", "time": datetime.now().isoformat()})

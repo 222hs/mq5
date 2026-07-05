@@ -218,11 +218,17 @@ export default function Dashboard() {
     };
   }, []);
 
+  const [snapCount, setSnapCount] = useState(null);
+
   const loadSnapshots = async () => {
     setSnapLoading(true);
     try {
-      const r = await fetch(`${API_URL}/api/snapshots?limit=50`, { headers: {'X-API-Key': API_KEY} });
+      const [r, rc] = await Promise.all([
+        fetch(`${API_URL}/api/snapshots?limit=50`, { headers: {'X-API-Key': API_KEY} }),
+        fetch(`${API_URL}/api/snapshots/count`),
+      ]);
       if (r.ok) setSnapshots(await r.json());
+      if (rc.ok) { const d = await rc.json(); setSnapCount(d.count); }
     } catch(_) {}
     setSnapLoading(false);
   };
@@ -1454,8 +1460,14 @@ export default function Dashboard() {
                 جاري التحميل...
               </div>
             ) : snapshots.length === 0 ? (
-              <div style={{color:C.muted, fontSize:12, textAlign:'center', paddingTop:40}}>
-                لا توجد snapshots بعد — الـ snapshots تُحفظ عند فتح كل صفقة
+              <div style={{color:C.muted, fontSize:13, textAlign:'center', paddingTop:40, lineHeight:2}}>
+                <div style={{fontSize:28, marginBottom:12}}>📭</div>
+                <div style={{color:C.ink, marginBottom:8}}>لا توجد snapshots في البكند</div>
+                {snapCount !== null && <div style={{fontSize:11}}>عدد في DB: <b style={{color:C.neon}}>{snapCount}</b></div>}
+                <div style={{marginTop:16, fontSize:11, color:C.muted, maxWidth:340, margin:'16px auto 0'}}>
+                  الـ snapshots تُحفظ لما الأيجنت يشوف صفقة جديدة مفتوحة.<br/>
+                  لو عندك local_snapshots.json، أعد تشغيل الأيجنت ليرفعها.
+                </div>
               </div>
             ) : (
               <div style={{

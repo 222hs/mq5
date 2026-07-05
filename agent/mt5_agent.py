@@ -378,7 +378,8 @@ def push_local_settings():
 
 _last_settings_hash = None  # نتتبع التغييرات
 _known_positions    = {}    # ticket -> position — لكشف الصفقات الجديدة
-_snapped_tickets    = set() # tickets أُرسل لها snapshot مسبقاً
+_snapped_tickets    = set() # tickets مفتوحة أُرسل لها snapshot
+_snapped_history    = set() # tickets مغلقة أُرسل لها snapshot من history
 _news_cache         = []    # آخر قائمة أخبار مجلوبة
 _news_cache_time    = 0     # وقت آخر تحديث للأخبار
 
@@ -711,20 +712,20 @@ def main():
                 last_history_sync = now
                 # حفظ الـ history محلياً
                 save_local_history(history)
-                # snapshot للصفقات المغلقة الجديدة (اللي ما أرسلنا لها snapshot بعد)
+                # snapshot للصفقات المغلقة الجديدة فقط
                 gold_sym = detect_gold_symbol()
                 c_list_snap = get_candles(gold_sym, mt5.TIMEFRAME_M1, 40)
                 sess_snap   = get_trading_sessions()
                 for t in history[:20]:
                     tk = t.get('ticket')
-                    if tk and tk not in _snapped_tickets:
+                    if tk and tk not in _snapped_history:
                         fake_pos = {
                             'symbol':     t.get('symbol', gold_sym),
                             'type':       t.get('type', 'BUY'),
                             'price_open': t.get('price', 0),
                         }
                         send_trade_snapshot(tk, fake_pos, c_list_snap, sess_snap)
-                        _snapped_tickets.add(tk)
+                        _snapped_history.add(tk)
 
             pending = get_pending_orders()
 
