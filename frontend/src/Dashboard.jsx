@@ -124,6 +124,51 @@ function CumulativePnl({ history }) {
   );
 }
 
+// ---------- profit popup ----------
+
+function ProfitPopup({ amount, onDone }) {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => { setVisible(false); onDone(); }, 3200);
+    return () => clearTimeout(t);
+  }, []);
+  if (!visible) return null;
+  const pos = amount >= 0;
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      pointerEvents: 'none',
+    }}>
+      <div style={{
+        background: '#0d0d0d',
+        border: `2px solid ${pos ? '#6fbf85' : '#c8762a'}`,
+        padding: '32px 56px',
+        fontFamily: "'Courier New', monospace",
+        textAlign: 'center',
+        boxShadow: `0 0 60px ${pos ? '#6fbf8555' : '#c8762a55'}`,
+        animation: 'popIn 0.25s ease-out',
+      }}>
+        <div style={{ fontSize: 11, letterSpacing: 3, color: '#8a8678', marginBottom: 8 }}>
+          TRADE CLOSED
+        </div>
+        <div style={{
+          fontSize: 72, fontWeight: 900, letterSpacing: -2,
+          color: pos ? '#6fbf85' : '#c8762a',
+          textShadow: `0 0 30px ${pos ? '#6fbf85' : '#c8762a'}`,
+          lineHeight: 1,
+        }}>
+          {pos ? '+' : ''}{amount >= 0 ? '+$' : '-$'}{Math.abs(amount).toFixed(2).replace('.', ' ')}
+        </div>
+        <div style={{ fontSize: 11, letterSpacing: 3, color: '#8a8678', marginTop: 8 }}>
+          {pos ? 'PROFIT' : 'LOSS'}
+        </div>
+      </div>
+      <style>{`@keyframes popIn { from { transform: scale(0.7); opacity:0 } to { transform: scale(1); opacity:1 } }`}</style>
+    </div>
+  );
+}
+
 // ---------- main component ----------
 
 export default function Dashboard() {
@@ -133,13 +178,24 @@ export default function Dashboard() {
   const [busy, setBusy] = useState(false);
   const [settingsDraft, setSettingsDraft] = useState(null);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [popup, setPopup] = useState(null);
   const timerRef = useRef(null);
+  const prevTicketsRef = useRef(null);
 
   const fetchData = async () => {
     try {
       const res = await fetch('/api/dashboard');
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const json = await res.json();
+      // detect newly closed trade by comparing history tickets
+      if (prevTicketsRef.current !== null && json.history?.length > 0) {
+        const prevSet = prevTicketsRef.current;
+        const newest = json.history[0];
+        if (!prevSet.has(newest.ticket)) {
+          setPopup(newest.profit);
+        }
+      }
+      prevTicketsRef.current = new Set((json.history || []).map(t => t.ticket));
       setData(json);
       setError(null);
     } catch (e) {
@@ -219,6 +275,7 @@ export default function Dashboard() {
       minHeight: '100vh', background: C.bg, color: C.text,
       fontFamily: C.mono, padding: 20, boxSizing: 'border-box', direction: 'ltr',
     }}>
+      {popup !== null && <ProfitPopup amount={popup} onDone={() => setPopup(null)} />}
       {/* HEADER */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
