@@ -25,6 +25,8 @@ _db_dir = os.path.dirname(_db_env)
 if _db_dir and not os.path.isdir(_db_dir):
     os.makedirs(_db_dir, exist_ok=True)
 DB_FILE = _db_env
+# ملف JSON للإعدادات — يُقرأ عند startup إذا كان DB جديداً
+SETTINGS_BACKUP = os.path.join(_db_dir if _db_dir else ".", "ea_settings_backup.json")
 # ========================================
 
 data_lock = Lock()
@@ -95,9 +97,18 @@ def init_db():
                 value TEXT
             )
         """)
-        for k, v in DEFAULT_SETTINGS.items():
+        # استعادة الإعدادات من الـ backup أولاً (يتجاوز الافتراضية)
+        saved = {}
+        if os.path.exists(SETTINGS_BACKUP):
+            try:
+                with open(SETTINGS_BACKUP, "r") as f:
+                    saved = json.load(f)
+            except Exception:
+                saved = {}
+        merged = {**DEFAULT_SETTINGS, **{k: v for k, v in saved.items() if k in DEFAULT_SETTINGS}}
+        for k, v in merged.items():
             conn.execute(
-                "INSERT OR IGNORE INTO ea_settings (key, value) VALUES (?, ?)",
+                "INSERT OR REPLACE INTO ea_settings (key, value) VALUES (?, ?)",
                 (k, str(v))
             )
         conn.commit()
@@ -177,6 +188,15 @@ def save_settings(new_settings):
                     (k, str(v))
                 )
         conn.commit()
+    # اكتب backup JSON حتى تُستعاد بعد كل redeploy
+    try:
+        current = get_settings()
+        tmp = SETTINGS_BACKUP + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(current, f, indent=2)
+        os.replace(tmp, SETTINGS_BACKUP)
+    except Exception:
+        pass
 
 
 def build_dashboard_payload():
