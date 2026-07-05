@@ -1,5 +1,0 @@
-{
-  "providers": ["node", "python"],
-  "buildCommand": "cd frontend && npm install && npm run build && cd ../backend && pip install -r requirements.txt",
-  "startCommand": "cd backend && gunicorn app:app"
-}
