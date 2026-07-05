@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v2.4';
+const DASH_VERSION = 'v2.5';
 
 // ── Terminal palette (matches reference design) ─────────────────────
 const C = {
@@ -98,13 +98,20 @@ export default function Dashboard() {
   const seenTickets = useRef(null);
   const prevPositions = useRef(null);
   const popupTimer = useRef(null);
-  const [connState, setConnState] = useState('connecting'); // 'connected' | 'connecting' | 'disconnected'
+  const [connState, setConnState] = useState('connecting');
   const socketRef = useRef(null);
+  const [logs, setLogs] = useState([]);
+  const logEndRef = useRef(null);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // auto-scroll log to bottom
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logs]);
 
   // keep-alive: ping backend every 25s so Railway doesn't sleep
   useEffect(() => {
@@ -156,11 +163,22 @@ export default function Dashboard() {
       settingsDirty.current = false;
       setSettingsDraft({ ...s });
     });
+    socket.on('log', (entry) => {
+      setLogs(prev => {
+        const next = [...prev, entry];
+        return next.length > 100 ? next.slice(-100) : next;
+      });
+    });
+    socket.on('log_history', (entries) => {
+      setLogs(entries || []);
+    });
 
     return () => {
       socket.off('dashboard', handleDashboard);
       socket.off('candles');
       socket.off('settings');
+      socket.off('log');
+      socket.off('log_history');
       socket.off('connect');
       socket.off('disconnect');
       socket.off('connect_error');
@@ -1016,6 +1034,35 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+        </div>
+
+        {/* ═══ LIVE LOG (full width) ══════════════════════════ */}
+        <div className="bcard" style={bCard({padding:'12px 14px'})}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
+            <span style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:C.neon}}>▶ LIVE LOG</span>
+            <button className="bbtn"
+              style={{fontSize:9,padding:'2px 8px',letterSpacing:'1px',border:`1px solid ${C.muted}`,color:C.muted,background:'transparent',fontFamily:C.mono,cursor:'pointer'}}
+              onClick={()=>setLogs([])}>CLEAR</button>
+          </div>
+          <div style={{
+            height:160, overflowY:'auto', fontFamily:C.mono, fontSize:10,
+            background:C.bg, border:C.border, padding:'8px 10px',
+            display:'flex', flexDirection:'column', gap:2,
+          }}>
+            {logs.length === 0
+              ? <span style={{color:C.muted}}>— لا أحداث بعد —</span>
+              : logs.map((e,i) => {
+                  const col = e.l==='err'?C.red : e.l==='warn'?C.yellow : e.l==='ok'?C.neon : e.l==='trade'?(e.m.includes('🟢')?C.neon:C.red) : C.muted;
+                  return (
+                    <div key={i} style={{display:'flex', gap:8, lineHeight:1.4}}>
+                      <span style={{color:C.muted, minWidth:52, flexShrink:0}}>{e.t}</span>
+                      <span style={{color:col}}>{e.m}</span>
+                    </div>
+                  );
+                })
+            }
+            <div ref={logEndRef}/>
+          </div>
         </div>
 
         {/* ═══ TRADE HISTORY (full width) ═════════════════════ */}

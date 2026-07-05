@@ -23,6 +23,22 @@ socketio = SocketIO(
     ping_timeout=60,     # wait 60s before declaring disconnect
 )
 
+# ============== Live Log ==============
+_log_buffer = []          # آخر 100 رسالة
+_log_lock   = Lock()
+
+def push_log(level, msg):
+    """يبث رسالة للداشبورد ويحفظها في buffer"""
+    entry = {"t": datetime.now().strftime("%H:%M:%S"), "l": level, "m": msg}
+    with _log_lock:
+        _log_buffer.append(entry)
+        if len(_log_buffer) > 100:
+            _log_buffer.pop(0)
+    try:
+        socketio.emit("log", entry)
+    except Exception:
+        pass
+
 # ============== الإعدادات ==============
 API_KEY           = os.environ.get("API_KEY", "mysecretkey123")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -396,7 +412,9 @@ def analyze_patterns():
       4. توصية فورية للإعدادات
     """
     if not ANTHROPIC_API_KEY:
+        push_log("warn", "PATTERN_AI: ANTHROPIC_API_KEY غير موجود")
         return
+    push_log("info", "PATTERN_AI: بدأ التحليل ...")
 
     trades    = get_history(200)
     trade_map = {t["ticket"]: t for t in trades}
@@ -502,18 +520,24 @@ def analyze_patterns():
         with data_lock:
             latest_data["pattern_advice"] = result
             latest_data["pattern_time"]   = datetime.now().isoformat()
+        push_log("ok", "PATTERN_AI: ✅ تحليل جاهز")
         socketio.emit("dashboard", build_dashboard_payload())
     except Exception as e:
+        push_log("err", f"PATTERN_AI: فشل — {str(e)[:60]}")
         print(f"Claude pattern error: {e}")
 
 
 # ---------- WebSocket events ----------
 @socketio.on("connect")
 def on_connect():
-    """عند اتصال client جديد، يبعث له snapshot فوري"""
+    """عند اتصال client جديد، يبعث له snapshot فوري + سجل الأحداث"""
     try:
         payload = build_dashboard_payload()
         emit("dashboard", payload)
+        # إرسال آخر 50 رسالة من الـ buffer
+        with _log_lock:
+            history = list(_log_buffer[-50:])
+        emit("log_history", history)
     except Exception:
         pass
 
@@ -561,6 +585,20 @@ def update_data():
         if latest_data["account"]:
             save_account(latest_data["account"], now)
 
+        # لوج الصفقات الجديدة
+        if history_payload:
+            for t in (history_payload if isinstance(history_payload, list) else [history_payload]):
+                profit = t.get("profit", 0)
+                sym    = t.get("symbol", "")
+                tp     = t.get("type", "")
+                emoji  = "🟢" if profit > 0 else "🔴"
+                push_log("trade", f"{emoji} TRADE #{t.get('ticket','')} {tp} {sym} P&L: ${profit:.2f}")
+
+        # لوج المراكز المفتوحة
+        pos = payload.get("positions", [])
+        if pos:
+            push_log("info", f"📊 {len(pos)} مركز مفتوح | Balance: ${(payload.get('account') or {}).get('balance', 0):.2f}")
+
         upsert_history(history_payload)
 
     # Claude checks
@@ -578,15 +616,18 @@ def update_data():
         if consecutive >= 5:
             last_claude = latest_data.get("claude_time")
             if last_claude is None or consecutive == 5:
+                push_log("warn", f"⚠️ CLAUDE: {consecutive} خسائر متتالية — يحلل ...")
                 advice = call_claude(consecutive, recent, latest_data["account"] or {})
                 with data_lock:
                     latest_data["claude_advice"] = advice
                     latest_data["claude_time"]   = now
+                push_log("ok", "✅ CLAUDE: توصية جاهزة")
         # 2) تحليل patterns كل 10 صفقات جديدة
         global _last_pattern_count
         total = len(get_history(1000))
         if total - _last_pattern_count >= 10:
             _last_pattern_count = total
+            push_log("info", f"🔄 PATTERN_AI: {total} صفقة — يبدأ التحليل تلقائياً")
             import threading
             threading.Thread(target=analyze_patterns, daemon=True).start()
 
@@ -722,6 +763,7 @@ def get_candles():
 def api_run_analyze():
     if not check_api_key():
         return jsonify({"error": "Unauthorized"}), 401
+    push_log("info", "⚡ PATTERN_AI: تشغيل يدوي من الداشبورد")
     import threading
     threading.Thread(target=analyze_patterns, daemon=True).start()
     return jsonify({"status": "started"})
