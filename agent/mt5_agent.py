@@ -534,8 +534,12 @@ def sync_settings():
             print(f"   Lot={settings.get('LotSize')}  TP$={settings.get('TP_USD')}  SL$={settings.get('SL_USD')}")
             print(f"   MaxPos={settings.get('MaxPositions')}  Spread={settings.get('MaxSpread')}  CD={settings.get('CooldownSecs')}s")
             print(f"   MaxLoss$={settings.get('MaxLossPerDay')}  MaxProfit$={settings.get('MaxProfitPerDay')}")
-            ot = {0:'MARKET', 1:'LIMIT', 2:'STOP', 3:'BASKET'}.get(int(settings.get('OrderType', 0)), 'MARKET')
+            ot  = {0:'MARKET', 1:'LIMIT', 2:'STOP', 3:'BASKET'}.get(int(settings.get('OrderType', 0)), 'MARKET')
+            rm  = {0:'FIXED LOT', 1:'DYNAMIC %'}.get(int(settings.get('RiskMode', 0)), 'FIXED LOT')
+            dr  = 'ON' if int(settings.get('DynamicRisk', 0)) == 1 else 'OFF'
             print(f"   Hours={settings.get('TradeHoursStart')}-{settings.get('TradeHoursEnd')}  Bot={'ON' if settings.get('BotRunning') else 'OFF'}  OrderType={ot}")
+            print(f"   LotMode={rm}  RiskPct={settings.get('RiskPercent','?')}%  SL/TP Dynamic={dr}  BaseLot={settings.get('BaseLot','?')}")
+            print(f"   RSI BuyMax={settings.get('RSIBuyMax','?')}  RSI SellMin={settings.get('RSISellMin','?')}  Claude={'ON' if settings.get('ClaudeEnabled',1) else 'OFF'}")
 
             # نتحقق إذا تغيرت الإعدادات
             import hashlib
@@ -563,7 +567,7 @@ def sync_settings():
                     else:
                         print(f"   ❌ فشل كتابة الملف بعد 3 محاولات: {we}")
 
-            # كتابة ملفات individual (GSX_LotSize.txt وغيرها) — أبسط وأموثق للـ EA
+            # كتابة ملفات individual للذهب (GSX_) والبتكوين (BSX_) — نفس الإعدادات
             key_map = {
                 "LotSize": "LotSize", "TP_USD": "TP_USD", "SL_USD": "SL_USD",
                 "MaxSpread": "MaxSpread", "MaxPositions": "MaxPositions",
@@ -579,15 +583,16 @@ def sync_settings():
                 "DynamicRisk":  "DynamicRisk",
                 "BaseLot":      "BaseLot",
             }
-            for k in key_map:
-                if k in settings:
-                    fpath = os.path.join(_MT5_COMMON, f"GSX_{k}.txt")
-                    try:
-                        with open(fpath, "w", encoding="ascii") as f:
-                            f.write(str(settings[k]))
-                    except Exception:
-                        pass
-            print(f"   📝 Lot على الديسك={settings.get('LotSize')} (individual files)")
+            for prefix in ("GSX_", "BSX_"):
+                for k in key_map:
+                    if k in settings:
+                        fpath = os.path.join(_MT5_COMMON, f"{prefix}{k}.txt")
+                        try:
+                            with open(fpath, "w", encoding="ascii") as f:
+                                f.write(str(settings[k]))
+                        except Exception:
+                            pass
+            print(f"   📝 Lot={settings.get('LotSize')} → GSX_*.txt + BSX_*.txt")
 
             # حفظ محلي — يضمن بقاء الإعدادات بعد Railway redeploy
             save_local_settings(settings)
