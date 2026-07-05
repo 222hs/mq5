@@ -718,6 +718,15 @@ def get_candles():
         })
 
 
+@app.route("/api/analyze/run", methods=["POST"])
+def api_run_analyze():
+    if not check_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+    import threading
+    threading.Thread(target=analyze_patterns, daemon=True).start()
+    return jsonify({"status": "started"})
+
+
 @app.route("/api/bot/control", methods=["POST"])
 def bot_control():
     if not check_api_key():

@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v2.3';
+const DASH_VERSION = 'v2.4';
 
 // ── Terminal palette (matches reference design) ─────────────────────
 const C = {
@@ -790,6 +790,15 @@ export default function Dashboard() {
                   NEEDS 10 TRADES WITH SNAPSHOTS<br/>
                   <span style={{color:C.yellow}}>ANALYSIS RUNS AUTOMATICALLY</span>
                 </div>
+                <button className="bbtn"
+                  style={{...bBtn(false,{marginTop:10,fontSize:9,padding:'6px 14px',letterSpacing:'1px',borderColor:C.yellow,color:C.yellow})}}
+                  onClick={async()=>{
+                    try{
+                      await fetch(`${API_URL}/api/analyze/run`,{method:'POST',headers:{'X-API-Key':API_KEY}});
+                    }catch(e){}
+                  }}>
+                  ⚡ RUN ANALYSIS NOW
+                </button>
               )}
             </div>
 
