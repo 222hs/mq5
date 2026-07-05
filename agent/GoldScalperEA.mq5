@@ -3,7 +3,7 @@
 //|                                        GoldScalperX version 7.00 |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "7.00"
+#property version   "7.01"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -12,13 +12,13 @@
 //--- inputs
 input double          LotSize      = 0.5;        // Lot size
 input ENUM_TIMEFRAMES TF           = PERIOD_M1;  // Working timeframe
-input int             MaxPositions = 3;          // Max open positions
-input int             CooldownSecs = 10;         // Cooldown between entries (sec)
+input int             MaxPositions = 15;         // Max open positions
+input int             CooldownSecs = 5;          // Cooldown between entries (sec)
 input int             MaxSpread    = 500;        // Max spread (points)
 
 //--- constants
 #define EA_NAME     "GoldScalperX"
-#define EA_VERSION  "7.00"
+#define EA_VERSION  "7.01"
 #define GV_PREFIX   "GSX_"
 #define DASH_PREFIX "GSX_D_"
 
