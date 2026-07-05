@@ -20,8 +20,9 @@ from datetime import datetime
 # ============== الإعدادات ==============
 BACKEND_URL             = "https://mq5-production.up.railway.app"
 API_KEY                 = "mysecretkey123"
-UPDATE_INTERVAL         = 5    # ثواني بين كل تحديث للبيانات
+UPDATE_INTERVAL         = 2    # ثواني بين كل تحديث للبيانات
 SETTINGS_CHECK_INTERVAL = 15   # ثواني بين كل سحب للإعدادات
+CANDLES_INTERVAL        = 10   # ثواني بين كل إرسال للشمعات
 # ========================================
 
 HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
@@ -137,7 +138,7 @@ def get_recent_history(days=30):
 def send_update(data):
     try:
         response = requests.post(
-            f"{BACKEND_URL}/api/update", json=data, headers=HEADERS, timeout=10
+            f"{BACKEND_URL}/api/update", json=data, headers=HEADERS, timeout=5
         )
         if response.status_code == 200:
             print(f"✅ {datetime.now().strftime('%H:%M:%S')} - تم إرسال البيانات")
@@ -145,6 +146,21 @@ def send_update(data):
             print(f"⚠️ خطأ بالإرسال: {response.status_code}")
     except Exception as e:
         print(f"❌ فشل الاتصال بالـ Backend: {e}")
+
+
+def send_candles():
+    try:
+        candles  = get_candles("XAUUSD", mt5.TIMEFRAME_M1, 60)
+        sessions = get_trading_sessions()
+        response = requests.post(
+            f"{BACKEND_URL}/api/candles",
+            json={"candles": candles, "sessions": sessions},
+            headers=HEADERS, timeout=5
+        )
+        if response.status_code == 200:
+            print(f"🕯️  {datetime.now().strftime('%H:%M:%S')} - تم إرسال {len(candles)} شمعة")
+    except Exception as e:
+        print(f"❌ فشل إرسال الشمعات: {e}")
 
 
 def read_local_settings():
@@ -198,6 +214,7 @@ def main():
 
     last_history_sync  = 0
     last_settings_sync = 0
+    last_candles_sync  = 0
 
     try:
         while True:
@@ -207,6 +224,11 @@ def main():
                 sync_settings()
                 last_settings_sync = now
 
+            # شمعات كل 10 ثواني (endpoint منفصل)
+            if now - last_candles_sync >= CANDLES_INTERVAL:
+                send_candles()
+                last_candles_sync = now
+
             account   = get_account_info()
             positions = get_open_positions()
 
@@ -215,15 +237,10 @@ def main():
                 history = get_recent_history(days=30)
                 last_history_sync = now
 
-            candles  = get_candles()
-            sessions = get_trading_sessions()
-
             send_update({
                 "account":   account,
                 "positions": positions,
                 "history":   history if history else None,
-                "candles":   candles,
-                "sessions":  sessions,
                 "timestamp": datetime.now().isoformat(),
             })
 

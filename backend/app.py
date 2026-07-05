@@ -265,6 +265,28 @@ def api_save_settings():
     return jsonify({"status": "ok", "settings": get_settings()})
 
 
+@app.route("/api/candles", methods=["POST"])
+def update_candles():
+    if not check_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+    payload = request.get_json()
+    with data_lock:
+        if payload.get("candles"):
+            latest_data["candles"] = payload["candles"]
+        if payload.get("sessions"):
+            latest_data["sessions"] = payload["sessions"]
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/candles", methods=["GET"])
+def get_candles():
+    with data_lock:
+        return jsonify({
+            "candles":  latest_data["candles"],
+            "sessions": latest_data["sessions"],
+        })
+
+
 @app.route("/api/bot/control", methods=["POST"])
 def bot_control():
     if not check_api_key():
