@@ -4,7 +4,7 @@
 //|  Gold scalper — bar-gated, closed-bar signals, smart filters     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.10"
+#property version   "9.11"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.10"
+#define EA_VERSION    "9.11"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -275,37 +275,30 @@ void OnTick()
 //+------------------------------------------------------------------+
 void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal)
   {
-   double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
-   double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
-   double pt =SymbolInfoDouble(_Symbol,SYMBOL_POINT);
-   int digits=(int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS);
-   long sl0  =SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL);
-   long frz  =SymbolInfoInteger(_Symbol,SYMBOL_TRADE_FREEZE_LEVEL);
-   double minD=MathMax((double)(sl0+frz+5),10.0)*pt;
-   // TP/SL from dashboard in USD, convert to price distance
-   // for XAUUSD: 1 USD profit per lot = 1 point = SYMBOL_POINT
-   double tickVal=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
-   double tickSz =SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
-   double lot    =NormalizeLot(g_lot);
-   double ptVal  =(tickVal/tickSz)*pt; // value per point per 1 lot
-   double slD,tpD;
-   if(ptVal>0 && lot>0)
-     { slD=MathMax((g_slUSD/(ptVal*lot)),minD); tpD=MathMax((g_tpUSD/(ptVal*lot)),minD*2.0); }
-   else
-     { slD=MathMax(atrVal*1.5,minD); tpD=MathMax(atrVal*2.0,minD*2.0); }
-   double sl,tp; bool ok;
+   double ask   = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid   = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double pt    = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   int    digs  = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   long   sl0   = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   long   frz   = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_FREEZE_LEVEL);
+   double minD  = MathMax((double)(sl0+frz+5), 10.0) * pt;
+   double lot   = NormalizeLot(g_lot);
 
-   if(type==ORDER_TYPE_BUY)
-     { sl=NormalizeDouble(ask-slD,digits); tp=NormalizeDouble(ask+tpD,digits);
-       ok=trade.Buy(lot,_Symbol,ask,sl,tp,EA_NAME); }
-   else
-     { sl=NormalizeDouble(bid+slD,digits); tp=NormalizeDouble(bid-tpD,digits);
-       ok=trade.Sell(lot,_Symbol,bid,sl,tp,EA_NAME); }
+   // ATR-based distances — always valid, broker never strips these
+   double slD = MathMax(atrVal * 1.5, minD);
+   double tpD = MathMax(atrVal * 3.0, minD * 2.0);
 
-   if(ok) { g_lastEntryTime=TimeCurrent(); g_totalTrades++;
+   double sl, tp; bool ok;
+   if(type == ORDER_TYPE_BUY)
+     { sl = NormalizeDouble(ask - slD, digs); tp = NormalizeDouble(ask + tpD, digs);
+       ok = trade.Buy(lot, _Symbol, ask, sl, tp, EA_NAME); }
+   else
+     { sl = NormalizeDouble(bid + slD, digs); tp = NormalizeDouble(bid - tpD, digs);
+       ok = trade.Sell(lot, _Symbol, bid, sl, tp, EA_NAME); }
+
+   if(ok) { g_lastEntryTime = TimeCurrent(); g_totalTrades++;
              Print(EA_NAME,": ",EnumToString(type)," lot=",lot,
-                   " sl=",sl," tp=",tp,
-                   " [SL$=",g_slUSD," TP$=",g_tpUSD,"]"); }
+                   " sl=",sl," tp=",tp," | close target: TP$=",g_tpUSD," SL$=",g_slUSD); }
    else   Print(EA_NAME,": FAIL ",trade.ResultRetcode()," ",trade.ResultComment());
   }
 
