@@ -1,10 +1,10 @@
 //+------------------------------------------------------------------+
 //|                                                GoldScalperEA.mq5 |
-//|                                        GoldScalperX version 9.40 |
+//|                                        GoldScalperX version 9.41 |
 //|  Gold scalper — bar-gated, closed-bar signals, trailing stop     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.40"
+#property version   "9.41"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.40"
+#define EA_VERSION    "9.41"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -417,8 +417,8 @@ void ManagePositions()
       // ── Breakeven: لما يصل نص الـ TP، الـ SL يصبح 0 (ما نخسر على الأقل) ──
       // (لا نعدّل الأوردر — ManagePositions تتحكم بالإغلاق)
 
-      // ── SL فوري: خسارة تجاوزت 1.5x SL_USD أسكّر فوراً + reversal ──
-      if(profit <= -(g_slUSD * 1.5))
+      // ── SL طوارئ: خسارة تجاوزت 3x SL_USD أسكّر فوراً (كارثة فقط) ──
+      if(profit <= -(g_slUSD * 3.0))
         {
          int lossDir = (posInfo.PositionType()==POSITION_TYPE_BUY) ? 1 : -1;
          trade.PositionClose(tk); if(ti>=0) RemoveTrail(tk);
@@ -426,13 +426,13 @@ void ManagePositions()
          Print(EA_NAME,": EMERG SL $",DoubleToString(profit,2)); continue;
         }
 
-      // ── SL عادي: بعد 45 ثانية لو الخسارة >= SL_USD ──
-      if(ageSeconds >= 45 && profit <= -g_slUSD)
+      // ── SL عادي: بعد 3 دقائق (180 ثانية) — M1 gold يحتاج وقت يتنفس ──
+      if(ageSeconds >= 180 && profit <= -g_slUSD)
         {
          int lossDir = (posInfo.PositionType()==POSITION_TYPE_BUY) ? 1 : -1;
          trade.PositionClose(tk); if(ti>=0) RemoveTrail(tk);
          g_lastWasLoss = true; g_lastLossDir = lossDir;
-         Print(EA_NAME,": SL $",DoubleToString(profit,2)); continue;
+         Print(EA_NAME,": SL $",DoubleToString(profit,2)," age=",ageSeconds,"s"); continue;
         }
      }
   }
