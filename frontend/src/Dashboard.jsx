@@ -707,7 +707,14 @@ export default function Dashboard() {
                   </div>
                   {/* Order Type */}
                   <div style={{borderTop:C.border, paddingTop:12}}>
-                    <div style={bLabel({marginBottom:6, color:C.ink})}>&gt; ORDER TYPE</div>
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:6}}>
+                      <div style={bLabel({color:C.ink})}>&gt; ORDER TYPE</div>
+                      <div style={{fontSize:9, fontWeight:'bold', letterSpacing:'1px',
+                        color: [C.neon, 'dodgerblue', C.yellow][(settings.OrderType??0)] || C.neon
+                      }}>
+                        ACTIVE: {['MARKET','LIMIT','STOP'][(settings.OrderType??0)]||'MARKET'}
+                      </div>
+                    </div>
                     <div style={{display:'flex', flexDirection:'column', gap:6}}>
                       <select
                         value={settingsDraft.OrderType??0}
@@ -723,7 +730,12 @@ export default function Dashboard() {
                         {(settingsDraft.OrderType??0)===1 && 'يضع LIMIT عند close الشمعة · ينتظر رجوع السعر'}
                         {(settingsDraft.OrderType??0)===2 && 'يضع STOP فوق HIGH / تحت LOW · يدخل عند الكسر'}
                       </div>
-                      <button className="bbtn" onClick={()=>saveSingle('OrderType',settingsDraft.OrderType??0)} disabled={busy} style={bBtn(true)}>SAVE ORDER TYPE</button>
+                      <button className="bbtn"
+                        onClick={()=>saveSingle('OrderType', settingsDraft.OrderType??0)}
+                        disabled={busy}
+                        style={bBtn(true)}>
+                        {busy ? 'SAVING...' : 'SAVE ORDER TYPE'}
+                      </button>
                     </div>
                   </div>
                 </div>
