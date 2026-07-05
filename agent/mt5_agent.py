@@ -98,6 +98,33 @@ def save_local_history(trades):
             del db[k]
     _save_local_json(_LOCAL_HISTORY, db)
 
+_LOCAL_SETTINGS = os.path.join(_LOCAL_DIR, "local_settings.json")
+
+def save_local_settings(settings):
+    """يحفظ الإعدادات محلياً — مصدر الحقيقة عند Railway redeploy"""
+    _save_local_json(_LOCAL_SETTINGS, settings)
+
+def push_local_settings():
+    """
+    يرفع الإعدادات المحلية للبكند عبر /api/settings (مو seed).
+    يُستدعى في بداية كل sync_settings حتى لو Railway اتجدد.
+    """
+    local = _load_local_json(_LOCAL_SETTINGS)
+    if not local:
+        return
+    try:
+        r = _session.post(
+            f"{BACKEND_URL}/api/settings",
+            json=local, timeout=(5, 8),
+        )
+        if r.status_code == 200:
+            print(f"🔄 إعدادات محلية مرفوعة للبكند "
+                  f"(Claude={'ON' if local.get('ClaudeEnabled',1) else 'OFF'}"
+                  f" Bot={'ON' if local.get('BotRunning',1) else 'OFF'})")
+    except Exception:
+        pass
+
+
 def upload_local_snapshots():
     """عند startup: يرفع كل الـ snapshots المحلية للبكند"""
     db = _load_local_json(_LOCAL_SNAPSHOTS)
@@ -598,6 +625,9 @@ def sync_settings():
                     except Exception:
                         pass
             print(f"   📝 Lot على الديسك={settings.get('LotSize')} (individual files)")
+
+            # حفظ محلي — يضمن بقاء الإعدادات بعد Railway redeploy
+            save_local_settings(settings)
 
             print(f"{'='*55}\n")
             return
