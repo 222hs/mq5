@@ -1,10 +1,10 @@
 //+------------------------------------------------------------------+
 //|                                                GoldScalperEA.mq5 |
-//|                                        GoldScalperX version 9.21 |
+//|                                        GoldScalperX version 9.22 |
 //|  Gold scalper — bar-gated, closed-bar signals, trailing stop     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.21"
+#property version   "9.22"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.21"
+#define EA_VERSION    "9.22"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -321,9 +321,9 @@ void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal)
    double minD  = MathMax((double)(sl0+frz+5), 10.0) * pt;
    double lot   = NormalizeLot(g_lot);
 
-   // ATR-based distances — always valid, broker never strips these
-   double slD = MathMax(atrVal * 1.5, minD);
-   double tpD = MathMax(atrVal * 3.0, minD * 2.0);
+   // ATR-based distances — safety net on broker side (tighter SL = smaller max loss)
+   double slD = MathMax(atrVal * 1.0, minD);
+   double tpD = MathMax(atrVal * 4.0, minD * 2.0);
 
    double sl, tp; bool ok;
    if(type == ORDER_TYPE_BUY)
@@ -399,14 +399,19 @@ void ManagePositions()
         }
       else if(profit >= g_tpUSD && (g_trailUSD <= 0 || ti < 0 || !g_trail[ti].armed))
         {
-         // TrailUSD disabled or not armed yet — simple close at TP
          if(g_trailUSD <= 0)
            { trade.PositionClose(tk); if(ti>=0) RemoveTrail(tk);
              Print(EA_NAME,": TP $",DoubleToString(profit,2)); continue; }
         }
 
-      // SL: wait 60s first (spread cost needs time to recover)
-      if(ageSeconds >= 60 && profit <= -g_slUSD)
+      // Emergency SL: if loss exceeds 2x SL_USD close IMMEDIATELY (no grace period)
+      // This caps catastrophic loss from fast moves in the first 60s
+      if(profit <= -(g_slUSD * 2.0))
+        { trade.PositionClose(tk); if(ti>=0) RemoveTrail(tk);
+          Print(EA_NAME,": EMERG SL $",DoubleToString(profit,2)," age=",ageSeconds,"s"); continue; }
+
+      // Normal SL: wait 30s first (spread cost recovery), then close at SL_USD
+      if(ageSeconds >= 30 && profit <= -g_slUSD)
         { trade.PositionClose(tk); if(ti>=0) RemoveTrail(tk);
           Print(EA_NAME,": SL $",DoubleToString(profit,2)," age=",ageSeconds,"s"); continue; }
      }
