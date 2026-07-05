@@ -4,7 +4,7 @@
 //|  Gold scalper — bar-gated, closed-bar signals, smart filters     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.13"
+#property version   "9.14"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.13"
+#define EA_VERSION    "9.14"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE   "GSX_Settings.json"
 #define CURRENT_FILE    "GSX_Current.json"
@@ -371,10 +371,10 @@ void OnTick()
       g_snapEMAUp = (ema91 > ema211);
       g_snapATR   = atr1;
       int slots = g_maxPositions - CountMyPositions();
-      for(int i = 0; i < slots; i++)
+      if(slots > 0)
         {
-         if(signal == 1) OpenTrade(ORDER_TYPE_BUY,  atr1, c[1], h[1], l[1]);
-         else            OpenTrade(ORDER_TYPE_SELL, atr1, c[1], h[1], l[1]);
+         if(signal == 1) OpenBasket(ORDER_TYPE_BUY,  atr1, c[1], h[1], l[1], slots);
+         else            OpenBasket(ORDER_TYPE_SELL, atr1, c[1], h[1], l[1], slots);
         }
      }
 
@@ -394,6 +394,106 @@ bool SymbolTradable()
    long mode = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_MODE);
    return (mode == SYMBOL_TRADE_MODE_FULL || mode == SYMBOL_TRADE_MODE_LONGONLY
            || mode == SYMBOL_TRADE_MODE_SHORTONLY);
+  }
+
+//+------------------------------------------------------------------+
+// سلة أوردرات — كل إشارة تطلق 3 أوردرات دفعة واحدة:
+//   [0] MARKET  → دخول فوري
+//   [1] STOP    → يصطاد كسر الـ high/low
+//   [2] LIMIT   → يصطاد الرجوع للـ close
+// إذا السوق ما يقبل STOP أو LIMIT يسقط ذلك الجزء بهدوء
+//+------------------------------------------------------------------+
+void OpenBasket(const ENUM_ORDER_TYPE dir, const double atrVal,
+                const double c1, const double h1, const double l1,
+                const int slots)
+  {
+   // نحسب SL/TP مرة واحدة لكل أوردرات السلة
+   double ask    = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid    = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double tickSz = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   int    digs   = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   long   sl0    = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   long   frz    = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_FREEZE_LEVEL);
+   double minD   = MathMax((double)(sl0+frz+5), 10.0) * tickSz;
+   double lot    = NormalizeLot(g_lot);
+
+   double tickVal  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   double pointVal = (tickSize > 0.0 && lot > 0.0) ? (tickVal / tickSize) * lot : 1.0;
+   double safeMin  = MathMax(minD, atrVal * 1.5);
+   double slD = MathMax(g_slUSD / pointVal, safeMin);
+   double tpD = MathMax(g_tpUSD / pointVal, safeMin);
+
+   MqlDateTime dt; TimeToStruct(TimeGMT(), dt);
+   int hr = dt.hour;
+   string sess = (hr>=7&&hr<13)?"London":(hr>=13&&hr<22)?"NY":(hr>=0&&hr<7)?"Tokyo":"Off";
+   string snap = "RSI="  + DoubleToString(g_snapRSI,0)
+               + " EMA=" + (g_snapEMAUp?"U":"D")
+               + " ATR=" + DoubleToString(g_snapATR,1)
+               + " S="   + sess;
+
+   datetime expiry = TimeCurrent() + PeriodSeconds(TF) * 5;
+   bool isBuy = (dir == ORDER_TYPE_BUY);
+   int  fired  = 0;
+
+   // ── [0] MARKET — فوري دائماً ────────────────────────────────────
+   if(slots >= 1)
+     {
+      bool ok;
+      if(isBuy)
+        { double sl=NormalizeDouble(ask-slD,digs); double tp=NormalizeDouble(ask+tpD,digs);
+          ok=trade.Buy(lot,_Symbol,ask,sl,tp,snap); }
+      else
+        { double sl=NormalizeDouble(bid+slD,digs); double tp=NormalizeDouble(bid-tpD,digs);
+          ok=trade.Sell(lot,_Symbol,bid,sl,tp,snap); }
+      if(ok) { fired++; g_totalTrades++;
+               Print(EA_NAME,": BASKET[0] ",isBuy?"BUY":"SELL"," MARKET lot=",lot); }
+      else    Print(EA_NAME,": BASKET[0] MARKET FAIL ",trade.ResultRetcode());
+     }
+
+   // ── [1] STOP — يصطاد الكسر فوق High / تحت Low ─────────────────
+   if(slots >= 2 && SymbolTradable())
+     {
+      double buf = MathMax(tickSz * 5, minD);
+      bool ok;
+      if(isBuy)
+        { double entry=NormalizeDouble(h1+buf,digs);
+          if(entry<=ask) entry=NormalizeDouble(ask+buf,digs);
+          double sl=NormalizeDouble(entry-slD,digs); double tp=NormalizeDouble(entry+tpD,digs);
+          ok=trade.BuyStop(lot,entry,_Symbol,sl,tp,ORDER_TIME_SPECIFIED,expiry,snap); }
+      else
+        { double entry=NormalizeDouble(l1-buf,digs);
+          if(entry>=bid) entry=NormalizeDouble(bid-buf,digs);
+          double sl=NormalizeDouble(entry+slD,digs); double tp=NormalizeDouble(entry-tpD,digs);
+          ok=trade.SellStop(lot,entry,_Symbol,sl,tp,ORDER_TIME_SPECIFIED,expiry,snap); }
+      if(ok) { fired++; g_totalTrades++;
+               Print(EA_NAME,": BASKET[1] ",isBuy?"BUY":"SELL"," STOP lot=",lot); }
+      else    Print(EA_NAME,": BASKET[1] STOP SKIP (",trade.ResultRetcode(),")");
+     }
+
+   // ── [2] LIMIT — يصطاد الرجوع لـ close الشمعة ───────────────────
+   if(slots >= 3 && SymbolTradable())
+     {
+      bool ok;
+      if(isBuy)
+        { double entry=NormalizeDouble(c1,digs);
+          if(entry>=ask) entry=NormalizeDouble(ask-minD,digs);
+          double sl=NormalizeDouble(entry-slD,digs); double tp=NormalizeDouble(entry+tpD,digs);
+          ok=trade.BuyLimit(lot,entry,_Symbol,sl,tp,ORDER_TIME_SPECIFIED,expiry,snap); }
+      else
+        { double entry=NormalizeDouble(c1,digs);
+          if(entry<=bid) entry=NormalizeDouble(bid+minD,digs);
+          double sl=NormalizeDouble(entry+slD,digs); double tp=NormalizeDouble(entry-tpD,digs);
+          ok=trade.SellLimit(lot,entry,_Symbol,sl,tp,ORDER_TIME_SPECIFIED,expiry,snap); }
+      if(ok) { fired++; g_totalTrades++;
+               Print(EA_NAME,": BASKET[2] ",isBuy?"BUY":"SELL"," LIMIT lot=",lot); }
+      else    Print(EA_NAME,": BASKET[2] LIMIT SKIP (",trade.ResultRetcode(),")");
+     }
+
+   if(fired > 0)
+     { g_lastEntryTime = TimeCurrent();
+       Print(EA_NAME,": BASKET fired=",fired,"/3 dir=",isBuy?"BUY":"SELL",
+             " TP$=",g_tpUSD," SL$=",g_slUSD); }
   }
 
 //+------------------------------------------------------------------+

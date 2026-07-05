@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v1.8';
+const DASH_VERSION = 'v1.9';
 
 // ── Terminal palette (matches reference design) ─────────────────────
 const C = {
@@ -724,34 +724,22 @@ export default function Dashboard() {
                   {/* Order Type */}
                   <div style={{borderTop:C.border, paddingTop:12}}>
                     <div style={{display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:6}}>
-                      <div style={bLabel({color:C.ink})}>&gt; ORDER TYPE</div>
-                      <div style={{fontSize:9, fontWeight:'bold', letterSpacing:'1px',
-                        color: [C.neon, 'dodgerblue', C.yellow][(settings.OrderType??0)] || C.neon
-                      }}>
-                        ACTIVE: {['MARKET','LIMIT','STOP'][(settings.OrderType??0)]||'MARKET'}
+                      <div style={bLabel({color:C.ink})}>&gt; BASKET MODE</div>
+                      <div style={{fontSize:9, fontWeight:'bold', letterSpacing:'1px', color:C.neon}}>
+                        ACTIVE: 3 ORDERS/SIGNAL
                       </div>
                     </div>
-                    <div style={{display:'flex', flexDirection:'column', gap:6}}>
-                      <select
-                        value={settingsDraft.OrderType??0}
-                        onChange={e=>setSettingsDraft(d=>({...d,OrderType:Number(e.target.value)}))}
-                        style={{fontFamily:C.mono,fontSize:12,fontWeight:'bold',padding:'8px 10px',background:C.bg,border:C.border,color:C.ink,cursor:'pointer',letterSpacing:'1px'}}
-                      >
-                        <option value={0}>⚡ MARKET — فوري</option>
-                        <option value={1}>↩ LIMIT — ينتظر الرجوع</option>
-                        <option value={2}>🚀 STOP — كسر High/Low</option>
-                      </select>
-                      <div style={{fontSize:9, color:C.muted, letterSpacing:'1px', lineHeight:1.5}}>
-                        {(settingsDraft.OrderType??0)===0 && 'يفتح الصفقة فوراً بسعر السوق'}
-                        {(settingsDraft.OrderType??0)===1 && 'يضع LIMIT عند close الشمعة · ينتظر رجوع السعر'}
-                        {(settingsDraft.OrderType??0)===2 && 'يضع STOP فوق HIGH / تحت LOW · يدخل عند الكسر'}
+                    <div style={{
+                      background: C.faint, border: C.border,
+                      padding: '10px 12px', fontSize: 10, fontFamily: C.mono,
+                      color: C.ink, lineHeight: 1.8, letterSpacing: '0.5px',
+                    }}>
+                      <div><span style={{color:C.neon}}>■</span> [0] MARKET  → دخول فوري</div>
+                      <div><span style={{color:C.yellow}}>■</span> [1] STOP   → يصطاد كسر High/Low</div>
+                      <div><span style={{color:'dodgerblue'}}>■</span> [2] LIMIT  → ينتظر pullback</div>
+                      <div style={{color:C.muted, fontSize:9, marginTop:6}}>
+                        كل إشارة = 3 أوردرات دفعة واحدة · كل أوردر بـ SL/TP مستقل
                       </div>
-                      <button className="bbtn"
-                        onClick={()=>saveSingle('OrderType', settingsDraft.OrderType??0)}
-                        disabled={busy}
-                        style={bBtn(true)}>
-                        {busy ? 'SAVING...' : 'SAVE ORDER TYPE'}
-                      </button>
                     </div>
                   </div>
                 </div>
