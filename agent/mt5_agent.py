@@ -518,6 +518,8 @@ def sync_settings():
                 "OrderType":  "OrderType",
                 "RiskMode":   "RiskMode",
                 "RiskPercent":"RiskPercent",
+                "RSIBuyMax":  "RSIBuyMax",
+                "RSISellMin": "RSISellMin",
             }
             for k in key_map:
                 if k in settings:

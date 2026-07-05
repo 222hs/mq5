@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v2.9';
+const DASH_VERSION = 'v3.0';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -329,7 +329,7 @@ export default function Dashboard() {
   const patternAdvice = data?.pattern_advice || null;
   const patternTime   = data?.pattern_time   || null;
 
-  const settingKeys = ['LotSize','TP_USD','SL_USD','MaxSpread','MaxPositions','CooldownSecs','TrailUSD','MaxLossPerDay','MaxProfitPerDay','TradeHoursStart','TradeHoursEnd'];
+  const settingKeys = ['LotSize','TP_USD','SL_USD','MaxSpread','MaxPositions','CooldownSecs','TrailUSD','MaxLossPerDay','MaxProfitPerDay','TradeHoursStart','TradeHoursEnd','RSIBuyMax','RSISellMin'];
 
   const pipeline = [
     { n:'01', t:'SCAN',   s:'candle dir',            ok: botRunning },
@@ -807,9 +807,18 @@ export default function Dashboard() {
             {/* Pattern Analysis */}
             <div className="bcard" style={bCard({border:'2px solid #ff9900', boxShadow:'4px 4px 0px #000000'})}>
               <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:10, flexWrap:'wrap'}}>
-                <div style={{display:'flex', alignItems:'center', gap:8}}>
+                <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
                   <span style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#ff9900'}}>◆ PATTERN_AI</span>
                   {patternTime && <span style={{fontSize:9, color:C.muted}}>updated {new Date(patternTime).toLocaleTimeString()}</span>}
+                  {(settings.RSIBuyMax || settings.RSISellMin) && (
+                    <span title="Claude auto-adjusted RSI thresholds" style={{
+                      fontSize:9, fontFamily:C.mono, padding:'2px 7px',
+                      background:'rgba(255,153,0,0.12)', border:'1px solid rgba(255,153,0,0.4)',
+                      color:'#ff9900', borderRadius:2
+                    }}>
+                      RSI ≤{settings.RSIBuyMax??65} / ≥{settings.RSISellMin??35}
+                    </span>
+                  )}
                 </div>
                 <button className="bbtn"
                   style={{fontSize:9, padding:'4px 10px', letterSpacing:'1px',

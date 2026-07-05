@@ -90,6 +90,8 @@ DEFAULT_SETTINGS = {
     "OrderType":      0,
     "RiskMode":       0,
     "RiskPercent":    1.0,
+    "RSIBuyMax":      65.0,
+    "RSISellMin":     35.0,
 }
 
 
@@ -404,6 +406,82 @@ def call_claude(consecutive_losses, recent_trades, account):
         return f"Claude error: {str(e)[:60]}"
 
 
+def auto_adjust_settings(losing_snaps, account):
+    """
+    Claude يحلل snapshots الخسائر ويقترح تعديلات محددة على الإعدادات.
+    يكتب القيم الجديدة مباشرة في DB فيلتقطها الـ Agent في الدورة القادمة.
+    """
+    if not ANTHROPIC_API_KEY:
+        return
+    if not losing_snaps:
+        return
+
+    samples = []
+    for s in losing_snaps[:10]:
+        samples.append(
+            f"RSI={s.get('rsi',50):.1f} EMA={'UP' if s.get('ema_up') else 'DN'} "
+            f"ATR={s.get('atr',0):.2f} dir={s.get('direction','?')} "
+            f"P&L=${s.get('profit',0):.2f}"
+        )
+
+    current = get_settings()
+    prompt = (
+        "You are a quant tuning an XAUUSD M1 scalping bot.\n"
+        f"Account: balance=${account.get('balance',0):.2f} equity=${account.get('equity',0):.2f}\n"
+        f"Current RSI filter: BUY only when RSI<={current.get('RSIBuyMax',65)}, "
+        f"SELL only when RSI>={current.get('RSISellMin',35)}\n"
+        f"Current SL=${current.get('SL_USD',2)}, TP=${current.get('TP_USD',4)}\n\n"
+        f"These {len(samples)} losing trades just closed:\n"
+        + "\n".join(samples) + "\n\n"
+        "Respond with ONLY valid JSON, no commentary:\n"
+        '{"RSIBuyMax": <40-70>, "RSISellMin": <30-60>, "SL_USD": <1-10>, "TP_USD": <1-20>, '
+        '"reason": "<one sentence max 20 words>"}\n'
+        "Tighten RSI range if losses happen at extreme RSI. Widen SL if stopped out early."
+    )
+    try:
+        body = json.dumps({
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 120,
+            "messages": [{"role": "user", "content": prompt}]
+        }).encode()
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=body,
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            }
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            text = json.loads(resp.read())["content"][0]["text"].strip()
+        # استخراج JSON من الرد
+        start = text.find("{")
+        end   = text.rfind("}") + 1
+        if start == -1 or end == 0:
+            push_log("err", "AUTO-ADJ: رد غير صالح من Claude")
+            return
+        adj = json.loads(text[start:end])
+        # تحقق من نطاقات معقولة
+        rsi_buy  = max(40.0, min(75.0, float(adj.get("RSIBuyMax",  current.get("RSIBuyMax",  65)))))
+        rsi_sell = max(25.0, min(60.0, float(adj.get("RSISellMin", current.get("RSISellMin", 35)))))
+        sl_usd   = max(1.0,  min(20.0, float(adj.get("SL_USD",     current.get("SL_USD",      2)))))
+        tp_usd   = max(1.0,  min(40.0, float(adj.get("TP_USD",     current.get("TP_USD",      4)))))
+        reason   = adj.get("reason", "")[:100]
+        save_settings({
+            "RSIBuyMax":  rsi_buy,
+            "RSISellMin": rsi_sell,
+            "SL_USD":     sl_usd,
+            "TP_USD":     tp_usd,
+        })
+        msg = (f"🤖 AUTO-ADJ: RSI {current.get('RSIBuyMax',65):.0f}/{current.get('RSISellMin',35):.0f}"
+               f" → {rsi_buy:.0f}/{rsi_sell:.0f}  SL ${sl_usd:.1f}  TP ${tp_usd:.1f} | {reason}")
+        push_log("ok", msg)
+        socketio.emit("settings", get_settings())
+    except Exception as e:
+        push_log("err", f"AUTO-ADJ: فشل — {str(e)[:60]}")
+
+
 def analyze_patterns():
     """
     تحليل كلود الشامل — يُستدعى كل 10 صفقات مغلقة.
@@ -624,6 +702,22 @@ def update_data():
                     latest_data["claude_advice"] = advice
                     latest_data["claude_time"]   = now
                 push_log("ok", "✅ CLAUDE: توصية جاهزة")
+                # تعديل إعدادات تلقائي بناءً على snapshots الخسائر
+                losing_snaps = []
+                all_snaps = get_snapshots(50)
+                snap_map  = {s.get("ticket"): s for s in all_snaps}
+                for t in recent[:consecutive]:
+                    s = snap_map.get(t.get("ticket"))
+                    if s:
+                        s["profit"] = t.get("profit", 0)
+                        losing_snaps.append(s)
+                if losing_snaps:
+                    import threading
+                    threading.Thread(
+                        target=auto_adjust_settings,
+                        args=(losing_snaps, latest_data["account"] or {}),
+                        daemon=True
+                    ).start()
         # 2) تحليل patterns كل 10 صفقات جديدة
         global _last_pattern_count
         total = len(get_history(1000))

@@ -4,7 +4,7 @@
 //|  Gold scalper — bar-gated, closed-bar signals, smart filters     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.15"
+#property version   "9.16"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.15"
+#define EA_VERSION    "9.16"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE   "GSX_Settings.json"
 #define CURRENT_FILE    "GSX_Current.json"
@@ -73,6 +73,8 @@ bool     g_newsBlock       = false;
 string   g_newsTitle       = "";
 int      g_riskMode        = 0;    // 0=لوت ثابت  1=نسبة من الرصيد
 double   g_riskPct         = 1.0;  // نسبة الخطر % (لما riskMode=1)
+double   g_rsiBuyMax       = 65.0; // Claude auto-adjust: حد RSI لـ BUY
+double   g_rsiSellMin      = 35.0; // Claude auto-adjust: حد RSI لـ SELL
 
 // Day P&L tracking
 double   g_dayPL   = 0.0;
@@ -183,12 +185,15 @@ void LoadSettings()
    int    ordTyp = (int)ReadSetting("OrderType", 0.0);
    int    rMode  = (int)ReadSetting("RiskMode",  0.0);
    double rPct   = ReadSetting("RiskPercent",    1.0);
+   double rsiBM  = ReadSetting("RSIBuyMax",      65.0);
+   double rsiSM  = ReadSetting("RSISellMin",     35.0);
 
    string hash = DoubleToString(lot,2)+DoubleToString(tp,2)+DoubleToString(sl,2)
                + IntegerToString(maxPos)+DoubleToString(spread,0)
                + IntegerToString(hStart)+IntegerToString(hEnd)
                + IntegerToString(ordTyp)+(botOn ? "1" : "0")
-               + IntegerToString(rMode)+DoubleToString(rPct,1);
+               + IntegerToString(rMode)+DoubleToString(rPct,1)
+               + DoubleToString(rsiBM,1)+DoubleToString(rsiSM,1);
    bool changed = (hash != g_lastSettingsHash);
    g_lastSettingsHash = hash;
 
@@ -196,6 +201,7 @@ void LoadSettings()
    g_tpUSD=tp; g_slUSD=sl; g_maxLossPerDay=maxL; g_maxProfitPerDay=maxP;
    g_tradeHoursStart=hStart; g_tradeHoursEnd=hEnd; g_botRunning=botOn;
    g_orderType=ordTyp; g_riskMode=rMode; g_riskPct=rPct;
+   g_rsiBuyMax=rsiBM; g_rsiSellMin=rsiSM;
    LoadNewsBlock();
 
    if(changed)
@@ -207,7 +213,8 @@ void LoadSettings()
             " MaxPos=",g_maxPositions," Spread=",g_maxSpread,
             " Hours=",g_tradeHoursStart,"-",g_tradeHoursEnd,
             " Bot=",g_botRunning?"ON":"OFF",
-            " Order=",otStr);
+            " Order=",otStr,
+            " RSI=",g_rsiBuyMax,"/",g_rsiSellMin);
       WriteCurrentSettings();
      }
   }
@@ -385,9 +392,9 @@ void OnTick()
                && (h[1]-l[1]) <= 5.0*atr1;
 
    // ── RSI FILTER: تجنب الدخول في مناطق متطرفة ─────────────────────
-   // لا BUY إذا RSI > 65 (overbought) · لا SELL إذا RSI < 35 (oversold)
-   bool rsiBuyOK  = (rsi1 <= 65.0);
-   bool rsiSellOK = (rsi1 >= 35.0);
+   // قيم ديناميكية — Claude يعدّلها تلقائياً بعد الخسائر
+   bool rsiBuyOK  = (rsi1 <= g_rsiBuyMax);
+   bool rsiSellOK = (rsi1 >= g_rsiSellMin);
 
    // ── H1 BIAS FILTER: فقط مع الاتجاه الرئيسي ──────────────────────
    int signal = 0;
