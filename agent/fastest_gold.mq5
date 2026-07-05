@@ -155,11 +155,13 @@ void LoadSettings()
 
    if(changed)
      {
+      string otStr = g_orderType==1?"LIMIT":g_orderType==2?"STOP":"MARKET";
       Print(EA_NAME," ✅ إعدادات محملة:"
             " Lot=",g_lot," TP$=",g_tpUSD," SL$=",g_slUSD,
             " MaxPos=",g_maxPositions," Spread=",g_maxSpread,
             " Hours=",g_tradeHoursStart,"-",g_tradeHoursEnd,
-            " Bot=",g_botRunning?"ON":"OFF");
+            " Bot=",g_botRunning?"ON":"OFF",
+            " Order=",otStr);
       WriteCurrentSettings();
      }
   }
