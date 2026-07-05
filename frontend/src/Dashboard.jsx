@@ -741,12 +741,22 @@ export default function Dashboard() {
 
             {/* Pattern Analysis */}
             <div className="bcard" style={bCard({border:'2px solid #ff9900', boxShadow:'4px 4px 0px #000000'})}>
-              <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:10, flexWrap:'wrap'}}>
-                <span style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#ff9900'}}>◆ PATTERN_AI</span>
-                {patternTime && <span style={{fontSize:9, color:C.muted}}>updated {new Date(patternTime).toLocaleTimeString()}</span>}
+              <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:10, flexWrap:'wrap'}}>
+                <div style={{display:'flex', alignItems:'center', gap:8}}>
+                  <span style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#ff9900'}}>◆ PATTERN_AI</span>
+                  {patternTime && <span style={{fontSize:9, color:C.muted}}>updated {new Date(patternTime).toLocaleTimeString()}</span>}
+                </div>
+                <button className="bbtn"
+                  style={{fontSize:9, padding:'4px 10px', letterSpacing:'1px',
+                    border:`1px solid #ff9900`, color:'#ff9900', background:'transparent',
+                    fontFamily:C.mono, fontWeight:'bold', cursor:'pointer'}}
+                  onClick={async()=>{
+                    try{ await fetch(`${API_URL}/api/analyze/run`,{method:'POST',headers:{'X-API-Key':API_KEY}}); }catch(e){}
+                  }}>
+                  ⚡ RUN NOW
+                </button>
               </div>
               {patternAdvice ? (() => {
-                // تحليل النص المنسّق وعرضه كبطاقات
                 const lines = patternAdvice.split('\n').filter(l => l.trim());
                 const icons = {
                   'BEST SESSION': { icon: '🕐', color: C.neon },
@@ -790,15 +800,6 @@ export default function Dashboard() {
                   NEEDS 10 TRADES WITH SNAPSHOTS<br/>
                   <span style={{color:C.yellow}}>ANALYSIS RUNS AUTOMATICALLY</span>
                 </div>
-                <button className="bbtn"
-                  style={{...bBtn(false,{marginTop:10,fontSize:9,padding:'6px 14px',letterSpacing:'1px',borderColor:C.yellow,color:C.yellow})}}
-                  onClick={async()=>{
-                    try{
-                      await fetch(`${API_URL}/api/analyze/run`,{method:'POST',headers:{'X-API-Key':API_KEY}});
-                    }catch(e){}
-                  }}>
-                  ⚡ RUN ANALYSIS NOW
-                </button>
               )}
             </div>
 
