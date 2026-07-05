@@ -492,8 +492,7 @@ void OpenBasket(const ENUM_ORDER_TYPE dir, const double atrVal,
    int  fired  = 0;
 
    // هل البروكر يقبل pending orders لهذا الرمز؟
-   ENUM_SYMBOL_TRADE_EXECUTION execMode =
-      (ENUM_SYMBOL_TRADE_EXECUTION)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_EXECUTION_MODE);
+   long execMode  = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_EXEMODE);
    bool pendingOK = (execMode == SYMBOL_TRADE_EXECUTION_EXCHANGE ||
                      execMode == SYMBOL_TRADE_EXECUTION_MARKET);
 
