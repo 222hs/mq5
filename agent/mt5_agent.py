@@ -516,6 +516,8 @@ def sync_settings():
                 "TradeHoursStart": "TradeHoursStart", "TradeHoursEnd": "TradeHoursEnd",
                 "BotRunning": "BotRunning",
                 "OrderType":  "OrderType",
+                "RiskMode":   "RiskMode",
+                "RiskPercent":"RiskPercent",
             }
             for k in key_map:
                 if k in settings:

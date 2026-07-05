@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v2.7';
+const DASH_VERSION = 'v2.8';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -903,6 +903,61 @@ export default function Dashboard() {
                         {busy ? 'SAVING...' : 'SAVE ORDER TYPE'}
                       </button>
                     </div>
+                  </div>
+
+                  {/* LOT SIZE MODE */}
+                  <div style={{borderTop:C.border, paddingTop:12}}>
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
+                      <div style={bLabel({color:C.ink})}>&gt; LOT SIZE MODE</div>
+                      <div style={{
+                        fontSize:9, fontWeight:'bold', letterSpacing:'1px',
+                        padding:'2px 8px',
+                        border:`1px solid ${(settingsDraft?.RiskMode??0)===1?C.yellow:C.neon}`,
+                        color: (settingsDraft?.RiskMode??0)===1?C.yellow:C.neon,
+                      }}>
+                        {(settingsDraft?.RiskMode??0)===1?'DYNAMIC':'FIXED'}
+                      </div>
+                    </div>
+                    <div style={{display:'flex', gap:8, marginBottom:8}}>
+                      {[{v:0,label:'🔒 FIXED'},{v:1,label:'📈 DYNAMIC'}].map(opt=>(
+                        <button key={opt.v} className="bbtn"
+                          onClick={()=>{settingsDirty.current=true; setSettingsDraft(d=>({...d,RiskMode:opt.v}));}}
+                          style={{...bBtn((settingsDraft?.RiskMode??0)===opt.v,{flex:1,fontSize:10,padding:'6px 4px'})}}>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    {(settingsDraft?.RiskMode??0)===1 && (
+                      <div style={{display:'flex', flexDirection:'column', gap:6}}>
+                        <div style={{display:'flex', alignItems:'center', gap:8}}>
+                          <div style={bLabel({color:C.muted})}>RISK PER TRADE</div>
+                          <div style={{fontSize:13, fontWeight:'bold', color:C.yellow, fontFamily:C.mono}}>
+                            {(settingsDraft?.RiskPercent??1).toFixed(1)}%
+                          </div>
+                        </div>
+                        <input type="range" min="0.1" max="5" step="0.1"
+                          value={settingsDraft?.RiskPercent??1}
+                          onChange={e=>{settingsDirty.current=true; setSettingsDraft(d=>({...d,RiskPercent:Number(e.target.value)}));}}
+                          style={{width:'100%', accentColor:C.yellow}}
+                        />
+                        <div style={{display:'flex', justifyContent:'space-between', fontSize:9, color:C.muted}}>
+                          <span>0.1% آمن</span><span>1% متوازن</span><span>5% خطر</span>
+                        </div>
+                        <div style={{fontSize:10, color:C.muted, lineHeight:1.5}}>
+                          لوت = (رصيدك × {(settingsDraft?.RiskPercent??1).toFixed(1)}%) ÷ SL$
+                        </div>
+                      </div>
+                    )}
+                    <button className="bbtn"
+                      onClick={()=>{
+                        saveSingle('RiskMode', settingsDraft?.RiskMode??0);
+                        if((settingsDraft?.RiskMode??0)===1)
+                          saveSingle('RiskPercent', settingsDraft?.RiskPercent??1);
+                      }}
+                      disabled={busy}
+                      style={bBtn(false,{marginTop:8,width:'100%',borderColor:C.yellow,color:C.yellow})}>
+                      {busy?'SAVING...':'SAVE LOT MODE'}
+                    </button>
                   </div>
                 </div>
               )}

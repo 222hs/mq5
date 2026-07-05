@@ -88,6 +88,8 @@ DEFAULT_SETTINGS = {
     "TradeHoursEnd":  24,
     "ClaudeEnabled":  1,
     "OrderType":      0,
+    "RiskMode":       0,
+    "RiskPercent":    1.0,
 }
 
 
