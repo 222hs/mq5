@@ -370,9 +370,14 @@ void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal)
    double minD  = MathMax((double)(sl0+frz+5), 10.0) * tickSz;
    double lot   = NormalizeLot(g_lot);
 
-   // ATR-based distances — always valid, broker never strips these
-   double slD = MathMax(atrVal * 1.5, minD);
-   double tpD = MathMax(atrVal * 3.0, minD * 2.0);
+   // حساب قيمة النقطة للـ lot الحالي → تحويل الدولار لمسافة سعرية
+   double tickVal  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   double pointVal = (tickSize > 0.0 && lot > 0.0)
+                     ? (tickVal / tickSize) * lot
+                     : 1.0;
+   double slD = MathMax(g_slUSD / pointVal, minD);
+   double tpD = MathMax(g_tpUSD / pointVal, minD);
 
    // بناء snapshot comment للتحليل الذكي لاحقاً
    MqlDateTime dt; TimeToStruct(TimeGMT(), dt);
