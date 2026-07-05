@@ -195,38 +195,49 @@ def read_local_settings():
         return None
 
 
+_last_settings_hash = None  # نتتبع التغييرات
+
 def sync_settings():
     """يسحب الإعدادات من الصفحة ويكتبها للبوت — مع retry تلقائي"""
+    global _last_settings_hash
     for attempt in range(3):
         try:
             r = requests.get(
                 f"{BACKEND_URL}/api/settings",
                 headers=HEADERS,
-                timeout=30,        # Railway قد تكون نائمة أول طلب
+                timeout=30,
             )
             if r.status_code != 200:
+                print(f"⚠️  /api/settings رجع {r.status_code}")
                 return
             settings = r.json()
+
+            # نطبع دائماً الإعدادات الحالية بشكل واضح
+            t = datetime.now().strftime('%H:%M:%S')
+            print(f"\n{'='*55}")
+            print(f"⚙️  [{t}] إعدادات من الداشبورد:")
+            print(f"   Lot={settings.get('LotSize')}  TP$={settings.get('TP_USD')}  SL$={settings.get('SL_USD')}")
+            print(f"   MaxPos={settings.get('MaxPositions')}  Spread={settings.get('MaxSpread')}  CD={settings.get('CooldownSecs')}s")
+            print(f"   MaxLoss$={settings.get('MaxLossPerDay')}  MaxProfit$={settings.get('MaxProfitPerDay')}")
+            print(f"   Hours={settings.get('TradeHoursStart')}-{settings.get('TradeHoursEnd')}  Bot={'ON' if settings.get('BotRunning') else 'OFF'}")
+
+            # نتحقق إذا تغيرت الإعدادات
+            import hashlib
+            new_hash = hashlib.md5(json.dumps(settings, sort_keys=True).encode()).hexdigest()
+            if new_hash != _last_settings_hash:
+                print(f"   🔄 تغييرات مكتشفة — يُكتب الملف")
+                _last_settings_hash = new_hash
+            else:
+                print(f"   ✓ لا تغييرات")
 
             tmp = SETTINGS_FILE + ".tmp"
             os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(settings, f, indent=2)
             os.replace(tmp, SETTINGS_FILE)
-
-            print(f"⚙️  TP$={settings.get('TP_USD','?')} "
-                  f"SL$={settings.get('SL_USD','?')} "
-                  f"Lot={settings.get('LotSize','?')} "
-                  f"MaxPos={settings.get('MaxPositions','?')}")
-            print(f"📁 كُتب الملف: {SETTINGS_FILE}")
-            # تحقق أن الملف فعلاً موجود وقابل للقراءة
-            if os.path.exists(SETTINGS_FILE):
-                with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                    content = f.read()
-                print(f"✅ محتوى الملف ({len(content)} bytes): {content[:200]}")
-            else:
-                print(f"❌ الملف غير موجود بعد الكتابة!")
-            return  # نجح
+            print(f"   📁 {SETTINGS_FILE}")
+            print(f"{'='*55}\n")
+            return
 
         except PermissionError:
             print("⚠️  الملف مقفل من MT5 — سيُعاد في الدورة القادمة")
