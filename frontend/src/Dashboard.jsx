@@ -31,7 +31,7 @@ export default function Dashboard() {
     return <div style={styles.loading}>جاري التحميل...</div>;
   }
 
-  const { account, positions, history, stats, is_online } = data;
+  const { account, positions, history, stats, is_online, bot_running } = data;
 
   return (
     <div>
@@ -43,6 +43,7 @@ export default function Dashboard() {
           {is_online ? "البوت متصل" : "البوت غير متصل"}
           {account?.server ? ` · ${account.server}` : ""}
         </span>
+        <BotToggle running={bot_running} />
       </div>
 
       <div style={styles.metricsGrid}>
@@ -123,6 +124,49 @@ function Table({ headers, rows, empty }) {
     </div>
   );
 }
+
+// ── Bot Toggle Button ─────────────────────────────────────────────
+const API_KEY = "mysecretkey123";
+
+function BotToggle({ running }) {
+  const [state, setState] = useState(running);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => setState(running), [running]);
+
+  const toggle = async () => {
+    setLoading(true);
+    try {
+      const action = state ? "stop" : "start";
+      const res = await fetch(`${API_URL}/api/bot/control`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
+        body: JSON.stringify({ action }),
+      });
+      if (res.ok) setState(!state);
+    } catch {}
+    setLoading(false);
+  };
+
+  return (
+    <button onClick={toggle} disabled={loading} style={{
+      marginRight: "auto",
+      background: state ? "#DC2626" : "#16A34A",
+      color: "#fff",
+      border: "none",
+      borderRadius: 8,
+      padding: "5px 16px",
+      fontSize: 13,
+      fontWeight: 600,
+      cursor: loading ? "wait" : "pointer",
+      fontFamily: "inherit",
+      transition: "background .2s",
+    }}>
+      {loading ? "..." : state ? "⏹ إيقاف البوت" : "▶ تشغيل البوت"}
+    </button>
+  );
+}
+// ─────────────────────────────────────────────────────────────────
 
 // ── History Table with filters ───────────────────────────────────
 function HistoryTable({ history }) {
@@ -300,7 +344,7 @@ function StatPill({ label, value, color = "#fff" }) {
 }
 
 const styles = {
-  statusRow:   { display: "flex", alignItems: "center", gap: 10, marginBottom: "1.5rem" },
+  statusRow:   { display: "flex", alignItems: "center", gap: 10, marginBottom: "1.5rem", flexWrap: "wrap" },
   dot:         { width: 8, height: 8, borderRadius: "50%", flexShrink: 0 },
   statusText:  { fontSize: 14, color: "#9CA3AF" },
   metricsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: "2rem" },

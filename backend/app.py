@@ -41,6 +41,7 @@ DEFAULT_SETTINGS = {
     "EMA_Fast":     8,
     "EMA_Slow":     21,
     "CandleConf":   2,
+    "BotRunning":   1,
 }
 
 
@@ -231,7 +232,8 @@ def get_dashboard():
                 "win_rate":     round(win_rate, 1),
                 "total_profit": round(total_profit, 2),
             },
-            "settings": get_settings(),
+            "settings":    get_settings(),
+            "bot_running": int(get_settings().get("BotRunning", 1)) == 1,
         })
 
 
@@ -255,6 +257,18 @@ def api_save_settings():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     return jsonify({"status": "ok", "settings": get_settings()})
+
+
+@app.route("/api/bot/control", methods=["POST"])
+def bot_control():
+    if not check_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json()
+    action = body.get("action")
+    if action not in ("start", "stop"):
+        return jsonify({"error": "action must be start or stop"}), 400
+    save_settings({"BotRunning": 1 if action == "start" else 0})
+    return jsonify({"status": "ok", "BotRunning": 1 if action == "start" else 0})
 
 
 @app.route("/api/health", methods=["GET"])
