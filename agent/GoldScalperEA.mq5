@@ -4,7 +4,7 @@
 //|  Gold scalper — bar-gated, closed-bar signals, smart filters     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.06"
+#property version   "9.07"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = true;     // London+NY sessions only
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.06"
+#define EA_VERSION    "9.07"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -322,12 +322,13 @@ void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal)
      { slD=MathMax(atrVal*1.5,minD); tpD=MathMax(atrVal*2.0,minD*2.0); }
    double sl,tp; bool ok;
 
+   // TP managed by ManagePositions (P&L-based), SL kept as safety net on broker
    if(type==ORDER_TYPE_BUY)
-     { sl=NormalizeDouble(ask-slD,digits); tp=NormalizeDouble(ask+tpD,digits);
-       ok=trade.Buy(lot,_Symbol,ask,sl,tp,EA_NAME); }
+     { sl=NormalizeDouble(ask-slD,digits);
+       ok=trade.Buy(lot,_Symbol,ask,sl,0,EA_NAME); }
    else
-     { sl=NormalizeDouble(bid+slD,digits); tp=NormalizeDouble(bid-tpD,digits);
-       ok=trade.Sell(lot,_Symbol,bid,sl,tp,EA_NAME); }
+     { sl=NormalizeDouble(bid+slD,digits);
+       ok=trade.Sell(lot,_Symbol,bid,sl,0,EA_NAME); }
 
    if(ok) { g_lastEntryTime=TimeCurrent(); g_totalTrades++;
              Print(EA_NAME,": ",EnumToString(type)," lot=",lot,
@@ -349,38 +350,22 @@ double NormalizeLot(double lot)
 //+------------------------------------------------------------------+
 void ManagePositions(double rsi1, bool crossUp, bool crossDn, double atrVal)
   {
-   double pt=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
-   int digits=(int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS);
-   long sl0=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL);
-   double minD=MathMax((double)(sl0+5),10.0)*pt;
-   double trail=MathMax(atrVal*1.2, minD);
-
    for(int i=PositionsTotal()-1;i>=0;i--)
      {
       if(!posInfo.SelectByIndex(i)) continue;
       if(posInfo.Symbol()!=_Symbol||posInfo.Magic()!=g_magic) continue;
-      ulong  tk=posInfo.Ticket();
-      double op=posInfo.PriceOpen(), cp=posInfo.PriceCurrent();
-      double sl=posInfo.StopLoss(),  tp=posInfo.TakeProfit();
+      ulong  tk     = posInfo.Ticket();
+      double profit = posInfo.Profit() + posInfo.Swap() + posInfo.Commission();
 
-      if(posInfo.PositionType()==POSITION_TYPE_BUY)
-        {
-         double gain=cp-op;
-         if(rsi1>78.0 || crossDn || (atrVal>0&&gain>=atrVal*2.5))
-           { trade.PositionClose(tk); continue; }
-         if(atrVal>0 && gain>trail)
-           { double nsl=NormalizeDouble(cp-trail,digits);
-             if(nsl>sl+pt && cp-nsl>=minD) trade.PositionModify(tk,nsl,tp); }
-        }
-      else
-        {
-         double gain=op-cp;
-         if(rsi1<22.0 || crossUp || (atrVal>0&&gain>=atrVal*2.5))
-           { trade.PositionClose(tk); continue; }
-         if(atrVal>0 && gain>trail)
-           { double nsl=NormalizeDouble(cp+trail,digits);
-             if((sl==0.0||nsl<sl-pt)&&nsl-cp>=minD) trade.PositionModify(tk,nsl,tp); }
-        }
+      // ── PRIMARY: close by dollar P&L target (what user set on dashboard) ──
+      if(profit >= g_tpUSD)
+        { trade.PositionClose(tk);
+          Print(EA_NAME,": TP HIT $",DoubleToString(profit,2));
+          continue; }
+      if(profit <= -g_slUSD)
+        { trade.PositionClose(tk);
+          Print(EA_NAME,": SL HIT $",DoubleToString(profit,2));
+          continue; }
      }
   }
 
