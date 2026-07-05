@@ -4,73 +4,47 @@ import Settings from "./Settings.jsx";
 import Analysis from "./Analysis.jsx";
 
 const TABS = [
-  { id: "dashboard", label: "📊 لوحة التحكم" },
-  { id: "analysis",  label: "📈 تحليل الأوقات" },
-  { id: "settings",  label: "⚙️ الإعدادات"    },
+  { id: "dashboard", label: "DASHBOARD" },
+  { id: "analysis",  label: "ANALYSIS"  },
+  { id: "settings",  label: "SETTINGS"  },
 ];
+
+const TABS_STYLE = {
+  bar: {
+    display: "flex", gap: 4, padding: "10px 16px 0",
+    background: "#1a1a18", borderBottom: "1px solid #2a2a24",
+    direction: "ltr",
+  },
+  btn: {
+    fontFamily: "'Courier New', monospace", fontSize: 12,
+    fontWeight: 700, letterSpacing: 2, textTransform: "uppercase",
+    padding: "8px 20px", cursor: "pointer", border: "none",
+    background: "transparent", color: "#8a8580",
+  },
+  active: { color: "#f0ebe0", borderBottom: "2px solid #52b788" },
+};
 
 export default function App() {
   const [tab, setTab] = useState("dashboard");
 
   return (
-    <div style={s.page}>
-      <div style={s.tabBar}>
+    <div style={{ minHeight: "100vh", background: "#f0ebe0", direction: "ltr" }}>
+      <div style={TABS_STYLE.bar}>
         {TABS.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            style={{ ...s.tabBtn, ...(tab === t.id ? s.tabActive : {}) }}
+            style={{ ...TABS_STYLE.btn, ...(tab === t.id ? TABS_STYLE.active : {}) }}
           >
             {t.label}
           </button>
         ))}
       </div>
-      <div style={s.content}>
+      <div style={{ width: "100%" }}>
         {tab === "dashboard" ? <Dashboard /> : tab === "analysis" ? <Analysis /> : <Settings />}
       </div>
     </div>
   );
 }
 
-const s = {
-  page: {
-    minHeight: "100vh",
-    background: "#0B0B10",
-    color: "#fff",
-    fontFamily: "'Segoe UI', system-ui, sans-serif",
-    direction: "rtl",
-  },
-  tabBar: {
-    display: "flex",
-    gap: 6,
-    padding: "1.25rem 1.25rem 0",
-    maxWidth: 940,
-    margin: "0 auto",
-  },
-  tabBtn: {
-    background: "#16161D",
-    color: "#9CA3AF",
-    border: "1px solid #2A2A33",
-    borderBottom: "none",
-    borderRadius: "10px 10px 0 0",
-    padding: "9px 22px",
-    fontSize: 14,
-    cursor: "pointer",
-    fontFamily: "inherit",
-    fontWeight: 500,
-  },
-  tabActive: {
-    background: "#1D4ED8",
-    color: "#fff",
-    borderColor: "#1D4ED8",
-  },
-  content: {
-    maxWidth: 940,
-    margin: "0 auto",
-    padding: "1.5rem 1.25rem 3rem",
-    background: "#0F0F16",
-    border: "1px solid #2A2A33",
-    borderRadius: "0 12px 12px 12px",
-    minHeight: "80vh",
-  },
-};
+const s = {};
