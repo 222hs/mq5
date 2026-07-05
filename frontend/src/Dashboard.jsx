@@ -72,19 +72,7 @@ export default function Dashboard() {
       />
 
       <SectionTitle>آخر الصفقات</SectionTitle>
-      <Table
-        headers={["الرمز", "النوع", "الحجم", "التاريخ", "الربح/الخسارة"]}
-        rows={(history || []).slice(0, 10).map((h) => [
-          h.symbol,
-          h.type === "BUY" ? "شراء" : "بيع",
-          h.volume,
-          new Date(h.time).toLocaleDateString("ar"),
-          <span style={{ color: h.profit >= 0 ? "#4ADE80" : "#F87171" }}>
-            ${h.profit?.toFixed(2)}
-          </span>,
-        ])}
-        empty="لا توجد صفقات سابقة"
-      />
+      <HistoryTable history={history || []} />
 
       <div style={styles.statsRow}>
         <StatPill label="إجمالي الصفقات" value={stats?.total_trades ?? 0} />
@@ -135,6 +123,71 @@ function Table({ headers, rows, empty }) {
     </div>
   );
 }
+
+// ── History Table with filters ───────────────────────────────────
+function HistoryTable({ history }) {
+  const [filter, setFilter] = useState("all");
+
+  const filtered = history.filter((h) => {
+    if (filter === "win")  return h.profit > 0;
+    if (filter === "loss") return h.profit <= 0;
+    if (filter === "buy")  return h.type === "BUY";
+    if (filter === "sell") return h.type === "SELL";
+    return true;
+  });
+
+  const tabs = [
+    { key: "all",  label: "الكل" },
+    { key: "win",  label: "رابحة ✅" },
+    { key: "loss", label: "خاسرة ❌" },
+    { key: "buy",  label: "شراء ▲" },
+    { key: "sell", label: "بيع ▼" },
+  ];
+
+  return (
+    <div>
+      <div style={ht.filterRow}>
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setFilter(t.key)}
+            style={{ ...ht.filterBtn, ...(filter === t.key ? ht.filterActive : {}) }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <Table
+        headers={["الرمز", "النوع", "الحجم", "التاريخ", "الربح/الخسارة"]}
+        rows={filtered.slice(0, 20).map((h) => [
+          h.symbol,
+          <span style={{ color: h.type === "BUY" ? "#34D399" : "#F87171" }}>
+            {h.type === "BUY" ? "شراء ▲" : "بيع ▼"}
+          </span>,
+          h.volume,
+          new Date(h.time).toLocaleDateString("ar"),
+          <span style={{ color: h.profit > 0 ? "#4ADE80" : "#F87171", fontWeight: 500 }}>
+            {h.profit > 0 ? "+" : ""}${h.profit?.toFixed(2)}
+          </span>,
+        ])}
+        empty="لا توجد صفقات"
+      />
+      <div style={ht.count}>
+        عرض {Math.min(filtered.length, 20)} من {filtered.length} صفقة
+      </div>
+    </div>
+  );
+}
+
+const ht = {
+  filterRow:   { display:"flex", gap:6, marginBottom:8, flexWrap:"wrap" },
+  filterBtn:   { background:"#16161D", border:"0.5px solid #2A2A33", borderRadius:8,
+                 color:"#9CA3AF", padding:"5px 14px", fontSize:12, cursor:"pointer",
+                 fontFamily:"inherit" },
+  filterActive:{ background:"#1D4ED8", color:"#fff", borderColor:"#1D4ED8" },
+  count:       { fontSize:11, color:"#6B7280", textAlign:"center", marginTop:8 },
+};
+// ─────────────────────────────────────────────────────────────────
 
 // ── Trading Sessions Widget ──────────────────────────────────────
 const SESSIONS = [
