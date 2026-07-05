@@ -125,9 +125,10 @@ def fetch_and_apply_settings():
         changed = []
         for key, value in settings.items():
             gv_name  = GV_PREFIX + key
-            current  = mt5.global_variable_get(gv_name)
+            exists   = mt5.global_variable_check(gv_name)
+            current  = mt5.global_variable_get(gv_name) if exists else None
             new_val  = float(value)
-            if current is None or abs(current - new_val) > 1e-9:
+            if not exists or current is None or abs(current - new_val) > 1e-9:
                 mt5.global_variable_set(gv_name, new_val)
                 changed.append(f"{key}={value}")
 
