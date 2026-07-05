@@ -39,7 +39,10 @@ latest_data = {
     "sessions": {},
     "claude_advice": None,
     "claude_time": None,
+    "pattern_advice": None,
+    "pattern_time": None,
 }
+_last_pattern_count = 0
 
 DEFAULT_SETTINGS = {
     "LotSize":        0.5,
@@ -264,8 +267,10 @@ def build_dashboard_payload():
             "bot_running":  int(get_settings().get("BotRunning", 1)) == 1,
             "candles":      latest_data["candles"],
             "sessions":     latest_data["sessions"],
-            "claude_advice":latest_data["claude_advice"],
-            "claude_time":  latest_data["claude_time"],
+            "claude_advice":  latest_data["claude_advice"],
+            "claude_time":    latest_data["claude_time"],
+            "pattern_advice": latest_data["pattern_advice"],
+            "pattern_time":   latest_data["pattern_time"],
         }
 
 
@@ -306,6 +311,53 @@ def call_claude(consecutive_losses, recent_trades, account):
             return data["content"][0]["text"].strip()
     except Exception as e:
         return f"Claude error: {str(e)[:60]}"
+
+
+def analyze_patterns():
+    """يحلل snapshots الصفقات ويستخرج patterns — يُستدعى كل 20 صفقة جديدة"""
+    if not ANTHROPIC_API_KEY:
+        return
+    trades = get_history(50)
+    # فلتر الصفقات اللي عندها snapshot
+    snaps = [t for t in trades if t.get("comment") and "RSI=" in (t.get("comment") or "")]
+    if len(snaps) < 8:
+        return
+    wins  = [t for t in snaps if (t["profit"] or 0) > 0]
+    loses = [t for t in snaps if (t["profit"] or 0) <= 0]
+    def fmt(lst):
+        return " | ".join([t["comment"] for t in lst[:8]])
+    prompt = (
+        f"MT5 scalping bot trade analysis. Last {len(snaps)} trades with entry snapshots.\n"
+        f"WIN trades ({len(wins)}): {fmt(wins)}\n"
+        f"LOSS trades ({len(loses)}): {fmt(loses)}\n\n"
+        f"Fields: RSI=value EMA=U(up)/D(down) ATR=value S=session\n"
+        f"Analyze: what conditions appear most in wins vs losses? "
+        f"Give ONE specific actionable pattern insight in max 25 words. "
+        f"Be direct, mention specific values (e.g. 'RSI>65 with EMA=D causes 70% of losses')."
+    )
+    try:
+        body = json.dumps({
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 100,
+            "messages": [{"role": "user", "content": prompt}]
+        }).encode()
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=body,
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            }
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read())["content"][0]["text"].strip()
+        with data_lock:
+            latest_data["pattern_advice"] = result
+            latest_data["pattern_time"]   = datetime.now().isoformat()
+        socketio.emit("dashboard", build_dashboard_payload())
+    except Exception:
+        pass
 
 
 # ---------- WebSocket events ----------
@@ -358,11 +410,12 @@ def update_data():
 
         upsert_history(history_payload)
 
-    # Claude consecutive losses check
+    # Claude checks
     settings = get_settings()
     claude_enabled = int(settings.get("ClaudeEnabled", 1)) == 1
     if claude_enabled and history_payload:
         recent = get_history(20)
+        # 1) تحذير خسائر متتالية
         consecutive = 0
         for t in recent:
             if t["profit"] <= 0:
@@ -376,6 +429,13 @@ def update_data():
                 with data_lock:
                     latest_data["claude_advice"] = advice
                     latest_data["claude_time"]   = now
+        # 2) تحليل patterns كل 20 صفقة جديدة
+        global _last_pattern_count
+        total = len(get_history(1000))
+        if total - _last_pattern_count >= 20:
+            _last_pattern_count = total
+            import threading
+            threading.Thread(target=analyze_patterns, daemon=True).start()
 
     # بث التحديث لكل الـ clients المتصلين فوراً
     try:

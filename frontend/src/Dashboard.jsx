@@ -226,8 +226,10 @@ export default function Dashboard() {
   const utc     = now.toISOString().slice(11, 19);
   const months  = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
   const dateStr = `${months[now.getUTCMonth()]} ${String(now.getUTCDate()).padStart(2,'0')} ${now.getUTCFullYear()}`;
-  const claudeAdvice = data?.claude_advice || null;
-  const claudeTime   = data?.claude_time   || null;
+  const claudeAdvice  = data?.claude_advice  || null;
+  const claudeTime    = data?.claude_time    || null;
+  const patternAdvice = data?.pattern_advice || null;
+  const patternTime   = data?.pattern_time   || null;
 
   const settingKeys = ['LotSize','TP_USD','SL_USD','MaxSpread','MaxPositions','CooldownSecs','TrailUSD','MaxLossPerDay','MaxProfitPerDay','TradeHoursStart','TradeHoursEnd'];
 
@@ -649,6 +651,23 @@ export default function Dashboard() {
               ) : (
                 <div style={{fontSize:10, color:C.muted, letterSpacing:'1px', lineHeight:1.6, textTransform:'uppercase'}}>
                   MONITORING · WILL ADVISE<br/>AFTER 5 CONSECUTIVE LOSSES
+                </div>
+              )}
+            </div>
+
+            {/* Pattern Analysis */}
+            <div className="bcard" style={bCard({border:'2px solid #ff9900', boxShadow:'4px 4px 0px #000000'})}>
+              <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:10}}>
+                <span style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#ff9900'}}>◆ PATTERN_AI</span>
+                {patternTime && <span style={{fontSize:9, color:C.muted}}>{new Date(patternTime).toLocaleTimeString()}</span>}
+              </div>
+              {patternAdvice ? (
+                <div style={{fontSize:12, fontWeight:'bold', color:C.ink, lineHeight:1.6}}>
+                  "{patternAdvice}"
+                </div>
+              ) : (
+                <div style={{fontSize:10, color:C.muted, letterSpacing:'1px', lineHeight:1.6, textTransform:'uppercase'}}>
+                  LEARNING · NEEDS 20 TRADES<br/>WITH SNAPSHOTS TO ANALYZE
                 </div>
               )}
             </div>
