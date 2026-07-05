@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.2';
+const DASH_VERSION = 'v3.3';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -823,8 +823,26 @@ export default function Dashboard() {
                     color: data?.h1_bias_up == null ? C.muted : data.h1_bias_up ? C.neon : C.red },
                   { label:'RSI', value: data?.last_rsi != null ? `${data.last_rsi}` : '--',
                     color: data?.last_rsi > 65 ? C.red : data?.last_rsi < 35 ? C.red : C.neon },
-                  { label:'SPREAD', value: data?.account ? `${Math.round((data.account.spread||0))}` : '--',
-                    color: C.muted },
+                  { label:'SPREAD', value: (() => {
+                      const sp = data?.account?.spread || 0;
+                      const sl = settings.SL_USD || 0;
+                      const tickVal = data?.account?.tick_value || 0;
+                      const tickSz  = data?.account?.tick_size  || 1;
+                      const lot     = settings.LotSize || 0;
+                      const spCost  = tickVal > 0 ? (sp * tickSz * (tickVal / tickSz) * lot) : 0;
+                      const pct     = sl > 0 && spCost > 0 ? Math.round(spCost / sl * 100) : null;
+                      return pct != null ? `${Math.round(sp)} (${pct}%SL)` : `${Math.round(sp)}`;
+                    })(),
+                    color: (() => {
+                      const sp = data?.account?.spread || 0;
+                      const sl = settings.SL_USD || 0;
+                      const tickVal = data?.account?.tick_value || 0;
+                      const tickSz  = data?.account?.tick_size  || 1;
+                      const lot     = settings.LotSize || 0;
+                      const spCost  = tickVal > 0 ? (sp * tickSz * (tickVal / tickSz) * lot) : 0;
+                      const pct     = sl > 0 && spCost > 0 ? spCost / sl * 100 : 0;
+                      return pct > 30 ? C.red : pct > 15 ? C.yellow : C.muted;
+                    })() },
                   { label:'NEWS', value: newsFilter.blocked ? '🚫 BLOCK' : '✓ CLEAR',
                     color: newsFilter.blocked ? C.red : C.neon },
                 ].map(f => (

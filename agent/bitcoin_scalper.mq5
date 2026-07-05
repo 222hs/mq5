@@ -263,7 +263,7 @@ int OnInit()
    trade.SetDeviationInPoints(100); // BTC يحتاج deviation أعلى
    trade.SetTypeFillingBySymbol(_Symbol);
 
-   hRSI   = iRSI(_Symbol, TF,        7,  PRICE_CLOSE);
+   hRSI   = iRSI(_Symbol, TF,        14, PRICE_CLOSE);
    hEMA9  = iMA (_Symbol, TF,        9,  0, MODE_EMA, PRICE_CLOSE);
    hEMA21 = iMA (_Symbol, TF,        21, 0, MODE_EMA, PRICE_CLOSE);
    hATR   = iATR(_Symbol, TF,        14);
@@ -440,6 +440,17 @@ void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal,
    double minD   = MathMax((double)(sl0+frz+5), 10.0) * tickSz;
    double lot    = CalcLot();
 
+   // فلتر: لا تدخل إذا الـ spread يأكل أكثر من 30% من الـ SL
+   long spread_ot = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+   double spreadCost_ot = spread_ot * SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   double slThreshold_ot = EffectiveSL(lot) * 0.30;
+   if(slThreshold_ot > 0 && spreadCost_ot > slThreshold_ot)
+     {
+      Print(EA_NAME,": SKIP — spread $",DoubleToString(spreadCost_ot,2),
+            " > 30% of SL $",DoubleToString(EffectiveSL(lot),2));
+      return;
+     }
+
    double tickVal  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
    double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    double pointVal = (tickSize > 0.0 && lot > 0.0) ? (tickVal / tickSize) * lot : 1.0;
@@ -531,6 +542,17 @@ void OpenBasket(const ENUM_ORDER_TYPE dir, const double atrVal,
    double minD   = MathMax((double)(sl0+frz+5), 10.0) * tickSz;
    double lot    = CalcLot();
 
+   // فلتر: لا تدخل إذا الـ spread يأكل أكثر من 30% من الـ SL
+   long spread_ob = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+   double spreadCost_ob = spread_ob * SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   double slThreshold_ob = EffectiveSL(lot) * 0.30;
+   if(slThreshold_ob > 0 && spreadCost_ob > slThreshold_ob)
+     {
+      Print(EA_NAME,": SKIP — spread $",DoubleToString(spreadCost_ob,2),
+            " > 30% of SL $",DoubleToString(EffectiveSL(lot),2));
+      return;
+     }
+
    double tickVal  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
    double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    double pointVal = (tickSize>0.0&&lot>0.0) ? (tickVal/tickSize)*lot : 1.0;
@@ -548,6 +570,7 @@ void OpenBasket(const ENUM_ORDER_TYPE dir, const double atrVal,
 
    datetime expiry = TimeCurrent() + PeriodSeconds(TF)*5;
    bool isBuy = (dir==ORDER_TYPE_BUY);
+   int effectiveSlots = MathMin(slots, 2); // basket max 2 صفقات
    int  fired  = 0;
 
    long execMode  = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_EXEMODE);
@@ -568,7 +591,7 @@ void OpenBasket(const ENUM_ORDER_TYPE dir, const double atrVal,
        else    Print(EA_NAME,": BASKET[0] FAIL ",trade.ResultRetcode()); }
 
    // [1] STOP
-   if(slots>=2 && pendingOK)
+   if(effectiveSlots>=2 && pendingOK)
      { double buf=MathMax(tickSz*5,minD); bool ok;
        if(isBuy)
          { double entry=NormalizeDouble(h1+buf,digs);
@@ -585,7 +608,7 @@ void OpenBasket(const ENUM_ORDER_TYPE dir, const double atrVal,
        else    Print(EA_NAME,": BASKET[1] SKIP (",trade.ResultRetcode(),")"); }
 
    // [2] LIMIT
-   if(slots>=3 && pendingOK)
+   if(false) // disabled — basket max 2
      { bool ok;
        if(isBuy)
          { double entry=NormalizeDouble(c1,digs);
@@ -621,6 +644,29 @@ void ManagePositions()
       double   posLot  = posInfo.Volume();
       double   effTP   = EffectiveTP(posLot);
       double   effSL   = EffectiveSL(posLot);
+
+      // Breakeven: إذا الربح وصل 1.5× SL → نقل الـ SL لنقطة التعادل
+      if(profit >= effSL * 1.5)
+        {
+         double openPrice = posInfo.PriceOpen();
+         double bePrice;
+         // نضيف buffer صغير (نص الـ spread) لضمان ربح بسيط عند الإغلاق
+         double halfSpread = (SymbolInfoDouble(_Symbol,SYMBOL_ASK) - SymbolInfoDouble(_Symbol,SYMBOL_BID)) * 0.5;
+         int    digs       = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+         if(posInfo.PositionType() == POSITION_TYPE_BUY)
+            bePrice = NormalizeDouble(openPrice + halfSpread, digs);
+         else
+            bePrice = NormalizeDouble(openPrice - halfSpread, digs);
+         double curSL = posInfo.StopLoss();
+         // فقط إذا الـ SL الحالي أسوأ من نقطة التعادل
+         bool needMove = (posInfo.PositionType()==POSITION_TYPE_BUY  && curSL < bePrice) ||
+                         (posInfo.PositionType()==POSITION_TYPE_SELL && (curSL > bePrice || curSL==0));
+         if(needMove)
+           {
+            if(trade.PositionModify(tk, bePrice, posInfo.TakeProfit()))
+               Print(EA_NAME,": BE moved — profit=$",DoubleToString(profit,2));
+           }
+        }
 
       if(profit >= effTP)
         { trade.PositionClose(tk);
