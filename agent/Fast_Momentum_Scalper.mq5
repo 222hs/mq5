@@ -248,6 +248,11 @@ void ExecuteFastOrder(ENUM_ORDER_TYPE type)
    else if((fillMode & SYMBOL_FILLING_IOC) != 0) request.type_filling = ORDER_FILLING_IOC;
    else                                          request.type_filling = ORDER_FILLING_RETURN;
 
+   Print("DEBUG | price=",price," sl=",sl," tp=",tp,
+         " slDist=",slDist," tpDist=",tpDist,
+         " minDist=",minDist," _Point=",_Point,
+         " stopsLevel=",stopsLevel," freezeLevel=",freezeLevel);
+
    if(OrderSend(request, result))
      { g_totalTrades++; Print("FMS: ", EnumToString(type), " opened #", result.order); }
    else
