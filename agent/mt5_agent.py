@@ -286,6 +286,7 @@ def push_local_settings():
 
 _last_settings_hash = None  # نتتبع التغييرات
 _known_positions    = {}    # ticket -> position — لكشف الصفقات الجديدة
+_snapped_tickets    = set() # tickets أُرسل لها snapshot مسبقاً
 _news_cache         = []    # آخر قائمة أخبار مجلوبة
 _news_cache_time    = 0     # وقت آخر تحديث للأخبار
 
@@ -595,11 +596,12 @@ def main():
 
             # كشف الصفقات الجديدة وإرسال snapshot فوري
             for pos in positions:
-                if pos['ticket'] not in _known_positions:
+                if pos['ticket'] not in _known_positions and pos['ticket'] not in _snapped_tickets:
                     sym      = pos.get('symbol', detect_gold_symbol())
                     c_list   = get_candles(sym, mt5.TIMEFRAME_M1, 40)
                     sessions = get_trading_sessions()
                     send_trade_snapshot(pos['ticket'], pos, c_list, sessions)
+                    _snapped_tickets.add(pos['ticket'])
             _known_positions.clear()
             _known_positions.update({p['ticket']: p for p in positions})
 
@@ -607,6 +609,20 @@ def main():
             if now - last_history_sync > 60:
                 history = get_recent_history(days=30)
                 last_history_sync = now
+                # snapshot للصفقات المغلقة الجديدة (اللي ما أرسلنا لها snapshot بعد)
+                gold_sym = detect_gold_symbol()
+                c_list_snap = get_candles(gold_sym, mt5.TIMEFRAME_M1, 40)
+                sess_snap   = get_trading_sessions()
+                for t in history[:20]:
+                    tk = t.get('ticket')
+                    if tk and tk not in _snapped_tickets:
+                        fake_pos = {
+                            'symbol':     t.get('symbol', gold_sym),
+                            'type':       t.get('type', 'BUY'),
+                            'price_open': t.get('price', 0),
+                        }
+                        send_trade_snapshot(tk, fake_pos, c_list_snap, sess_snap)
+                        _snapped_tickets.add(tk)
 
             pending = get_pending_orders()
 
