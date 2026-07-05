@@ -3,20 +3,21 @@
 //|                        XAUUSD M1 Fast Scalping Expert Advisor    |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "1.00"
+#property version   "2.00"
 #property strict
 
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
 
-input double LotSize    = 0.01;
-input int    TP         = 30;
-input int    SL         = 40;
-input int    MaxSpread  = 500;
-input int    RSI_Period = 7;
-input int    EMA_Fast   = 8;
-input int    EMA_Slow   = 21;
-input int    MaxPositions = 5;   // أقصى عدد صفقات مفتوحة في نفس الوقت
+input double LotSize      = 0.01;
+input int    TP           = 30;
+input int    SL           = 40;
+input int    MaxSpread    = 500;
+input int    RSI_Period   = 7;
+input int    EMA_Fast     = 8;
+input int    EMA_Slow     = 21;
+input int    MaxPositions = 3;    // أقصى عدد صفقات مفتوحة
+input int    CandleConf   = 2;    // عدد الشمعات المغلقة للتأكيد
 
 #define MAGIC_NUMBER 999111
 #define BOT_NAME     "GoldScalperX M1"
@@ -37,6 +38,7 @@ string   g_lastSignal     = "NONE";
 datetime g_lastSignalTime = 0;
 int      g_totalTrades    = 0;
 bool     g_running        = false;
+datetime g_lastBarTime    = 0;
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -57,8 +59,9 @@ int OnInit()
 
    g_running = true;
    CreateDashboard();
-   Print(BOT_NAME, ": INITIALIZED | Symbol=", _Symbol, " | Magic=", MAGIC_NUMBER,
-         " | Lot=", DoubleToString(LotSize, 2), " | TP=", TP, " SL=", SL);
+   Print(BOT_NAME, ": INITIALIZED v2 | Symbol=", _Symbol, " | Magic=", MAGIC_NUMBER,
+         " | Lot=", DoubleToString(LotSize, 2), " | TP=", TP, " SL=", SL,
+         " | CandleConf=", CandleConf);
    return(INIT_SUCCEEDED);
   }
 
@@ -77,17 +80,31 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
   {
+   // تحقق فقط عند بداية شمعة جديدة
+   datetime currentBar = iTime(_Symbol, PERIOD_M1, 0);
+   if(currentBar == g_lastBarTime) { UpdateDashboard(); return; }
+   g_lastBarTime = currentBar;
+
    if(!UpdateIndicators()) { UpdateDashboard(); return; }
 
-   double candleOpen  = iOpen(_Symbol, PERIOD_M1, 0);
-   double candleClose = iClose(_Symbol, PERIOD_M1, 0);
-   bool bullCandle = (candleClose > candleOpen);
-   bool bearCandle = (candleClose < candleOpen);
-
-   bool buySignal  = (bullCandle && g_emaFast > g_emaSlow && g_rsi >= 40.0 && g_rsi <= 70.0);
-   bool sellSignal = (bearCandle && g_emaFast < g_emaSlow && g_rsi >= 30.0 && g_rsi <= 60.0);
-
    long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+   if(spread > MaxSpread) { UpdateDashboard(); return; }
+
+   // قراءة الشمعات المغلقة (1، 2، 3) وليس الشمعة الحالية
+   int bullCount = 0, bearCount = 0;
+   for(int i = 1; i <= CandleConf; i++)
+     {
+      double o = iOpen(_Symbol, PERIOD_M1, i);
+      double c = iClose(_Symbol, PERIOD_M1, i);
+      if(c > o) bullCount++;
+      else if(c < o) bearCount++;
+     }
+
+   bool bullSignal = (bullCount == CandleConf);
+   bool bearSignal = (bearCount == CandleConf);
+
+   bool buySignal  = (bullSignal && g_emaFast > g_emaSlow && g_rsi >= 40.0 && g_rsi <= 70.0);
+   bool sellSignal = (bearSignal && g_emaFast < g_emaSlow && g_rsi >= 30.0 && g_rsi <= 60.0);
 
    bool hasBuy = false, hasSell = false;
    for(int i = PositionsTotal() - 1; i >= 0; i--)
@@ -99,15 +116,14 @@ void OnTick()
         }
      }
 
-   if(spread > MaxSpread) { UpdateDashboard(); return; }
-
    int totalOpen = OpenPositionsCount();
 
    if(buySignal)
      {
       if(hasSell)
         {
-         Print(BOT_NAME, ": REVERSAL -> Closing SELL to open BUY | RSI=", DoubleToString(g_rsi, 2));
+         Print(BOT_NAME, ": REVERSAL -> Closing SELL to open BUY | RSI=", DoubleToString(g_rsi, 2),
+               " | BullCandles=", bullCount);
          CloseAllPositions(POSITION_TYPE_SELL);
         }
       if(totalOpen < MaxPositions) OpenPosition(ORDER_TYPE_BUY);
@@ -116,7 +132,8 @@ void OnTick()
      {
       if(hasBuy)
         {
-         Print(BOT_NAME, ": REVERSAL -> Closing BUY to open SELL | RSI=", DoubleToString(g_rsi, 2));
+         Print(BOT_NAME, ": REVERSAL -> Closing BUY to open SELL | RSI=", DoubleToString(g_rsi, 2),
+               " | BearCandles=", bearCount);
          CloseAllPositions(POSITION_TYPE_BUY);
         }
       if(totalOpen < MaxPositions) OpenPosition(ORDER_TYPE_SELL);
@@ -129,9 +146,9 @@ void OnTick()
 bool UpdateIndicators()
   {
    double bufRSI[1], bufFast[1], bufSlow[1];
-   if(CopyBuffer(hRSI, 0, 0, 1, bufRSI) < 1)      return(false);
-   if(CopyBuffer(hEMAFast, 0, 0, 1, bufFast) < 1) return(false);
-   if(CopyBuffer(hEMASlow, 0, 0, 1, bufSlow) < 1) return(false);
+   if(CopyBuffer(hRSI, 0, 1, 1, bufRSI) < 1)      return(false);
+   if(CopyBuffer(hEMAFast, 0, 1, 1, bufFast) < 1) return(false);
+   if(CopyBuffer(hEMASlow, 0, 1, 1, bufSlow) < 1) return(false);
    g_rsi     = bufRSI[0];
    g_emaFast = bufFast[0];
    g_emaSlow = bufSlow[0];
@@ -256,8 +273,8 @@ void SetLabel(int idx, string text, color clr)
 
 void CreateDashboard()
   {
-   CreatePanel(DASH_PREFIX + "BG", 10, 20, 270, 255);
-   for(int i = 0; i < 11; i++)
+   CreatePanel(DASH_PREFIX + "BG", 10, 20, 280, 275);
+   for(int i = 0; i < 12; i++)
       CreateLabel(DASH_PREFIX + "L" + IntegerToString(i), 20, 30 + i * 22);
    UpdateDashboard();
   }
@@ -283,17 +300,18 @@ void UpdateDashboard()
    if(g_lastSignalTime > 0)
       lastSig += " @ " + TimeToString(g_lastSignalTime, TIME_MINUTES|TIME_SECONDS);
 
-   SetLabel(0,  "★ " + BOT_NAME + " ★",                                          clrGold);
+   SetLabel(0,  "★ " + BOT_NAME + " v2 ★",                                         clrGold);
    SetLabel(1,  "Status  : " + (g_running ? "RUNNING" : "STOPPED"),              g_running ? clrLime : clrRed);
    SetLabel(2,  "EMA8    : " + DoubleToString(g_emaFast, 2),                     clrDeepSkyBlue);
    SetLabel(3,  "EMA21   : " + DoubleToString(g_emaSlow, 2),                     clrOrange);
    SetLabel(4,  "RSI(" + IntegerToString(RSI_Period) + ")  : " + DoubleToString(g_rsi, 2), rsiClr);
    SetLabel(5,  "Trend   : " + trend,                                             trendClr);
-   SetLabel(6,  "Signal  : " + lastSig,                                           g_lastSignal=="BUY"?clrLime:g_lastSignal=="SELL"?clrRed:clrWhite);
-   SetLabel(7,  "Open    : " + IntegerToString(OpenPositionsCount()) + " trades", clrWhite);
-   SetLabel(8,  "P/L     : " + DoubleToString(profit, 2) + " USD",               profitClr);
-   SetLabel(9,  "Total   : " + IntegerToString(g_totalTrades) + " trades",       clrWhite);
-   SetLabel(10, "Spread  : " + IntegerToString((int)spread) + " pts",            spreadClr);
+   SetLabel(6,  "Confirm : " + IntegerToString(CandleConf) + " closed candles",  clrSilver);
+   SetLabel(7,  "Signal  : " + lastSig,                                           g_lastSignal=="BUY"?clrLime:g_lastSignal=="SELL"?clrRed:clrWhite);
+   SetLabel(8,  "Open    : " + IntegerToString(OpenPositionsCount()) + " trades", clrWhite);
+   SetLabel(9,  "P/L     : " + DoubleToString(profit, 2) + " USD",               profitClr);
+   SetLabel(10, "Total   : " + IntegerToString(g_totalTrades) + " trades",       clrWhite);
+   SetLabel(11, "Spread  : " + IntegerToString((int)spread) + " pts",            spreadClr);
    ChartRedraw();
   }
 //+------------------------------------------------------------------+
