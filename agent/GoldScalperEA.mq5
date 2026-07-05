@@ -4,7 +4,7 @@
 //|  Gold scalper — bar-gated, closed-bar signals, smart filters     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.12"
+#property version   "9.13"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.12"
+#define EA_VERSION    "9.13"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -241,15 +241,17 @@ void OnTick()
    double ema91= ema9[1], ema211= ema21[1];
    double atr1 = atr[1];
 
-   // ── CANDLE MOMENTUM: follow the last closed candle direction ──
-   bool bullBar = (c[1] > o[1]) && ((c[1]-o[1])/(h[1]-l[1]+1e-10) >= 0.25)
-               && (h[1]-l[1]) <= 5.0*atr1;
-   bool bearBar = (c[1] < o[1]) && ((o[1]-c[1])/(h[1]-l[1]+1e-10) >= 0.25)
-               && (h[1]-l[1]) <= 5.0*atr1;
+   // ── CANDLE MOMENTUM: 2-bar confirmation (bar[1] + bar[2] same direction) ──
+   double range1 = h[1]-l[1]+1e-10, range2 = h[2]-l[2]+1e-10;
+   bool bull1 = (c[1]>o[1]) && ((c[1]-o[1])/range1 >= 0.25) && range1 <= 5.0*atr1;
+   bool bull2 = (c[2]>o[2]) && ((c[2]-o[2])/range2 >= 0.20);
+   bool bear1 = (c[1]<o[1]) && ((o[1]-c[1])/range1 >= 0.25) && range1 <= 5.0*atr1;
+   bool bear2 = (c[2]<o[2]) && ((o[2]-c[2])/range2 >= 0.20);
 
+   // both candles agree → stronger signal, reduces BUY/SELL bias
    int signal = 0;
-   if(bullBar) signal =  1; // BUY — candle closed up
-   else if(bearBar) signal = -1; // SELL — candle closed down
+   if(bull1 && bull2) signal =  1;
+   else if(bear1 && bear2) signal = -1;
 
    long spread   = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    bool spreadOK = (spread <= (long)g_maxSpread);
@@ -391,7 +393,7 @@ void DDivider(const string id,const int y)
 //+------------------------------------------------------------------+
 void CreateDashboard()
   {
-   int panelH=PAD+TITLE_H+4*8+11*ROW_H+PAD;
+   int panelH=PAD+TITLE_H+4*8+13*ROW_H+PAD;
    string bg=DASH_PREFIX+"BG";
    if(ObjectFind(0,bg)<0)
       ObjectCreate(0,bg,OBJ_RECTANGLE_LABEL,0,0,0);
@@ -429,7 +431,10 @@ void CreateDashboard()
    DDivider("D3",y); y+=8;
 
    DLabel("K_SPREAD","Spread",   xK,y,CLR_KEY); y+=ROW_H;
-   DLabel("K_ATR",   "ATR(14)",  xK,y,CLR_KEY);
+   DLabel("K_ATR",   "ATR(14)",  xK,y,CLR_KEY); y+=ROW_H;
+   DDivider("D4",y); y+=8;
+   DLabel("K_TP",    "TP Target", xK,y,CLR_KEY); y+=ROW_H;
+   DLabel("K_SL",    "SL Target", xK,y,CLR_KEY);
    ChartRedraw();
   }
 
@@ -475,7 +480,10 @@ void UpdateDashboard(const int trend,const double rsi,
    color spClr=spreadPts>(long)g_maxSpread?CLR_BAD:spreadPts>200?clrOrange:CLR_NEUTRAL;
    DLabel("V_SPREAD",string(spreadPts)+" pts",xV,y,spClr); y+=ROW_H;
 
-   DLabel("V_ATR",DoubleToString(atrVal,_Digits),xV,y,CLR_HILITE);
+   DLabel("V_ATR",DoubleToString(atrVal,_Digits),xV,y,CLR_HILITE); y+=ROW_H+8;
+
+   DLabel("V_TP","$"+DoubleToString(g_tpUSD,2),xV,y,CLR_GOOD); y+=ROW_H;
+   DLabel("V_SL","$"+DoubleToString(g_slUSD,2),xV,y,CLR_BAD);
    ChartRedraw();
   }
 //+------------------------------------------------------------------+
