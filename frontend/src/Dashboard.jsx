@@ -5,20 +5,20 @@ const API_KEY = 'mysecretkey123';
 const POLL_MS = 1500;
 const CANDLE_POLL_MS = 10000;
 
-// ── Brutalist-neon terminal palette ────────────────────────────────
+// ── Terminal palette (matches reference design) ─────────────────────
 const C = {
-  bg:      '#000000',
-  surface: '#000000',
-  ink:     '#ffffff',
-  muted:   '#7a7a7a',
-  faint:   '#2a2a2a',
+  bg:      '#0d1117',
+  surface: '#161b22',
+  ink:     '#e6edf3',
+  muted:   '#8b949e',
+  faint:   '#21262d',
   neon:    '#00ff41',
   neonDim: 'rgba(0,255,65,0.08)',
-  red:     '#ff0040',
-  yellow:  '#ffff00',
+  red:     '#ff4560',
+  yellow:  '#f0b429',
   mono:    "'Courier New','Courier',monospace",
-  shadow:  '4px 4px 0px #000000',
-  border:  '2px solid #ffffff',
+  shadow:  'none',
+  border:  '1px solid rgba(0,255,65,0.25)',
 };
 
 // ── helpers ────────────────────────────────────────────────────────
@@ -73,10 +73,10 @@ const bBtn = (active, extra = {}) => ({
   letterSpacing: '2px',
   textTransform: 'uppercase',
   padding: '8px 18px',
-  border: '2px solid #00ff41',
-  borderRadius: 0,
+  border: '1px solid rgba(0,255,65,0.5)',
+  borderRadius: 2,
   cursor: 'pointer',
-  background: active ? C.neon : '#000',
+  background: active ? C.neon : 'transparent',
   color: active ? '#000' : C.neon,
   transition: 'background 0.1s, color 0.1s, box-shadow 0.1s',
   ...extra,
@@ -249,19 +249,15 @@ export default function Dashboard() {
       position: 'relative',
     }}>
       <style>{`
-        * { box-sizing: border-box; border-radius: 0 !important; }
-        body { background: #000; }
+        * { box-sizing: border-box; border-radius: 2px !important; }
+        body { background: #0d1117; }
         @keyframes popIn  { from { transform: scale(0.8) translateY(20px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
         @keyframes blink  { 0%,100%{opacity:1} 50%{opacity:0.15} }
         @keyframes slideUp{ from{transform:translateY(40px);opacity:0} to{transform:translateY(0);opacity:1} }
-        .scanlines::before {
-          content:''; position:fixed; inset:0; pointer-events:none; z-index:900;
-          background: repeating-linear-gradient(to bottom, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 4px);
-        }
-        .bcard:hover { box-shadow: 6px 6px 0px #000000; }
-        .bbtn:hover  { background:#000 !important; color:#00ff41 !important; border:2px solid #00ff41 !important; }
-        .bbtn:active { box-shadow: 0 0 12px #00ff41; }
-        .bbtn-red:hover { background:#000 !important; color:#ff0040 !important; border:2px solid #ff0040 !important; }
+        .bcard:hover { border-color: rgba(0,255,65,0.6) !important; }
+        .bbtn:hover  { background:#0d1117 !important; color:#00ff41 !important; border-color:#00ff41 !important; }
+        .bbtn:active { opacity:0.8; }
+        .bbtn-red:hover { background:#0d1117 !important; color:#ff4560 !important; border-color:#ff4560 !important; }
         .g4  { display:grid; grid-template-columns:repeat(4,1fr); gap:1.25rem; }
         .g3  { display:grid; grid-template-columns:repeat(3,1fr); gap:1.25rem; }
         .g2  { display:grid; grid-template-columns:repeat(2,1fr); gap:1.25rem; }
@@ -289,8 +285,8 @@ export default function Dashboard() {
       {/* ═══ TOP BAR ═════════════════════════════════════════════ */}
       <header style={{
         position:'sticky', top:0, zIndex:600,
-        background:'#000',
-        padding:'10px 20px', borderBottom:'2px solid #ffffff',
+        background:C.bg,
+        padding:'10px 20px', borderBottom:'1px solid #30363d',
         display:'flex', justifyContent:'space-between', alignItems:'center',
         flexWrap:'wrap', gap:'12px',
         fontFamily:C.mono,
@@ -303,7 +299,7 @@ export default function Dashboard() {
           <div style={{
             border:`2px solid ${isOnline?C.neon:C.red}`,
             color: isOnline?C.neon:C.red,
-            background:'#000',
+            background:C.bg,
             fontSize:10, fontWeight:'bold', letterSpacing:'2px',
             padding:'3px 12px',
             boxShadow: isOnline ? '0 0 10px rgba(0,255,65,0.5)' : 'none',
@@ -478,7 +474,7 @@ export default function Dashboard() {
               const Cx=i=>padL+i*cw+(cw-bodyW)/2;
               const pLabels=[0,0.25,0.5,0.75,1].map(f=>lo+f*range);
               return (
-                <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block',background:'#000'}}>
+                <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block',background:C.bg}}>
                   {pLabels.map((p,i)=>{
                     const y=Y(p);
                     return <g key={i}>
@@ -618,7 +614,7 @@ export default function Dashboard() {
                     onChange={e=>setSettingsDraft(d=>({...d,Direction:Number(e.target.value)}))}
                     style={{
                       fontFamily:C.mono, fontSize:12, fontWeight:'bold',
-                      padding:'8px 10px', background:'#000',
+                      padding:'8px 10px', background:C.bg,
                       border:C.border, color:C.ink, cursor:'pointer',
                       letterSpacing:'1px',
                     }}
@@ -657,7 +653,7 @@ export default function Dashboard() {
             <div style={{overflowX:'auto'}}>
               <table style={{width:'100%', borderCollapse:'collapse', fontSize:12, minWidth:520}}>
                 <thead>
-                  <tr style={{borderBottom:'2px solid #ffffff'}}>
+                  <tr style={{borderBottom:'1px solid #30363d'}}>
                     {['#TICKET','TYPE','VOL','ENTRY','PROFIT','AGE'].map(h=>(
                       <th key={h} style={{...bLabel({padding:'6px 8px', textAlign:'left', color:C.neon})}}>{h}</th>
                     ))}
@@ -715,7 +711,7 @@ export default function Dashboard() {
                     onChange={e=>setSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}))}
                     style={{
                       fontFamily:C.mono, fontSize:12, width:88,
-                      padding:'6px 8px', background:'#000',
+                      padding:'6px 8px', background:C.bg,
                       border:C.border, color:C.neon,
                     }}
                   />
@@ -755,7 +751,7 @@ export default function Dashboard() {
             <div style={{overflowX:'auto'}}>
               <table style={{width:'100%', borderCollapse:'collapse', fontSize:11, minWidth:560}}>
                 <thead>
-                  <tr style={{borderBottom:'2px solid #ffffff'}}>
+                  <tr style={{borderBottom:'1px solid #30363d'}}>
                     {['#','TIME','TYPE','VOL','ENTRY','EXIT','PROFIT','SWAP','NET'].map(h=>(
                       <th key={h} style={{...bLabel({padding:'6px 8px',textAlign:'left', color:C.neon})}}>{h}</th>
                     ))}
@@ -804,9 +800,9 @@ export default function Dashboard() {
       {/* ═══ FIXED TICKER BAR ════════════════════════════════ */}
       <div style={{
         position:'fixed', left:0, right:0, bottom:0, zIndex:500,
-        background:'#000', color:C.ink, fontFamily:C.mono,
+        background:C.bg, color:C.ink, fontFamily:C.mono,
         fontSize:11, letterSpacing:'2px', padding:'8px 16px',
-        whiteSpace:'nowrap', overflow:'hidden', borderTop:'2px solid #ffffff',
+        whiteSpace:'nowrap', overflow:'hidden', borderTop:'1px solid #30363d',
         fontVariantNumeric:'tabular-nums', textTransform:'uppercase',
       }}>
         BAL {account?'$'+Number(account.balance??0).toLocaleString('en-US',{minimumFractionDigits:2}):'--'}
@@ -825,7 +821,7 @@ export default function Dashboard() {
           background:'rgba(0,0,0,0.8)', zIndex:1000,
         }} onClick={()=>setPopup(null)}>
           <div style={{
-            background:'#000',
+            background:C.bg,
             border:`2px solid ${popup.profit>=0?C.neon:C.red}`,
             boxShadow: popup.profit>=0
               ? '0 0 20px #00ff41, 0 0 40px #00ff41'
@@ -862,7 +858,7 @@ export default function Dashboard() {
           background:'rgba(0,0,0,0.8)', zIndex:999,
         }} onClick={()=>setTradePopup(null)}>
           <div style={{
-            background:'#000', border:C.border,
+            background:C.bg, border:C.border,
             boxShadow:'0 0 20px #00ff41, 0 0 40px #00ff41',
             padding:'28px 32px',
             fontFamily:C.mono, minWidth:280, color:C.ink,
