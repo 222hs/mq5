@@ -67,6 +67,7 @@ double   g_maxLossPerDay   = 50.0;
 double   g_maxProfitPerDay = 200.0;
 int      g_tradeHoursStart = 0;
 int      g_tradeHoursEnd   = 24;
+int      g_orderType       = 0;   // 0=MARKET  1=LIMIT  2=STOP
 
 // Day P&L tracking
 double   g_dayPL   = 0.0;
@@ -115,7 +116,8 @@ void WriteCurrentSettings()
    j += "  \"MaxProfitPerDay\": "+ DoubleToString(g_maxProfitPerDay,2)+ ",\n";
    j += "  \"TradeHoursStart\": "+ IntegerToString(g_tradeHoursStart)+ ",\n";
    j += "  \"TradeHoursEnd\": "  + IntegerToString(g_tradeHoursEnd)  + ",\n";
-   j += "  \"BotRunning\": "     + (g_botRunning ? "1" : "0")        + "\n";
+   j += "  \"BotRunning\": "     + (g_botRunning ? "1" : "0")        + ",\n";
+   j += "  \"OrderType\": "     + IntegerToString(g_orderType)       + "\n";
    j += "}";
    FileWriteString(fh, j);
    FileClose(fh);
@@ -136,17 +138,20 @@ void LoadSettings()
    int    hStart = (int)ReadSetting("TradeHoursStart", 0.0);
    int    hEnd   = (int)ReadSetting("TradeHoursEnd",  24.0);
    bool   botOn  = (ReadSetting("BotRunning", 1.0) > 0.5);
+   int    ordTyp = (int)ReadSetting("OrderType", 0.0);
 
    // نطبع فقط لما تتغير الإعدادات
    string hash = DoubleToString(lot,2)+DoubleToString(tp,2)+DoubleToString(sl,2)
                + IntegerToString(maxPos)+DoubleToString(spread,0)
-               + IntegerToString(hStart)+IntegerToString(hEnd)+(botOn ? "1" : "0");
+               + IntegerToString(hStart)+IntegerToString(hEnd)
+               + IntegerToString(ordTyp)+(botOn ? "1" : "0");
    bool changed = (hash != g_lastSettingsHash);
    g_lastSettingsHash = hash;
 
    g_lot=lot; g_maxSpread=spread; g_maxPositions=maxPos; g_cooldownSecs=cd;
    g_tpUSD=tp; g_slUSD=sl; g_maxLossPerDay=maxL; g_maxProfitPerDay=maxP;
    g_tradeHoursStart=hStart; g_tradeHoursEnd=hEnd; g_botRunning=botOn;
+   g_orderType=ordTyp;
 
    if(changed)
      {
@@ -343,8 +348,8 @@ void OnTick()
       int slots = g_maxPositions - CountMyPositions();
       for(int i = 0; i < slots; i++)
         {
-         if(signal == 1) OpenTrade(ORDER_TYPE_BUY,  atr1);
-         else            OpenTrade(ORDER_TYPE_SELL, atr1);
+         if(signal == 1) OpenTrade(ORDER_TYPE_BUY,  atr1, c[1], h[1], l[1]);
+         else            OpenTrade(ORDER_TYPE_SELL, atr1, c[1], h[1], l[1]);
         }
      }
 
@@ -359,47 +364,99 @@ void OnTick()
   }
 
 //+------------------------------------------------------------------+
-void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal)
+void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal,
+               const double c1, const double h1, const double l1)
   {
-   double ask   = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   double bid   = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   double tickSz= SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-   int    digs  = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
-   long   sl0   = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
-   long   frz   = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_FREEZE_LEVEL);
-   double minD  = MathMax((double)(sl0+frz+5), 10.0) * tickSz;
-   double lot   = NormalizeLot(g_lot);
+   double ask    = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid    = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double tickSz = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   int    digs   = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   long   sl0    = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   long   frz    = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_FREEZE_LEVEL);
+   double minD   = MathMax((double)(sl0+frz+5), 10.0) * tickSz;
+   double lot    = NormalizeLot(g_lot);
 
-   // حساب قيمة النقطة للـ lot الحالي → تحويل الدولار لمسافة سعرية
+   // تحويل SL/TP من دولار لمسافة سعرية
    double tickVal  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
    double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-   double pointVal = (tickSize > 0.0 && lot > 0.0)
-                     ? (tickVal / tickSize) * lot
-                     : 1.0;
+   double pointVal = (tickSize > 0.0 && lot > 0.0) ? (tickVal / tickSize) * lot : 1.0;
    double slD = MathMax(g_slUSD / pointVal, minD);
    double tpD = MathMax(g_tpUSD / pointVal, minD);
 
-   // بناء snapshot comment للتحليل الذكي لاحقاً
+   // snapshot comment
    MqlDateTime dt; TimeToStruct(TimeGMT(), dt);
-   int h = dt.hour;
-   string sess = (h>=7&&h<13)?"London":(h>=13&&h<22)?"NY":(h>=0&&h<7)?"Tokyo":"Off";
+   int hr = dt.hour;
+   string sess = (hr>=7&&hr<13)?"London":(hr>=13&&hr<22)?"NY":(hr>=0&&hr<7)?"Tokyo":"Off";
    string snap = "RSI="  + DoubleToString(g_snapRSI,0)
                + " EMA=" + (g_snapEMAUp?"U":"D")
                + " ATR=" + DoubleToString(g_snapATR,1)
                + " S="   + sess;
 
-   double sl, tp; bool ok;
-   if(type == ORDER_TYPE_BUY)
-     { sl = NormalizeDouble(ask - slD, digs); tp = NormalizeDouble(ask + tpD, digs);
-       ok = trade.Buy(lot, _Symbol, ask, sl, tp, snap); }
-   else
-     { sl = NormalizeDouble(bid + slD, digs); tp = NormalizeDouble(bid - tpD, digs);
-       ok = trade.Sell(lot, _Symbol, bid, sl, tp, snap); }
+   // انتهاء صلاحية الأوردر المعلق — 5 شمعات
+   datetime expiry = TimeCurrent() + PeriodSeconds(TF) * 5;
 
-   if(ok) { g_lastEntryTime = TimeCurrent(); g_totalTrades++;
-             Print(EA_NAME,": ",EnumToString(type)," lot=",lot,
-                   " sl=",sl," tp=",tp," | close target: TP$=",g_tpUSD," SL$=",g_slUSD); }
-   else   Print(EA_NAME,": FAIL ",trade.ResultRetcode()," ",trade.ResultComment());
+   double entry, sl, tp; bool ok = false;
+   string modeTxt = "";
+
+   if(g_orderType == 1) // ── LIMIT: ينتظر الرجوع لـ close الشمعة ─────────
+     {
+      entry = NormalizeDouble(c1, digs);
+      if(type == ORDER_TYPE_BUY)
+        {
+         // BUY LIMIT: السعر تحت الحالي
+         if(entry >= ask) entry = NormalizeDouble(ask - minD, digs);
+         sl = NormalizeDouble(entry - slD, digs);
+         tp = NormalizeDouble(entry + tpD, digs);
+         ok = trade.BuyLimit(lot, entry, _Symbol, sl, tp, ORDER_TIME_SPECIFIED, expiry, snap);
+         modeTxt = "BUY_LIMIT";
+        }
+      else
+        {
+         // SELL LIMIT: السعر فوق الحالي
+         if(entry <= bid) entry = NormalizeDouble(bid + minD, digs);
+         sl = NormalizeDouble(entry + slD, digs);
+         tp = NormalizeDouble(entry - tpD, digs);
+         ok = trade.SellLimit(lot, entry, _Symbol, sl, tp, ORDER_TIME_SPECIFIED, expiry, snap);
+         modeTxt = "SELL_LIMIT";
+        }
+     }
+   else if(g_orderType == 2) // ── STOP: يدخل عند كسر الـ high/low ──────────
+     {
+      double buf = MathMax(tickSz * 3, minD);
+      if(type == ORDER_TYPE_BUY)
+        {
+         entry = NormalizeDouble(h1 + buf, digs);
+         if(entry <= ask) entry = NormalizeDouble(ask + buf, digs);
+         sl = NormalizeDouble(entry - slD, digs);
+         tp = NormalizeDouble(entry + tpD, digs);
+         ok = trade.BuyStop(lot, entry, _Symbol, sl, tp, ORDER_TIME_SPECIFIED, expiry, snap);
+         modeTxt = "BUY_STOP";
+        }
+      else
+        {
+         entry = NormalizeDouble(l1 - buf, digs);
+         if(entry >= bid) entry = NormalizeDouble(bid - buf, digs);
+         sl = NormalizeDouble(entry + slD, digs);
+         tp = NormalizeDouble(entry - tpD, digs);
+         ok = trade.SellStop(lot, entry, _Symbol, sl, tp, ORDER_TIME_SPECIFIED, expiry, snap);
+         modeTxt = "SELL_STOP";
+        }
+     }
+   else // ── MARKET: فوري (الافتراضي) ──────────────────────────────────────
+     {
+      if(type == ORDER_TYPE_BUY)
+        { sl=NormalizeDouble(ask-slD,digs); tp=NormalizeDouble(ask+tpD,digs);
+          ok=trade.Buy(lot,_Symbol,ask,sl,tp,snap); modeTxt="BUY_MKT"; }
+      else
+        { sl=NormalizeDouble(bid+slD,digs); tp=NormalizeDouble(bid-tpD,digs);
+          ok=trade.Sell(lot,_Symbol,bid,sl,tp,snap); modeTxt="SELL_MKT"; }
+     }
+
+   if(ok)
+     { g_lastEntryTime = TimeCurrent(); g_totalTrades++;
+       Print(EA_NAME,": ",modeTxt," lot=",lot," TP$=",g_tpUSD," SL$=",g_slUSD); }
+   else
+     Print(EA_NAME,": FAIL [",modeTxt,"] ",trade.ResultRetcode()," ",trade.ResultComment());
   }
 
 //+------------------------------------------------------------------+
@@ -547,7 +604,8 @@ void CreateDashboard()
    DDivider("D4",y); y+=8;
 
    DLabel("K_SPREAD","Spread",   xK,y,CLR_KEY); y+=ROW_H;
-   DLabel("K_ATR",   "ATR(14)",  xK,y,CLR_KEY);
+   DLabel("K_ATR",   "ATR(14)",  xK,y,CLR_KEY); y+=ROW_H;
+   DLabel("K_ORDTYP","OrderType",xK,y,CLR_KEY);
    ChartRedraw();
   }
 
@@ -608,7 +666,10 @@ void UpdateDashboard(const int trend,const double rsi,
    color spClr=spreadPts>(long)g_maxSpread?CLR_BAD:spreadPts>200?clrOrange:CLR_NEUTRAL;
    DLabel("V_SPREAD",string(spreadPts)+" pts",xV,y,spClr); y+=ROW_H;
 
-   DLabel("V_ATR",DoubleToString(atrVal,_Digits),xV,y,CLR_HILITE);
+   DLabel("V_ATR",DoubleToString(atrVal,_Digits),xV,y,CLR_HILITE); y+=ROW_H;
+   string otTxt = g_orderType==1?"LIMIT":g_orderType==2?"STOP":"MARKET";
+   color  otClr = g_orderType==1?clrDodgerBlue:g_orderType==2?clrOrange:CLR_GOOD;
+   DLabel("V_ORDTYP",otTxt,xV,y,otClr);
    ChartRedraw();
   }
 //+------------------------------------------------------------------+

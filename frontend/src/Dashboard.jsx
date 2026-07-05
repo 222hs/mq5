@@ -685,29 +685,47 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Direction filter */}
+            {/* Direction + Order Type */}
             <div className="bcard" style={bCard()}>
-              <div style={bLabel({marginBottom:8, color:C.ink})}>&gt; DIRECTION FILTER</div>
               {settingsDraft && (
-                <div style={{display:'flex', flexDirection:'column', gap:8}}>
-                  <select
-                    value={settingsDraft.Direction??0}
-                    onChange={e=>setSettingsDraft(d=>({...d,Direction:Number(e.target.value)}))}
-                    style={{
-                      fontFamily:C.mono, fontSize:12, fontWeight:'bold',
-                      padding:'8px 10px', background:C.bg,
-                      border:C.border, color:C.ink, cursor:'pointer',
-                      letterSpacing:'1px',
-                    }}
-                  >
-                    <option value={0}>FREE (BUY + SELL)</option>
-                    <option value={1}>BUY ONLY ▲</option>
-                    <option value={-1}>SELL ONLY ▼</option>
-                  </select>
-                  <button className="bbtn"
-                    onClick={()=>saveSingle('Direction',settingsDraft.Direction??0)}
-                    disabled={busy}
-                    style={bBtn(true)}>SAVE DIRECTION</button>
+                <div style={{display:'flex', flexDirection:'column', gap:14}}>
+                  {/* Direction */}
+                  <div>
+                    <div style={bLabel({marginBottom:6, color:C.ink})}>&gt; DIRECTION FILTER</div>
+                    <div style={{display:'flex', flexDirection:'column', gap:6}}>
+                      <select
+                        value={settingsDraft.Direction??0}
+                        onChange={e=>setSettingsDraft(d=>({...d,Direction:Number(e.target.value)}))}
+                        style={{fontFamily:C.mono,fontSize:12,fontWeight:'bold',padding:'8px 10px',background:C.bg,border:C.border,color:C.ink,cursor:'pointer',letterSpacing:'1px'}}
+                      >
+                        <option value={0}>FREE (BUY + SELL)</option>
+                        <option value={1}>BUY ONLY ▲</option>
+                        <option value={-1}>SELL ONLY ▼</option>
+                      </select>
+                      <button className="bbtn" onClick={()=>saveSingle('Direction',settingsDraft.Direction??0)} disabled={busy} style={bBtn(true)}>SAVE DIRECTION</button>
+                    </div>
+                  </div>
+                  {/* Order Type */}
+                  <div style={{borderTop:C.border, paddingTop:12}}>
+                    <div style={bLabel({marginBottom:6, color:C.ink})}>&gt; ORDER TYPE</div>
+                    <div style={{display:'flex', flexDirection:'column', gap:6}}>
+                      <select
+                        value={settingsDraft.OrderType??0}
+                        onChange={e=>setSettingsDraft(d=>({...d,OrderType:Number(e.target.value)}))}
+                        style={{fontFamily:C.mono,fontSize:12,fontWeight:'bold',padding:'8px 10px',background:C.bg,border:C.border,color:C.ink,cursor:'pointer',letterSpacing:'1px'}}
+                      >
+                        <option value={0}>⚡ MARKET — فوري</option>
+                        <option value={1}>↩ LIMIT — ينتظر الرجوع</option>
+                        <option value={2}>🚀 STOP — كسر High/Low</option>
+                      </select>
+                      <div style={{fontSize:9, color:C.muted, letterSpacing:'1px', lineHeight:1.5}}>
+                        {(settingsDraft.OrderType??0)===0 && 'يفتح الصفقة فوراً بسعر السوق'}
+                        {(settingsDraft.OrderType??0)===1 && 'يضع LIMIT عند close الشمعة · ينتظر رجوع السعر'}
+                        {(settingsDraft.OrderType??0)===2 && 'يضع STOP فوق HIGH / تحت LOW · يدخل عند الكسر'}
+                      </div>
+                      <button className="bbtn" onClick={()=>saveSingle('OrderType',settingsDraft.OrderType??0)} disabled={busy} style={bBtn(true)}>SAVE ORDER TYPE</button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

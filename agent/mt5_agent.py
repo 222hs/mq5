@@ -377,6 +377,7 @@ def sync_settings():
                 "MaxProfitPerDay": "MaxProfitPerDay",
                 "TradeHoursStart": "TradeHoursStart", "TradeHoursEnd": "TradeHoursEnd",
                 "BotRunning": "BotRunning",
+                "OrderType":  "OrderType",
             }
             for k in key_map:
                 if k in settings:
