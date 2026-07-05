@@ -80,34 +80,46 @@ long MagicFromSymbol(const string sym)
   }
 
 //+------------------------------------------------------------------+
-double ReadJsonValue(const string key, const double fallback)
+string g_settingsContent = "";  // محتوى الملف يُقرأ مرة واحدة في LoadSettings
+
+double ParseJsonValue(const string key, const double fallback)
   {
-   int fh = FileOpen(SETTINGS_FILE, FILE_READ|FILE_TXT|FILE_ANSI|FILE_COMMON);
-   if(fh == INVALID_HANDLE)
-     {
-      if(key == "LotSize")
-         Print(EA_NAME,": ⚠️ فشل فتح ",SETTINGS_FILE," — ",GetLastError()," — inputs defaults");
-      return fallback;
-     }
-   string content = "";
-   while(!FileIsEnding(fh))
-      content += FileReadString(fh);
-   FileClose(fh);
    string search = "\"" + key + "\"";
-   int pos = StringFind(content, search);
+   int pos = StringFind(g_settingsContent, search);
    if(pos < 0) return fallback;
    pos += StringLen(search);
-   while(pos < StringLen(content) && (StringGetCharacter(content,pos)==' ' ||
-         StringGetCharacter(content,pos)==':' || StringGetCharacter(content,pos)=='\t'))
+   int len = StringLen(g_settingsContent);
+   while(pos < len && (StringGetCharacter(g_settingsContent,pos)==' ' ||
+         StringGetCharacter(g_settingsContent,pos)==':' ||
+         StringGetCharacter(g_settingsContent,pos)=='\t' ||
+         StringGetCharacter(g_settingsContent,pos)=='\r' ||
+         StringGetCharacter(g_settingsContent,pos)=='\n'))
       pos++;
    string num = "";
-   while(pos < StringLen(content))
+   while(pos < len)
      {
-      ushort c = StringGetCharacter(content, pos);
+      ushort c = StringGetCharacter(g_settingsContent, pos);
       if(c=='-'||c=='.'||(c>='0'&&c<='9')) { num+=ShortToString(c); pos++; }
       else break;
      }
    return StringLen(num)==0 ? fallback : StringToDouble(num);
+  }
+
+bool LoadSettingsFile()
+  {
+   // يفتح الملف كـ binary لقراءة المحتوى كاملاً دفعة واحدة
+   int fh = FileOpen(SETTINGS_FILE, FILE_READ|FILE_ANSI|FILE_COMMON);
+   if(fh == INVALID_HANDLE)
+     {
+      Print(EA_NAME,": ⚠️ فشل فتح ",SETTINGS_FILE," — خطأ ",GetLastError()," — الـ inputs defaults");
+      g_settingsContent = "";
+      return false;
+     }
+   ulong sz = FileSize(fh);
+   g_settingsContent = FileReadString(fh, (int)sz);
+   FileClose(fh);
+   Print(EA_NAME,": 📄 ملف محمّل (",sz," bytes) Lot=",ParseJsonValue("LotSize",LotSize));
+   return true;
   }
 
 //+------------------------------------------------------------------+
@@ -138,17 +150,18 @@ void WriteCurrentSettings()
 
 void LoadSettings()
   {
-   g_lot             = ReadJsonValue("LotSize",        LotSize);
-   g_maxSpread       = ReadJsonValue("MaxSpread",       (double)MaxSpread);
-   g_maxPositions    = (int)ReadJsonValue("MaxPositions",(double)MaxPositions);
-   g_cooldownSecs    = (int)ReadJsonValue("CooldownSecs",(double)CooldownSecs);
-   g_tpUSD           = ReadJsonValue("TP_USD",          3.0);
-   g_slUSD           = ReadJsonValue("SL_USD",          2.0);
-   g_maxLossPerDay   = ReadJsonValue("MaxLossPerDay",  50.0);
-   g_maxProfitPerDay = ReadJsonValue("MaxProfitPerDay",200.0);
-   g_tradeHoursStart = (int)ReadJsonValue("TradeHoursStart", 0.0);
-   g_tradeHoursEnd   = (int)ReadJsonValue("TradeHoursEnd",  24.0);
-   g_botRunning      = (ReadJsonValue("BotRunning", 1.0) > 0.5);
+   LoadSettingsFile();
+   g_lot             = ParseJsonValue("LotSize",        LotSize);
+   g_maxSpread       = ParseJsonValue("MaxSpread",       (double)MaxSpread);
+   g_maxPositions    = (int)ParseJsonValue("MaxPositions",(double)MaxPositions);
+   g_cooldownSecs    = (int)ParseJsonValue("CooldownSecs",(double)CooldownSecs);
+   g_tpUSD           = ParseJsonValue("TP_USD",          3.0);
+   g_slUSD           = ParseJsonValue("SL_USD",          2.0);
+   g_maxLossPerDay   = ParseJsonValue("MaxLossPerDay",  50.0);
+   g_maxProfitPerDay = ParseJsonValue("MaxProfitPerDay",200.0);
+   g_tradeHoursStart = (int)ParseJsonValue("TradeHoursStart", 0.0);
+   g_tradeHoursEnd   = (int)ParseJsonValue("TradeHoursEnd",  24.0);
+   g_botRunning      = (ParseJsonValue("BotRunning", 1.0) > 0.5);
    Print(EA_NAME," ✅ إعدادات محملة:"
          " Lot=",g_lot,
          " TP$=",g_tpUSD,
