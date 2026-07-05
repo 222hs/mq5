@@ -68,7 +68,7 @@ double   g_maxLossPerDay   = 50.0;
 double   g_maxProfitPerDay = 200.0;
 int      g_tradeHoursStart = 0;
 int      g_tradeHoursEnd   = 24;
-int      g_orderType       = 0;   // 0=MARKET  1=LIMIT  2=STOP
+int      g_orderType       = 3;   // 0=MARKET  1=LIMIT  2=STOP  3=BASKET
 bool     g_newsBlock       = false; // true = أخبار عالية التأثير قادمة → لا تداول
 string   g_newsTitle       = "";    // اسم الخبر
 
