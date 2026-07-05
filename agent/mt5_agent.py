@@ -567,32 +567,39 @@ def sync_settings():
                     else:
                         print(f"   ❌ فشل كتابة الملف بعد 3 محاولات: {we}")
 
-            # كتابة ملفات individual للذهب (GSX_) والبتكوين (BSX_) — نفس الإعدادات
-            key_map = {
-                "LotSize": "LotSize", "TP_USD": "TP_USD", "SL_USD": "SL_USD",
-                "MaxSpread": "MaxSpread", "MaxPositions": "MaxPositions",
-                "CooldownSecs": "CooldownSecs", "MaxLossPerDay": "MaxLossPerDay",
-                "MaxProfitPerDay": "MaxProfitPerDay",
-                "TradeHoursStart": "TradeHoursStart", "TradeHoursEnd": "TradeHoursEnd",
-                "BotRunning": "BotRunning",
-                "OrderType":  "OrderType",
-                "RiskMode":   "RiskMode",
-                "RiskPercent":"RiskPercent",
-                "RSIBuyMax":    "RSIBuyMax",
-                "RSISellMin":   "RSISellMin",
-                "DynamicRisk":  "DynamicRisk",
-                "BaseLot":      "BaseLot",
-            }
-            for prefix in ("GSX_", "BSX_"):
-                for k in key_map:
-                    if k in settings:
-                        fpath = os.path.join(_MT5_COMMON, f"{prefix}{k}.txt")
-                        try:
-                            with open(fpath, "w", encoding="ascii") as f:
-                                f.write(str(settings[k]))
-                        except Exception:
-                            pass
-            print(f"   📝 Lot={settings.get('LotSize')} → GSX_*.txt + BSX_*.txt")
+            # إعدادات الذهب (GSX_) — كل الإعدادات
+            gold_keys = [
+                "LotSize", "TP_USD", "SL_USD", "MaxSpread", "MaxPositions",
+                "CooldownSecs", "MaxLossPerDay", "MaxProfitPerDay",
+                "TradeHoursStart", "TradeHoursEnd", "BotRunning",
+                "OrderType", "RiskMode", "RiskPercent",
+                "RSIBuyMax", "RSISellMin", "DynamicRisk", "BaseLot",
+            ]
+            for k in gold_keys:
+                if k in settings:
+                    fpath = os.path.join(_MT5_COMMON, f"GSX_{k}.txt")
+                    try:
+                        with open(fpath, "w", encoding="ascii") as f:
+                            f.write(str(settings[k]))
+                    except Exception:
+                        pass
+
+            # إعدادات البتكوين (BSX_) — فقط الإعدادات المشتركة التي لا تتعارض مع قيم الذهب
+            # TP/SL/Lot/MaxSpread مختلفة لكل بوت — لا تُكتب من هنا
+            btc_shared_keys = [
+                "BotRunning", "OrderType", "TradeHoursStart", "TradeHoursEnd",
+                "RiskMode", "RiskPercent", "DynamicRisk",
+                "RSIBuyMax", "RSISellMin",
+            ]
+            for k in btc_shared_keys:
+                if k in settings:
+                    fpath = os.path.join(_MT5_COMMON, f"BSX_{k}.txt")
+                    try:
+                        with open(fpath, "w", encoding="ascii") as f:
+                            f.write(str(settings[k]))
+                    except Exception:
+                        pass
+            print(f"   📝 Gold GSX_*.txt ✓  |  BTC BSX_ (shared only) ✓")
 
             # حفظ محلي — يضمن بقاء الإعدادات بعد Railway redeploy
             save_local_settings(settings)
