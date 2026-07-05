@@ -232,6 +232,90 @@ def push_local_settings():
 
 
 _last_settings_hash = None  # نتتبع التغييرات
+_known_positions    = {}    # ticket -> position — لكشف الصفقات الجديدة
+
+
+# ── حساب المؤشرات من الشمعات ────────────────────────────────────────
+def _calc_rsi(closes, period=14):
+    if len(closes) < period + 1:
+        return 50.0
+    gains, losses = [], []
+    for i in range(1, len(closes)):
+        d = closes[i] - closes[i - 1]
+        gains.append(max(d, 0.0))
+        losses.append(max(-d, 0.0))
+    avg_gain = sum(gains[-period:]) / period
+    avg_loss = sum(losses[-period:]) / period
+    if avg_loss == 0:
+        return 100.0
+    rs = avg_gain / avg_loss
+    return round(100 - (100 / (1 + rs)), 1)
+
+
+def _calc_ema(closes, period):
+    if not closes:
+        return 0.0
+    if len(closes) < period:
+        return closes[-1]
+    k   = 2.0 / (period + 1)
+    ema = sum(closes[:period]) / period
+    for c in closes[period:]:
+        ema = c * k + ema * (1 - k)
+    return round(ema, 2)
+
+
+def _calc_atr(candles, period=14):
+    if len(candles) < period + 1:
+        return 0.0
+    trs = []
+    for i in range(1, len(candles)):
+        tr = max(
+            candles[i]['h'] - candles[i]['l'],
+            abs(candles[i]['h'] - candles[i - 1]['c']),
+            abs(candles[i]['l'] - candles[i - 1]['c']),
+        )
+        trs.append(tr)
+    return round(sum(trs[-period:]) / period, 2)
+
+
+def send_trade_snapshot(ticket, position, candles_list, sessions):
+    """يرسل snapshot كامل (شمعات + مؤشرات) فور فتح صفقة جديدة"""
+    closes = [c['c'] for c in candles_list]
+    rsi    = _calc_rsi(closes)
+    ema9   = _calc_ema(closes, 9)
+    ema21  = _calc_ema(closes, 21)
+    atr    = _calc_atr(candles_list)
+    h      = sessions.get('utc_hour', 0)
+    if 7 <= h < 13:    sess = 'London'
+    elif 13 <= h < 22: sess = 'NY'
+    elif 0 <= h < 7:   sess = 'Tokyo'
+    else:              sess = 'Off'
+
+    snapshot = {
+        "ticket":      ticket,
+        "symbol":      position.get('symbol'),
+        "direction":   position.get('type'),
+        "entry_price": position.get('price_open'),
+        "candles":     candles_list[-30:],
+        "rsi":         rsi,
+        "ema_fast":    ema9,
+        "ema_slow":    ema21,
+        "ema_up":      ema9 > ema21,
+        "atr":         atr,
+        "session":     sess,
+        "time":        datetime.now().isoformat(),
+    }
+    try:
+        r = requests.post(
+            f"{BACKEND_URL}/api/trade_snapshot",
+            json=snapshot, headers=HEADERS, timeout=15,
+        )
+        if r.status_code == 200:
+            arrow = '↑' if ema9 > ema21 else '↓'
+            print(f"📸 {datetime.now().strftime('%H:%M:%S')} - snapshot #{ticket} "
+                  f"RSI={rsi} EMA{arrow} ATR={atr} [{sess}]")
+    except Exception as e:
+        print(f"❌ فشل إرسال snapshot: {e}")
 
 def sync_settings():
     """يسحب الإعدادات من الصفحة ويكتبها للبوت — مع retry تلقائي"""
@@ -351,6 +435,16 @@ def main():
 
             account   = get_account_info()
             positions = get_open_positions()
+
+            # كشف الصفقات الجديدة وإرسال snapshot فوري
+            for pos in positions:
+                if pos['ticket'] not in _known_positions:
+                    sym      = pos.get('symbol', detect_gold_symbol())
+                    c_list   = get_candles(sym, mt5.TIMEFRAME_M1, 40)
+                    sessions = get_trading_sessions()
+                    send_trade_snapshot(pos['ticket'], pos, c_list, sessions)
+            _known_positions.clear()
+            _known_positions.update({p['ticket']: p for p in positions})
 
             history = []
             if now - last_history_sync > 60:

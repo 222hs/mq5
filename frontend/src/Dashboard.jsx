@@ -93,6 +93,7 @@ export default function Dashboard() {
   const [busy, setBusy] = useState(false);
   const [candleData, setCandleData] = useState({ candles: [], sessions: {} });
   const [tradePopup, setTradePopup] = useState(null); // trade detail popup
+  const [tradeSnapshot, setTradeSnapshot] = useState(null); // entry snapshot
   const seenTickets = useRef(null);
   const prevPositions = useRef(null);
   const popupTimer = useRef(null);
@@ -155,6 +156,16 @@ export default function Dashboard() {
       });
     } catch (e) {}
     setBusy(false);
+  };
+
+  const openTradeDetail = async (trade) => {
+    setTradePopup(trade);
+    setTradeSnapshot(null);
+    if (!trade?.ticket) return;
+    try {
+      const r = await fetch(`${API_URL}/api/trade_snapshot/${trade.ticket}`);
+      if (r.ok) setTradeSnapshot(await r.json());
+    } catch (e) {}
   };
 
   const saveSingle = async (key, value) => {
@@ -469,7 +480,7 @@ export default function Dashboard() {
                         flex:1, height:14, maxWidth:24,
                         background: netOf(t)>0 ? C.neon : C.red,
                         cursor:'pointer',
-                      }} onClick={() => setTradePopup(t)} />
+                      }} onClick={() => openTradeDetail(t)} />
                     ))
                 }
               </div>
@@ -737,7 +748,7 @@ export default function Dashboard() {
                         borderBottom:`1px solid ${C.faint}`,
                         borderLeft:`4px solid ${buy?C.neon:C.red}`,
                         cursor:'pointer',
-                      }} onClick={()=>setTradePopup(p)}>
+                      }} onClick={()=>openTradeDetail(p)}>
                         <td style={{padding:'8px 8px', color:C.muted}}>#{p.ticket}</td>
                         <td style={{padding:'8px 8px', fontWeight:'bold', color:buy?C.neon:C.red, letterSpacing:'2px'}}>{p.type}</td>
                         <td style={{padding:'8px 8px'}}>{p.volume}</td>
@@ -927,22 +938,93 @@ export default function Dashboard() {
         <div style={{
           position:'fixed', inset:0, display:'flex',
           alignItems:'center', justifyContent:'center',
-          background:'rgba(0,0,0,0.8)', zIndex:999,
-        }} onClick={()=>setTradePopup(null)}>
+          background:'rgba(0,0,0,0.85)', zIndex:999,
+          overflowY:'auto', padding:'20px 0',
+        }} onClick={()=>{ setTradePopup(null); setTradeSnapshot(null); }}>
           <div style={{
             background:C.bg, border:C.border,
             boxShadow:'0 0 20px #00ff41, 0 0 40px #00ff41',
             padding:'28px 32px',
-            fontFamily:C.mono, minWidth:280, color:C.ink,
+            fontFamily:C.mono, width:'min(480px,96vw)', color:C.ink,
             animation:'slideUp 0.2s ease-out',
           }} onClick={e=>e.stopPropagation()}>
             <div style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', marginBottom:16, color:C.neon}}>
               &gt; TRADE DETAIL · #{tradePopup.ticket}
             </div>
+
+            {/* ── mini snapshot chart ───────────────────────── */}
+            {tradeSnapshot?.candles?.length > 1 && (() => {
+              const cs = tradeSnapshot.candles.slice(-25);
+              const W=420, H=120, padL=2, padR=44, padT=6, padB=6;
+              const cw=(W-padL-padR)/cs.length;
+              const bw=Math.max(1.5,cw-1);
+              const allH=cs.flatMap(c=>[c.h,c.l]);
+              const lo=Math.min(...allH), hi=Math.max(...allH);
+              const rng=Math.max(hi-lo,0.1);
+              const Y=v=>padT+((hi-v)/rng)*(H-padT-padB);
+              const Cx=i=>padL+i*cw+(cw-bw)/2;
+              const ep=tradeSnapshot.entry_price;
+              return (
+                <div style={{marginBottom:12}}>
+                  <div style={bLabel({fontSize:8, marginBottom:4, color:'#ff9900'})}>
+                    CHART AT ENTRY · {tradeSnapshot.session} SESSION
+                  </div>
+                  <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block',background:'#000',border:`1px solid ${C.faint}`}}>
+                    {[0,0.5,1].map((f,i)=>{
+                      const y=Y(lo+f*rng);
+                      return <g key={i}>
+                        <line x1={padL} y1={y} x2={W-padR} y2={y} stroke={C.faint} strokeWidth="0.5" strokeDasharray="3 3"/>
+                        <text x={W-padR+3} y={y+3} fontSize="7" fill={C.muted} fontFamily={C.mono}>{(lo+f*rng).toFixed(2)}</text>
+                      </g>;
+                    })}
+                    {cs.map((c,i)=>{
+                      const bull=c.c>=c.o;
+                      const col=bull?C.neon:C.red;
+                      const mx=Cx(i)+bw/2;
+                      const bTop=Y(Math.max(c.o,c.c));
+                      const bBot=Y(Math.min(c.o,c.c));
+                      return <g key={c.t??i}>
+                        <line x1={mx} y1={Y(c.h)} x2={mx} y2={bTop} stroke={col} strokeWidth="1"/>
+                        <rect x={Cx(i)} y={bTop} width={bw} height={Math.max(1,bBot-bTop)} fill={col}/>
+                        <line x1={mx} y1={bBot} x2={mx} y2={Y(c.l)} stroke={col} strokeWidth="1"/>
+                      </g>;
+                    })}
+                    {ep && ep>=lo && ep<=hi && (
+                      <g>
+                        <line x1={padL} y1={Y(ep)} x2={W-padR} y2={Y(ep)} stroke={C.yellow} strokeWidth="1.5" strokeDasharray="4 3"/>
+                        <rect x={W-padR} y={Y(ep)-7} width={padR} height={14} fill={C.yellow}/>
+                        <text x={W-padR+3} y={Y(ep)+4} fontSize="7" fill="#000" fontFamily={C.mono} fontWeight="900">{ep?.toFixed(2)}</text>
+                      </g>
+                    )}
+                  </svg>
+                  {/* indicators row */}
+                  <div style={{display:'flex', gap:8, marginTop:6}}>
+                    {[
+                      { l:'RSI', v: tradeSnapshot.rsi, c: tradeSnapshot.rsi > 70 ? C.red : tradeSnapshot.rsi < 30 ? C.neon : C.ink },
+                      { l:'EMA', v: tradeSnapshot.ema_up ? '↑ UP' : '↓ DOWN', c: tradeSnapshot.ema_up ? C.neon : C.red },
+                      { l:'ATR', v: tradeSnapshot.atr, c: C.yellow },
+                      { l:'SESSION', v: tradeSnapshot.session, c: '#ff9900' },
+                    ].map(x=>(
+                      <div key={x.l} style={{flex:1, textAlign:'center', padding:'4px 2px', background:C.faint}}>
+                        <div style={bLabel({fontSize:7})}>{x.l}</div>
+                        <div style={{fontSize:11, fontWeight:'bold', color:x.c}}>{x.v}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+            {tradeSnapshot === null && tradePopup.ticket && (
+              <div style={bLabel({marginBottom:12, color:C.muted, fontSize:9})}>
+                LOADING ENTRY SNAPSHOT...
+              </div>
+            )}
+
+            {/* ── trade fields ──────────────────────────────── */}
             {[
               ['Type',      tradePopup.type??'--'],
               ['Volume',    tradePopup.volume??'--'],
-              ['Entry',     tradePopup.price_open??'--'],
+              ['Entry',     tradePopup.price_open??tradeSnapshot?.entry_price??'--'],
               ['Exit',      tradePopup.price_close??'--'],
               ['Profit',    fmtMoney(tradePopup.profit??0,true)],
               ['Swap',      fmtMoney(tradePopup.swap??0,true)],
@@ -963,7 +1045,7 @@ export default function Dashboard() {
               </div>
             ))}
             <button className="bbtn"
-              onClick={()=>setTradePopup(null)}
+              onClick={()=>{ setTradePopup(null); setTradeSnapshot(null); }}
               style={bBtn(true,{width:'100%',marginTop:16})}>CLOSE</button>
           </div>
         </div>
