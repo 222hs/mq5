@@ -4,7 +4,7 @@ import Settings from "./Settings.jsx";
 
 const TABS = [
   { id: "dashboard", label: "📊 لوحة التحكم" },
-  { id: "settings",  label: "⚙️ الإعدادات" },
+  { id: "settings",  label: "⚙️ الإعدادات  " },
 ];
 
 export default function App() {
