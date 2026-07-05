@@ -227,9 +227,15 @@ export default function Dashboard() {
         fetch(`${API_URL}/api/snapshots?limit=50`, { headers: {'X-API-Key': API_KEY} }),
         fetch(`${API_URL}/api/snapshots/count`),
       ]);
-      if (r.ok) setSnapshots(await r.json());
+      if (r.ok) {
+        const d = await r.json();
+        console.log('snapshots loaded:', d.length, d[0]);
+        setSnapshots(d);
+      } else {
+        console.log('snapshots error:', r.status);
+      }
       if (rc.ok) { const d = await rc.json(); setSnapCount(d.count); }
-    } catch(_) {}
+    } catch(e) { console.log('snapshots fetch error:', e); }
     setSnapLoading(false);
   };
 
