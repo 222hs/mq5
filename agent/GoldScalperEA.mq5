@@ -1,10 +1,10 @@
 //+------------------------------------------------------------------+
 //|                                                GoldScalperEA.mq5 |
-//|                                        GoldScalperX version 9.70 |
-//|  Gold scalper — bar-gated, closed-bar signals, trailing stop     |
+//|                                        GoldScalperX version 9.80 |
+//|  Gold scalper — كل شمعة صاعدة BUY، كل شمعة هابطة SELL          |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.70"
+#property version   "9.80"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -13,14 +13,14 @@
 //--- inputs
 input double          LotSize      = 0.5;      // Lot size
 input ENUM_TIMEFRAMES TF           = PERIOD_M1;// Working timeframe
-input int             MaxPositions = 10;       // Max open positions
+input int             MaxPositions = 5;        // Max open positions
 input int             CooldownSecs = 0;        // Cooldown between entries (sec)
 input int             MaxSpread    = 350;      // Max spread in points
 input bool            UseSession   = false;    // Session filter (false=trade 24h)
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.70"
+#define EA_VERSION    "9.80"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -48,8 +48,7 @@ CPositionInfo  posInfo;
 
 long     g_magic         = 0;
 int      hRSI = INVALID_HANDLE, hEMA9 = INVALID_HANDLE,
-         hEMA21 = INVALID_HANDLE, hATR = INVALID_HANDLE,
-         hBB = INVALID_HANDLE, hStoch = INVALID_HANDLE;
+         hEMA21 = INVALID_HANDLE, hATR = INVALID_HANDLE;
 datetime g_lastEntryTime = 0;
 datetime g_lastBar       = 0;
 int      g_totalTrades   = 0;
@@ -60,16 +59,7 @@ int      g_cooldownSecs;
 double   g_maxSpread;
 double   g_tpUSD;
 double   g_slUSD;
-double   g_trailUSD;   // trail drawdown from peak once TP is reached (0=disabled)
-
-//--- reversal tracking
-bool     g_lastWasLoss = false;
-int      g_lastLossDir = 0;   // +1=last was BUY loss → next reversal is SELL
-
-//--- trailing stop tracker
-struct TrailData { ulong ticket; double peak; bool armed; };
-TrailData g_trail[20];
-int       g_trailCount = 0;
+bool     g_botRunning = true;
 
 //+------------------------------------------------------------------+
 long MagicFromSymbol(const string sym)
@@ -108,8 +98,6 @@ double ReadJsonValue(const string key, const double fallback)
   }
 
 //+------------------------------------------------------------------+
-bool     g_botRunning = true;
-
 void LoadSettings()
   {
    g_lot          = ReadJsonValue("LotSize",      LotSize);
@@ -118,26 +106,24 @@ void LoadSettings()
    g_cooldownSecs = (int)ReadJsonValue("CooldownSecs",(double)CooldownSecs);
    g_tpUSD        = ReadJsonValue("TP_USD",       2.0);
    g_slUSD        = ReadJsonValue("SL_USD",       3.0);
-   g_trailUSD     = ReadJsonValue("TrailUSD",     0.0);
    g_botRunning   = (ReadJsonValue("BotRunning",  1.0) > 0.5);
 
-   // كتابة الإعدادات الفعلية في ملف مؤقت ثم rename (atomic — يتجنب تعارض القراءة)
-   string js = "{";
-   js += "\"LotSize\":"      + DoubleToString(g_lot,2)         + ",";
-   js += "\"TP_USD\":"       + DoubleToString(g_tpUSD,2)       + ",";
-   js += "\"SL_USD\":"       + DoubleToString(g_slUSD,2)       + ",";
-   js += "\"MaxSpread\":"    + IntegerToString((int)g_maxSpread)+ ",";
-   js += "\"MaxPositions\":" + IntegerToString(g_maxPositions)  + ",";
-   js += "\"CooldownSecs\":" + IntegerToString(g_cooldownSecs)  + ",";
-   js += "\"TrailUSD\":"     + DoubleToString(g_trailUSD,2)     + ",";
-   js += "\"BotRunning\":"   + (g_botRunning?"1":"0")           + "}";
-   int fh = FileOpen("GSX_Active.tmp", FILE_WRITE|FILE_TXT|FILE_COMMON);
+   // كتابة الإعدادات الفعلية للـ Agent
+   string tmp = "GSX_Active.tmp";
+   int fh = FileOpen(tmp, FILE_WRITE|FILE_TXT|FILE_COMMON);
    if(fh != INVALID_HANDLE)
      {
+      string js = "{";
+      js += "\"LotSize\":"      + DoubleToString(g_lot,2)          + ",";
+      js += "\"TP_USD\":"       + DoubleToString(g_tpUSD,2)        + ",";
+      js += "\"SL_USD\":"       + DoubleToString(g_slUSD,2)        + ",";
+      js += "\"MaxSpread\":"    + IntegerToString((int)g_maxSpread) + ",";
+      js += "\"MaxPositions\":" + IntegerToString(g_maxPositions)   + ",";
+      js += "\"CooldownSecs\":" + IntegerToString(g_cooldownSecs)   + ",";
+      js += "\"BotRunning\":"   + (g_botRunning?"1":"0")            + "}";
       FileWriteString(fh, js);
       FileClose(fh);
-      // rename المؤقت → الأساسي (عملية واحدة — لا يُقرأ ملف ناقص)
-      FileMove("GSX_Active.tmp", FILE_COMMON, "GSX_Active.json", FILE_COMMON|FILE_REWRITE);
+      FileMove(tmp, FILE_COMMON, "GSX_Active.json", FILE_COMMON|FILE_REWRITE);
      }
   }
 
@@ -148,7 +134,7 @@ bool InTradingSession()
    MqlDateTime dt;
    TimeToStruct(TimeGMT(), dt);
    int h = dt.hour;
-   return (h >= 12 && h < 20); // London/NY overlap — best gold hours
+   return (h >= 12 && h < 20);
   }
 
 //+------------------------------------------------------------------+
@@ -159,16 +145,13 @@ int OnInit()
    trade.SetDeviationInPoints(50);
    trade.SetTypeFillingBySymbol(_Symbol);
 
-   hRSI   = iRSI   (_Symbol, TF, 7,  PRICE_CLOSE);
-   hEMA9  = iMA    (_Symbol, TF, 9,  0, MODE_EMA, PRICE_CLOSE);
-   hEMA21 = iMA    (_Symbol, TF, 21, 0, MODE_EMA, PRICE_CLOSE);
-   hATR   = iATR   (_Symbol, TF, 14);
-   hBB    = iBands (_Symbol, TF, 20, 0, 2.0, PRICE_CLOSE);
-   hStoch = iStochastic(_Symbol, TF, 5, 3, 3, MODE_SMA, STO_LOWHIGH);
+   hRSI   = iRSI(_Symbol, TF, 7,  PRICE_CLOSE);
+   hEMA9  = iMA (_Symbol, TF, 9,  0, MODE_EMA, PRICE_CLOSE);
+   hEMA21 = iMA (_Symbol, TF, 21, 0, MODE_EMA, PRICE_CLOSE);
+   hATR   = iATR(_Symbol, TF, 14);
 
    if(hRSI==INVALID_HANDLE||hEMA9==INVALID_HANDLE||
-      hEMA21==INVALID_HANDLE||hATR==INVALID_HANDLE||
-      hBB==INVALID_HANDLE||hStoch==INVALID_HANDLE)
+      hEMA21==INVALID_HANDLE||hATR==INVALID_HANDLE)
      { Print(EA_NAME,": indicator init failed"); return(INIT_FAILED); }
 
    LoadSettings();
@@ -181,8 +164,6 @@ int OnInit()
 void OnDeinit(const int reason)
   {
    if(hRSI  !=INVALID_HANDLE) IndicatorRelease(hRSI);
-   if(hBB   !=INVALID_HANDLE) IndicatorRelease(hBB);
-   if(hStoch!=INVALID_HANDLE) IndicatorRelease(hStoch);
    if(hEMA9 !=INVALID_HANDLE) IndicatorRelease(hEMA9);
    if(hEMA21!=INVALID_HANDLE) IndicatorRelease(hEMA21);
    if(hATR  !=INVALID_HANDLE) IndicatorRelease(hATR);
@@ -213,40 +194,13 @@ double MyFloatingPL()
   }
 
 //+------------------------------------------------------------------+
-//| Bull candle: minimal filter — closed up, not a doji, sane range  |
-//+------------------------------------------------------------------+
-bool StrongBull(double o, double c, double h, double l, double atr)
-  {
-   double range = h - l;
-   if(range < 1e-10 || atr < 1e-10) return false;
-   return (c > o)                      // closed up
-       && ((c-o)/range >= 0.10)        // body >=10% of range (not a doji)
-       && (range <= 5.0*atr);          // reject freak spike bars only
-  }
-
-//+------------------------------------------------------------------+
-//| Bear candle: minimal filter — closed down, not a doji, sane range|
-//+------------------------------------------------------------------+
-bool StrongBear(double o, double c, double h, double l, double atr)
-  {
-   double range = h - l;
-   if(range < 1e-10 || atr < 1e-10) return false;
-   return (c < o)                      // closed down
-       && ((o-c)/range >= 0.10)        // body >=10% of range (not a doji)
-       && (range <= 5.0*atr);          // reject freak spike bars only
-  }
-
-//+------------------------------------------------------------------+
 void OnTick()
   {
-   // ── ManagePositions runs EVERY TICK (TP/SL by P&L must be instant) ──
    ManagePositions();
 
-   // ── BAR GATE: entry signals only once per completed bar ──
    datetime barTime = iTime(_Symbol, TF, 0);
    if(barTime == g_lastBar)
      {
-      // still update dashboard every tick so values stay fresh
       long sp = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
       UpdateDashboard(0, 50, InTradingSession(), 0, false, 0,
                       CountMyPositions(), 0, sp);
@@ -255,28 +209,27 @@ void OnTick()
    g_lastBar = barTime;
    LoadSettings();
 
-   double atr[];
+   double rsi[], ema9[], ema21[], atr[];
    double o[], c[];
-   ArraySetAsSeries(atr,true);
+   ArraySetAsSeries(rsi,true); ArraySetAsSeries(ema9,true);
+   ArraySetAsSeries(ema21,true); ArraySetAsSeries(atr,true);
    ArraySetAsSeries(o,true); ArraySetAsSeries(c,true);
 
-   if(CopyBuffer(hATR, 0,0,2,atr) <2) return;
-   if(CopyOpen (_Symbol,TF,0,2,o) <2) return;
-   if(CopyClose(_Symbol,TF,0,2,c) <2) return;
+   if(CopyBuffer(hRSI,  0,0,2,rsi)  <2) return;
+   if(CopyBuffer(hEMA9, 0,0,2,ema9) <2) return;
+   if(CopyBuffer(hEMA21,0,0,2,ema21)<2) return;
+   if(CopyBuffer(hATR,  0,0,2,atr)  <2) return;
+   if(CopyOpen (_Symbol,TF,0,2,o)   <2) return;
+   if(CopyClose(_Symbol,TF,0,2,c)   <2) return;
 
+   double rsi1  = rsi[1];
+   double ema91 = ema9[1], ema211 = ema21[1];
    double atr1  = atr[1];
-   double ema91 = 0, ema211 = 0, rsi1 = 50; // dashboard only
 
-   double ema9tmp[], ema21tmp[], rsitmp[];
-   ArraySetAsSeries(ema9tmp,true); ArraySetAsSeries(ema21tmp,true); ArraySetAsSeries(rsitmp,true);
-   if(CopyBuffer(hEMA9, 0,0,2,ema9tmp)  == 2) ema91  = ema9tmp[1];
-   if(CopyBuffer(hEMA21,0,0,2,ema21tmp) == 2) ema211 = ema21tmp[1];
-   if(CopyBuffer(hRSI,  0,0,2,rsitmp)   == 2) rsi1   = rsitmp[1];
-
-   // ── SIGNAL: اتجاه الشمعة الأخيرة — أبسط شيء ممكن ──
+   // ── SIGNAL: اتجاه الشمعة الأخيرة المغلقة ──
    int signal = 0;
-   if(c[1] > o[1]) signal =  1;  // شمعة ترتفع → BUY
-   else if(c[1] < o[1]) signal = -1;  // شمعة تنزل  → SELL
+   if     (c[1] > o[1]) signal =  1;  // شمعة صاعدة → BUY
+   else if(c[1] < o[1]) signal = -1;  // شمعة هابطة → SELL
 
    long spread   = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    bool spreadOK = (spread <= (long)g_maxSpread);
@@ -287,40 +240,30 @@ void OnTick()
 
    if(signal != 0 && allOK && g_botRunning)
      {
-      g_lastWasLoss = false; // reset reversal flag on new entry
-      // Max 2 trades per bar — keeps slots available for opposite direction
-      int slots = MathMin(2, g_maxPositions - CountMyPositions());
-      for(int i = 0; i < slots; i++)
-        {
-         if(signal == 1) OpenTrade(ORDER_TYPE_BUY,  atr1);
-         else            OpenTrade(ORDER_TYPE_SELL, atr1);
-        }
+      if(signal == 1) OpenTrade(ORDER_TYPE_BUY,  atr1);
+      else            OpenTrade(ORDER_TYPE_SELL, atr1);
      }
 
-   int cdLeft = (int)MathMax(0, g_cooldownSecs-(TimeCurrent()-g_lastEntryTime));
+   int cdLeft  = (int)MathMax(0, g_cooldownSecs-(TimeCurrent()-g_lastEntryTime));
    bool blocked = !(spreadOK && slotsOK && sessOK);
-
-   bool emaUp = ema91 > ema211;
-   UpdateDashboard(
-      emaUp?1:-1, rsi1, sessOK, signal,
-      blocked, cdLeft, CountMyPositions(), atr1, spread
-   );
+   bool emaUp   = ema91 > ema211;
+   UpdateDashboard(emaUp?1:-1, rsi1, sessOK, signal,
+                   blocked, cdLeft, CountMyPositions(), atr1, spread);
   }
 
 //+------------------------------------------------------------------+
 void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal)
   {
-   double ask   = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   double bid   = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   double pt    = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   int    digs  = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
-   long   sl0   = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
-   long   frz   = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_FREEZE_LEVEL);
-   double minD  = MathMax((double)(sl0+frz+5), 10.0) * pt;
-   double lot   = NormalizeLot(g_lot);
+   double ask  = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid  = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double pt   = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   int    digs = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   long   sl0  = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   long   frz  = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_FREEZE_LEVEL);
+   double minD = MathMax((double)(sl0+frz+5), 10.0) * pt;
+   double lot  = NormalizeLot(g_lot);
 
-   // ATR-based distances — safety net on broker side (tighter SL = smaller max loss)
-   double slD = MathMax(atrVal * 1.0, minD);
+   double slD = MathMax(atrVal * 2.0, minD);
    double tpD = MathMax(atrVal * 4.0, minD * 2.0);
 
    double sl, tp; bool ok;
@@ -333,7 +276,7 @@ void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal)
 
    if(ok) { g_lastEntryTime = TimeCurrent(); g_totalTrades++;
              Print(EA_NAME,": ",EnumToString(type)," lot=",lot,
-                   " sl=",sl," tp=",tp," | close target: TP$=",g_tpUSD," SL$=",g_slUSD); }
+                   " | TP$=",g_tpUSD," SL$=",g_slUSD); }
    else   Print(EA_NAME,": FAIL ",trade.ResultRetcode()," ",trade.ResultComment());
   }
 
@@ -348,24 +291,6 @@ double NormalizeLot(double lot)
   }
 
 //+------------------------------------------------------------------+
-int FindTrail(ulong tk)
-  {
-   for(int i=0;i<g_trailCount;i++) if(g_trail[i].ticket==tk) return i;
-   return -1;
-  }
-int AddTrail(ulong tk)
-  {
-   if(g_trailCount>=20) return -1;
-   g_trail[g_trailCount].ticket=tk; g_trail[g_trailCount].peak=-999999; g_trail[g_trailCount].armed=false;
-   return g_trailCount++;
-  }
-void RemoveTrail(ulong tk)
-  {
-   for(int i=0;i<g_trailCount;i++)
-     if(g_trail[i].ticket==tk) { g_trail[i]=g_trail[--g_trailCount]; return; }
-  }
-
-//+------------------------------------------------------------------+
 void ManagePositions()
   {
    datetime now = TimeCurrent();
@@ -373,55 +298,25 @@ void ManagePositions()
      {
       if(!posInfo.SelectByIndex(i)) continue;
       if(posInfo.Symbol()!=_Symbol||posInfo.Magic()!=g_magic) continue;
-      ulong    tk      = posInfo.Ticket();
-      datetime openAt  = (datetime)posInfo.Time();
-      double   profit  = posInfo.Profit() + posInfo.Swap() + posInfo.Commission();
+      ulong    tk         = posInfo.Ticket();
+      datetime openAt     = (datetime)posInfo.Time();
+      double   profit     = posInfo.Profit() + posInfo.Swap() + posInfo.Commission();
       int      ageSeconds = (int)(now - openAt);
 
-      // ── تتبع الذروة لكل صفقة ──
-      int ti = FindTrail(tk);
-      if(ti < 0) ti = AddTrail(tk);
-      if(ti >= 0 && profit > g_trail[ti].peak) g_trail[ti].peak = profit;
-
-      // ── TP: وصل الهدف ──
+      // TP: يُسكّر فوراً عند الهدف
       if(profit >= g_tpUSD)
-        {
-         // إذا Trail مفعّل: اسمح للربح يكمل، أسكّر لما يرجع TrailUSD من الذروة
-         if(g_trailUSD > 0 && ti >= 0)
-           {
-            if(!g_trail[ti].armed) g_trail[ti].armed = true;
-            // انتظر حتى يبدأ بالرجوع
-            if(profit <= g_trail[ti].peak - g_trailUSD)
-              { trade.PositionClose(tk); RemoveTrail(tk);
-                Print(EA_NAME,": TRAIL TP $",DoubleToString(profit,2)," peak=$",DoubleToString(g_trail[ti].peak,2)); continue; }
-           }
-         else
-           { // Trail معطّل: أسكّر مباشرة عند TP
-            trade.PositionClose(tk); if(ti>=0) RemoveTrail(tk);
-            Print(EA_NAME,": TP $",DoubleToString(profit,2)); continue;
-           }
-        }
+        { trade.PositionClose(tk);
+          Print(EA_NAME,": TP $",DoubleToString(profit,2)); continue; }
 
-      // ── Breakeven: لما يصل نص الـ TP، الـ SL يصبح 0 (ما نخسر على الأقل) ──
-      // (لا نعدّل الأوردر — ManagePositions تتحكم بالإغلاق)
+      // SL طوارئ: خسارة فادحة تُسكّر فوراً بدون انتظار
+      if(profit <= -(g_slUSD * 2.5))
+        { trade.PositionClose(tk);
+          Print(EA_NAME,": EMERG SL $",DoubleToString(profit,2)); continue; }
 
-      // ── SL طوارئ: خسارة تجاوزت 3x SL_USD أسكّر فوراً (كارثة فقط) ──
-      if(profit <= -(g_slUSD * 3.0))
-        {
-         int lossDir = (posInfo.PositionType()==POSITION_TYPE_BUY) ? 1 : -1;
-         trade.PositionClose(tk); if(ti>=0) RemoveTrail(tk);
-         g_lastWasLoss = true; g_lastLossDir = lossDir;
-         Print(EA_NAME,": EMERG SL $",DoubleToString(profit,2)); continue;
-        }
-
-      // ── SL عادي: بعد 3 دقائق (180 ثانية) — M1 gold يحتاج وقت يتنفس ──
+      // SL عادي: بعد 3 دقائق
       if(ageSeconds >= 180 && profit <= -g_slUSD)
-        {
-         int lossDir = (posInfo.PositionType()==POSITION_TYPE_BUY) ? 1 : -1;
-         trade.PositionClose(tk); if(ti>=0) RemoveTrail(tk);
-         g_lastWasLoss = true; g_lastLossDir = lossDir;
-         Print(EA_NAME,": SL $",DoubleToString(profit,2)," age=",ageSeconds,"s"); continue;
-        }
+        { trade.PositionClose(tk);
+          Print(EA_NAME,": SL $",DoubleToString(profit,2)," age=",ageSeconds,"s"); continue; }
      }
   }
 
@@ -513,8 +408,8 @@ void CreateDashboard()
    DLabel("K_SPREAD","Spread",   xK,y,CLR_KEY); y+=ROW_H;
    DLabel("K_ATR",   "ATR(14)",  xK,y,CLR_KEY); y+=ROW_H;
    DDivider("D4",y); y+=8;
-   DLabel("K_TP",    "TP Target", xK,y,CLR_KEY); y+=ROW_H;
-   DLabel("K_SL",    "SL Target", xK,y,CLR_KEY);
+   DLabel("K_TP",    "TP Target",xK,y,CLR_KEY); y+=ROW_H;
+   DLabel("K_SL",    "SL Target",xK,y,CLR_KEY);
    ChartRedraw();
   }
 
@@ -543,9 +438,9 @@ void UpdateDashboard(const int trend,const double rsi,
    DLabel("V_SIG",sTxt,xV,y,sClr); y+=ROW_H;
 
    string eTxt; color eClr;
-   if(blocked)    {eTxt="BLOCKED";              eClr=CLR_BAD;}
-   else if(cdSec>0){eTxt="CD "+string(cdSec)+"s";eClr=clrOrange;}
-   else           {eTxt="READY";                eClr=CLR_GOOD;}
+   if(blocked)     {eTxt="BLOCKED";               eClr=CLR_BAD;}
+   else if(cdSec>0){eTxt="CD "+string(cdSec)+"s"; eClr=clrOrange;}
+   else            {eTxt="READY";                  eClr=CLR_GOOD;}
    DLabel("V_ENTRY",eTxt,xV,y,eClr); y+=ROW_H+8;
 
    color pClr=posCount>=g_maxPositions?CLR_BAD:CLR_HILITE;
