@@ -1,10 +1,12 @@
 import { useState } from "react";
 import Dashboard from "./Dashboard.jsx";
 import Settings from "./Settings.jsx";
+import Analysis from "./Analysis.jsx";
 
 const TABS = [
   { id: "dashboard", label: "📊 لوحة التحكم" },
-  { id: "settings",  label: "⚙️ الإعدادات  " },
+  { id: "analysis",  label: "📈 تحليل الأوقات" },
+  { id: "settings",  label: "⚙️ الإعدادات"    },
 ];
 
 export default function App() {
@@ -24,7 +26,7 @@ export default function App() {
         ))}
       </div>
       <div style={s.content}>
-        {tab === "dashboard" ? <Dashboard /> : <Settings />}
+        {tab === "dashboard" ? <Dashboard /> : tab === "analysis" ? <Analysis /> : <Settings />}
       </div>
     </div>
   );
