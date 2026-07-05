@@ -390,8 +390,10 @@ void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal,
    double tickVal  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
    double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    double pointVal = (tickSize > 0.0 && lot > 0.0) ? (tickVal / tickSize) * lot : 1.0;
-   double slD = MathMax(g_slUSD / pointVal, minD);
-   double tpD = MathMax(g_tpUSD / pointVal, minD);
+   // الحد الأدنى: أكبر قيمة من (minD) أو (ATR×1.5) — يضمن قبول الـ broker لأي رمز
+   double safeMin  = MathMax(minD, atrVal * 1.5);
+   double slD = MathMax(g_slUSD / pointVal, safeMin);
+   double tpD = MathMax(g_tpUSD / pointVal, safeMin);
 
    // snapshot comment
    MqlDateTime dt; TimeToStruct(TimeGMT(), dt);
