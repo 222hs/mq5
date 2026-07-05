@@ -52,6 +52,9 @@ int      hRSI = INVALID_HANDLE, hEMA9 = INVALID_HANDLE,
          hEMA21 = INVALID_HANDLE, hATR = INVALID_HANDLE;
 datetime g_lastEntryTime = 0;
 datetime g_lastBar       = 0;
+double   g_snapRSI       = 50.0;
+bool     g_snapEMAUp     = false;
+double   g_snapATR       = 0.0;
 int      g_totalTrades   = 0;
 
 double   g_lot          = 0.5;
@@ -333,6 +336,10 @@ void OnTick()
 
    if(signal != 0 && allOK && g_botRunning)
      {
+      // حفظ snapshot الإشارات لإرسالها مع الصفقة
+      g_snapRSI   = rsi1;
+      g_snapEMAUp = (ema91 > ema211);
+      g_snapATR   = atr1;
       int slots = g_maxPositions - CountMyPositions();
       for(int i = 0; i < slots; i++)
         {
@@ -367,13 +374,22 @@ void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal)
    double slD = MathMax(atrVal * 1.5, minD);
    double tpD = MathMax(atrVal * 3.0, minD * 2.0);
 
+   // بناء snapshot comment للتحليل الذكي لاحقاً
+   MqlDateTime dt; TimeToStruct(TimeGMT(), dt);
+   int h = dt.hour;
+   string sess = (h>=7&&h<13)?"London":(h>=13&&h<22)?"NY":(h>=0&&h<7)?"Tokyo":"Off";
+   string snap = "RSI="  + DoubleToString(g_snapRSI,0)
+               + " EMA=" + (g_snapEMAUp?"U":"D")
+               + " ATR=" + DoubleToString(g_snapATR,1)
+               + " S="   + sess;
+
    double sl, tp; bool ok;
    if(type == ORDER_TYPE_BUY)
      { sl = NormalizeDouble(ask - slD, digs); tp = NormalizeDouble(ask + tpD, digs);
-       ok = trade.Buy(lot, _Symbol, ask, sl, tp, EA_NAME); }
+       ok = trade.Buy(lot, _Symbol, ask, sl, tp, snap); }
    else
      { sl = NormalizeDouble(bid + slD, digs); tp = NormalizeDouble(bid - tpD, digs);
-       ok = trade.Sell(lot, _Symbol, bid, sl, tp, EA_NAME); }
+       ok = trade.Sell(lot, _Symbol, bid, sl, tp, snap); }
 
    if(ok) { g_lastEntryTime = TimeCurrent(); g_totalTrades++;
              Print(EA_NAME,": ",EnumToString(type)," lot=",lot,
