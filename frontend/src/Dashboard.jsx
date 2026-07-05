@@ -94,6 +94,7 @@ export default function Dashboard() {
   const [candleData, setCandleData] = useState({ candles: [], sessions: {} });
   const [tradePopup, setTradePopup] = useState(null); // trade detail popup
   const seenTickets = useRef(null);
+  const prevPositions = useRef(null);
   const popupTimer = useRef(null);
 
   useEffect(() => {
@@ -107,18 +108,19 @@ export default function Dashboard() {
     });
 
     const handleDashboard = (d) => {
-      const hist = Array.isArray(d.history) ? d.history : [];
-      const tickets = new Set(hist.map(t => t.ticket));
-      if (seenTickets.current !== null) {
-        const fresh = hist.filter(t => !seenTickets.current.has(t.ticket));
-        if (fresh.length > 0) {
-          const totalNet = fresh.reduce((sum, t) => sum + (t.profit || 0) + (t.swap || 0) + (t.commission || 0), 0);
-          setPopup({ profit: totalNet, count: fresh.length });
+      // Popup: detect closed positions (updates every 2s) — أسرع من history (60s)
+      const curPos = Array.isArray(d.positions) ? d.positions : [];
+      if (prevPositions.current !== null && prevPositions.current.length > 0) {
+        const curTickets = new Set(curPos.map(p => p.ticket));
+        const closed = prevPositions.current.filter(p => !curTickets.has(p.ticket));
+        if (closed.length > 0) {
+          const totalNet = closed.reduce((sum, p) => sum + (p.profit || 0), 0);
+          setPopup({ profit: totalNet, count: closed.length });
           clearTimeout(popupTimer.current);
           popupTimer.current = setTimeout(() => setPopup(null), 3500);
         }
       }
-      seenTickets.current = tickets;
+      prevPositions.current = curPos;
       setData(d);
       if (d.settings && !settingsDirty.current) setSettingsDraft({ ...d.settings });
       // الشمعات تأتي داخل dashboard snapshot عند الاتصال الأول
