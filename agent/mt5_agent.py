@@ -16,6 +16,7 @@ import time
 import json
 import os
 import urllib.request
+import threading
 from datetime import datetime, timezone
 
 # ============== الإعدادات ==============
@@ -195,34 +196,37 @@ def get_recent_history(days=30):
 def send_update(data):
     try:
         response = requests.post(
-            f"{BACKEND_URL}/api/update", json=data, headers=HEADERS, timeout=20
+            f"{BACKEND_URL}/api/update", json=data, headers=HEADERS, timeout=8
         )
         if response.status_code == 200:
             print(f"✅ {datetime.now().strftime('%H:%M:%S')} - تم إرسال البيانات")
         else:
             print(f"⚠️ خطأ بالإرسال: {response.status_code}")
     except requests.exceptions.Timeout:
-        print(f"⏳ {datetime.now().strftime('%H:%M:%S')} - timeout إرسال البيانات (Railway نائمة؟)")
+        print(f"⏳ {datetime.now().strftime('%H:%M:%S')} - timeout (Railway نائمة؟)")
     except Exception as e:
-        print(f"❌ فشل الاتصال بالـ Backend: {e}")
+        print(f"❌ فشل الاتصال: {e}")
 
 
 def send_candles():
-    try:
-        symbol   = detect_gold_symbol()
-        candles  = get_candles(symbol, mt5.TIMEFRAME_M1, 60)
-        sessions = get_trading_sessions()
-        response = requests.post(
-            f"{BACKEND_URL}/api/candles",
-            json={"candles": candles, "sessions": sessions},
-            headers=HEADERS, timeout=20
-        )
-        if response.status_code == 200:
-            print(f"🕯️  {datetime.now().strftime('%H:%M:%S')} - {symbol}: تم إرسال {len(candles)} شمعة")
-    except requests.exceptions.Timeout:
-        print("⏳ timeout إرسال الشمعات")
-    except Exception as e:
-        print(f"❌ فشل إرسال الشمعات: {e}")
+    """يرسل الشمعات في background — لا يعطل الـ loop"""
+    def _bg():
+        try:
+            symbol   = detect_gold_symbol()
+            candles  = get_candles(symbol, mt5.TIMEFRAME_M1, 60)
+            sessions = get_trading_sessions()
+            response = requests.post(
+                f"{BACKEND_URL}/api/candles",
+                json={"candles": candles, "sessions": sessions},
+                headers=HEADERS, timeout=10
+            )
+            if response.status_code == 200:
+                print(f"🕯️  {datetime.now().strftime('%H:%M:%S')} - {symbol}: {len(candles)} شمعة")
+        except requests.exceptions.Timeout:
+            print("⏳ timeout شمعات")
+        except Exception as e:
+            print(f"❌ فشل شمعات: {e}")
+    threading.Thread(target=_bg, daemon=True).start()
 
 
 def read_local_settings():
@@ -397,8 +401,25 @@ def _calc_atr(candles, period=14):
     return round(sum(trs[-period:]) / period, 2)
 
 
+def _send_snapshot_bg(snapshot):
+    """يرسل snapshot في background thread — لا يوقف الـ loop الرئيسي"""
+    try:
+        r = requests.post(
+            f"{BACKEND_URL}/api/trade_snapshot",
+            json=snapshot, headers=HEADERS, timeout=10,
+        )
+        if r.status_code == 200:
+            arrow = '↑' if snapshot.get('ema_up') else '↓'
+            print(f"📸 {datetime.now().strftime('%H:%M:%S')} - snapshot #{snapshot['ticket']} "
+                  f"RSI={snapshot['rsi']} EMA{arrow} ATR={snapshot['atr']} [{snapshot['session']}]")
+        else:
+            print(f"⚠️  snapshot #{snapshot['ticket']} رجع {r.status_code}")
+    except Exception as e:
+        print(f"⚠️  snapshot #{snapshot['ticket']} timeout (سيُعاد لاحقاً)")
+
+
 def send_trade_snapshot(ticket, position, candles_list, sessions):
-    """يرسل snapshot كامل (شمعات + مؤشرات) فور فتح صفقة جديدة"""
+    """يبني snapshot ويرسله في background — لا يعطل الـ loop الرئيسي"""
     closes = [c['c'] for c in candles_list]
     rsi    = _calc_rsi(closes)
     ema9   = _calc_ema(closes, 9)
@@ -424,17 +445,7 @@ def send_trade_snapshot(ticket, position, candles_list, sessions):
         "session":     sess,
         "time":        datetime.now().isoformat(),
     }
-    try:
-        r = requests.post(
-            f"{BACKEND_URL}/api/trade_snapshot",
-            json=snapshot, headers=HEADERS, timeout=15,
-        )
-        if r.status_code == 200:
-            arrow = '↑' if ema9 > ema21 else '↓'
-            print(f"📸 {datetime.now().strftime('%H:%M:%S')} - snapshot #{ticket} "
-                  f"RSI={rsi} EMA{arrow} ATR={atr} [{sess}]")
-    except Exception as e:
-        print(f"❌ فشل إرسال snapshot: {e}")
+    threading.Thread(target=_send_snapshot_bg, args=(snapshot,), daemon=True).start()
 
 def sync_settings():
     """يسحب الإعدادات من الصفحة ويكتبها للبوت — مع retry تلقائي"""
