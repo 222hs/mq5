@@ -102,6 +102,8 @@ void OnTick()
    double rsi[2];
    if(CopyBuffer(rsiHandle, 0, 1, 2, rsi) < 2) return;
 
+   Print("📊 RSI: ", DoubleToString(rsi[0], 1), " | حد الشراء: <", RSI_Buy, " | حد البيع: >", RSI_Sell);
+
    // شراء: RSI تحت الحد وارتد للأعلى
    if(rsi[1] < RSI_Buy && rsi[0] > rsi[1])
       OpenTrade(ORDER_TYPE_BUY);
