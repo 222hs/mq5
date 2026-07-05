@@ -196,13 +196,18 @@ bool UpdateIndicators()
 void OpenPosition(ENUM_ORDER_TYPE type)
   {
    double price, sl, tp;
-   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   double point    = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   long   stopsLvl = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   double minDist  = (stopsLvl + 5) * point;   // +5 buffer فوق الحد الأدنى
+
+   double slDist = MathMax(g_SL * point, minDist);
+   double tpDist = MathMax(g_TP * point, minDist);
 
    if(type == ORDER_TYPE_BUY)
      {
       price = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-      sl = NormalizeDouble(price - g_SL * point, _Digits);
-      tp = NormalizeDouble(price + g_TP * point, _Digits);
+      sl = NormalizeDouble(price - slDist, _Digits);
+      tp = NormalizeDouble(price + tpDist, _Digits);
       if(trade.Buy(g_LotSize, _Symbol, price, sl, tp, BOT_NAME))
         {
          g_totalTrades++;
@@ -216,8 +221,8 @@ void OpenPosition(ENUM_ORDER_TYPE type)
    else
      {
       price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-      sl = NormalizeDouble(price + g_SL * point, _Digits);
-      tp = NormalizeDouble(price - g_TP * point, _Digits);
+      sl = NormalizeDouble(price + slDist, _Digits);
+      tp = NormalizeDouble(price - tpDist, _Digits);
       if(trade.Sell(g_LotSize, _Symbol, price, sl, tp, BOT_NAME))
         {
          g_totalTrades++;
