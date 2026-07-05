@@ -16,6 +16,7 @@ input int    MaxSpread  = 500;
 input int    RSI_Period = 7;
 input int    EMA_Fast   = 8;
 input int    EMA_Slow   = 21;
+input int    MaxPositions = 5;   // أقصى عدد صفقات مفتوحة في نفس الوقت
 
 #define MAGIC_NUMBER 999111
 #define BOT_NAME     "GoldScalperX M1"
@@ -100,6 +101,8 @@ void OnTick()
 
    if(spread > MaxSpread) { UpdateDashboard(); return; }
 
+   int totalOpen = OpenPositionsCount();
+
    if(buySignal)
      {
       if(hasSell)
@@ -107,7 +110,7 @@ void OnTick()
          Print(BOT_NAME, ": REVERSAL -> Closing SELL to open BUY | RSI=", DoubleToString(g_rsi, 2));
          CloseAllPositions(POSITION_TYPE_SELL);
         }
-      if(!hasBuy) OpenPosition(ORDER_TYPE_BUY);
+      if(totalOpen < MaxPositions) OpenPosition(ORDER_TYPE_BUY);
      }
    else if(sellSignal)
      {
@@ -116,7 +119,7 @@ void OnTick()
          Print(BOT_NAME, ": REVERSAL -> Closing BUY to open SELL | RSI=", DoubleToString(g_rsi, 2));
          CloseAllPositions(POSITION_TYPE_BUY);
         }
-      if(!hasSell) OpenPosition(ORDER_TYPE_SELL);
+      if(totalOpen < MaxPositions) OpenPosition(ORDER_TYPE_SELL);
      }
 
    UpdateDashboard();
