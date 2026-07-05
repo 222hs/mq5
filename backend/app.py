@@ -10,12 +10,14 @@ import json
 import sqlite3
 from datetime import datetime
 from threading import Lock
+import urllib.request
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app)
 
 # ============== الإعدادات ==============
-API_KEY = os.environ.get("API_KEY", "mysecretkey123")
+API_KEY           = os.environ.get("API_KEY", "mysecretkey123")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 _db_env = os.environ.get("DB_FILE", "mt5_data.db")
 _db_dir = os.path.dirname(_db_env)
 if _db_dir and not os.path.isdir(_db_dir):
@@ -31,17 +33,25 @@ latest_data = {
     "last_update": None,
     "candles": [],
     "sessions": {},
+    "claude_advice": None,
+    "claude_time": None,
 }
 
 DEFAULT_SETTINGS = {
-    "LotSize":      0.5,
-    "TP_USD":       4.0,
-    "SL_USD":       2.0,
-    "MaxSpread":    350,
-    "MaxPositions": 5,
-    "CooldownSecs": 0,
-    "TrailUSD":     0.0,
-    "BotRunning":   1,
+    "LotSize":        0.5,
+    "TP_USD":         4.0,
+    "SL_USD":         2.0,
+    "MaxSpread":      350,
+    "MaxPositions":   5,
+    "CooldownSecs":   0,
+    "TrailUSD":       0.0,
+    "BotRunning":     1,
+    "Direction":      0,    # 0=free, 1=BUY only, -1=SELL only
+    "MaxLossPerDay":  50.0,
+    "MaxProfitPerDay":200.0,
+    "TradeHoursStart":0,
+    "TradeHoursEnd":  23,
+    "ClaudeEnabled":  1,
 }
 
 
@@ -166,6 +176,45 @@ def save_settings(new_settings):
         conn.commit()
 
 
+# ---------- Claude AI ----------
+def call_claude(consecutive_losses, recent_trades, account):
+    if not ANTHROPIC_API_KEY:
+        return "Claude API key not configured"
+    try:
+        trades_summary = ", ".join([
+            f"{'WIN' if t['profit']>0 else 'LOSS'} ${t['profit']:.2f}"
+            for t in recent_trades[:10]
+        ])
+        prompt = (
+            f"You are a gold trading advisor. The XAUUSD M1 scalping bot has just had "
+            f"{consecutive_losses} consecutive losses.\n"
+            f"Account balance: ${account.get('balance', 0):.2f}, "
+            f"Equity: ${account.get('equity', 0):.2f}\n"
+            f"Last 10 trades: {trades_summary}\n\n"
+            f"Give ONE short actionable sentence (max 20 words) about what to do next. "
+            f"Be direct. No fluff."
+        )
+        body = json.dumps({
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 80,
+            "messages": [{"role": "user", "content": prompt}]
+        }).encode()
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=body,
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            }
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+            return data["content"][0]["text"].strip()
+    except Exception as e:
+        return f"Claude error: {str(e)[:60]}"
+
+
 # ---------- routes ----------
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
@@ -189,19 +238,36 @@ def update_data():
     payload = request.get_json()
     now = datetime.now().isoformat()
 
+    history_payload = payload.get("history")
     with data_lock:
         latest_data["account"]     = payload.get("account")
         latest_data["positions"]   = payload.get("positions", [])
         latest_data["last_update"] = now
-        if payload.get("candles"):
-            latest_data["candles"] = payload.get("candles", [])
-        if payload.get("sessions"):
-            latest_data["sessions"] = payload.get("sessions", {})
 
         if latest_data["account"]:
             save_account(latest_data["account"], now)
 
-        upsert_history(payload.get("history"))
+        upsert_history(history_payload)
+
+    # check consecutive losses → call Claude
+    settings = get_settings()
+    claude_enabled = int(settings.get("ClaudeEnabled", 1)) == 1
+    if claude_enabled and history_payload:
+        recent = get_history(20)
+        consecutive = 0
+        for t in recent:
+            if t["profit"] <= 0:
+                consecutive += 1
+            else:
+                break
+        if consecutive >= 5:
+            last_claude = latest_data.get("claude_time")
+            # avoid spamming — call only once per streak
+            if last_claude is None or consecutive == 5:
+                advice = call_claude(consecutive, recent, latest_data["account"] or {})
+                with data_lock:
+                    latest_data["claude_advice"] = advice
+                    latest_data["claude_time"]   = now
 
     return jsonify({"status": "ok"})
 
@@ -238,8 +304,10 @@ def get_dashboard():
             },
             "settings":    get_settings(),
             "bot_running": int(get_settings().get("BotRunning", 1)) == 1,
-            "candles":     latest_data["candles"],
-            "sessions":    latest_data["sessions"],
+            "candles":      latest_data["candles"],
+            "sessions":     latest_data["sessions"],
+            "claude_advice":latest_data["claude_advice"],
+            "claude_time":  latest_data["claude_time"],
         })
 
 

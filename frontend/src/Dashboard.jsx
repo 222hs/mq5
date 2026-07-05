@@ -135,6 +135,21 @@ export default function Dashboard() {
     setBusy(false);
   };
 
+  const saveSingle = async (key, value) => {
+    setBusy(true);
+    setSaveMsg(`SAVING ${key}...`);
+    try {
+      const r = await fetch(`${API_URL}/api/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+        body: JSON.stringify({ [key]: value }),
+      });
+      setSaveMsg(r.ok ? `${key} SAVED` : 'ERROR');
+    } catch (e) { setSaveMsg('ERROR'); }
+    setBusy(false);
+    setTimeout(() => setSaveMsg(''), 2500);
+  };
+
   const saveSettings = async () => {
     if (!settingsDraft) return;
     setBusy(true);
@@ -219,7 +234,13 @@ export default function Dashboard() {
   const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
   const dateStr = `${monthNames[now.getUTCMonth()]} · ${String(now.getUTCDate()).padStart(2, '0')}`;
 
-  const settingKeys = ['LotSize', 'TP_USD', 'SL_USD', 'MaxSpread', 'MaxPositions', 'CooldownSecs', 'TrailUSD'];
+  const settingKeys = ['LotSize', 'TP_USD', 'SL_USD', 'MaxSpread', 'MaxPositions', 'CooldownSecs', 'TrailUSD', 'MaxLossPerDay', 'MaxProfitPerDay', 'TradeHoursStart', 'TradeHoursEnd'];
+  const claudeAdvice = data?.claude_advice || null;
+  const claudeTime = data?.claude_time || null;
+  // best/worst trade
+  const allNets = history.map(t => netOf(t));
+  const bestTrade = allNets.length ? Math.max(...allNets) : null;
+  const worstTrade = allNets.length ? Math.min(...allNets) : null;
 
   const pipeline = [
     { n: '01', t: 'SIGNAL', s: 'candle dir', ok: botRunning },
@@ -610,6 +631,63 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* --- CLAUDE AI PANEL (span 3) --- */}
+        <div className="gsx-span3" style={card({ background: '#1a1a18', color: '#f0ebe0' })}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 10 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 3, color: '#52b788' }}>◆ CLAUDE AI · ADVISOR</span>
+            {claudeTime && <span style={{ fontSize: 9, color: '#8a8580', letterSpacing: 1 }}>{new Date(claudeTime).toLocaleTimeString()}</span>}
+          </div>
+          {claudeAdvice ? (
+            <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: 1, color: '#e8e4d9', lineHeight: 1.5 }}>
+              "{claudeAdvice}"
+            </div>
+          ) : (
+            <div style={{ fontSize: 11, color: '#8a8580', letterSpacing: 1 }}>
+              MONITORING · WILL ADVISE AFTER 5 CONSECUTIVE LOSSES
+            </div>
+          )}
+        </div>
+
+        {/* --- BEST / WORST TRADE (span 2) --- */}
+        <div className="gsx-span2" style={card({ background: C.panelLight })}>
+          <div style={label({ marginBottom: 8 })}>BEST &amp; WORST TRADE</div>
+          <div style={{ display: 'flex', gap: 24 }}>
+            <div>
+              <div style={label({ fontSize: 9 })}>BEST</div>
+              <div style={{ fontSize: 28, fontWeight: 900, color: C.green }}>{bestTrade !== null ? fmtMoney(bestTrade, true) : '--'}</div>
+            </div>
+            <div>
+              <div style={label({ fontSize: 9 })}>WORST</div>
+              <div style={{ fontSize: 28, fontWeight: 900, color: C.red }}>{worstTrade !== null ? fmtMoney(worstTrade, true) : '--'}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* --- DIRECTION (span 1) --- */}
+        <div style={card()}>
+          <div style={label({ marginBottom: 8 })}>DIRECTION FILTER</div>
+          {settingsDraft && (
+            <div style={{ display: 'flex', gap: 6, flexDirection: 'column' }}>
+              <select
+                value={settingsDraft.Direction ?? 0}
+                onChange={e => setSettingsDraft(d => ({ ...d, Direction: Number(e.target.value) }))}
+                style={{
+                  fontFamily: C.mono, fontSize: 12, padding: '6px 8px',
+                  background: C.panelLight, border: `1px solid ${C.border}`, color: C.text,
+                }}
+              >
+                <option value={0}>FREE (BUY+SELL)</option>
+                <option value={1}>BUY ONLY ▲</option>
+                <option value={-1}>SELL ONLY ▼</option>
+              </select>
+              <button onClick={() => saveSingle('Direction', settingsDraft.Direction ?? 0)} disabled={busy}
+                style={{ fontFamily: C.mono, fontSize: 10, fontWeight: 900, letterSpacing: 2, padding: '5px 10px', background: C.text, color: C.bg, border: 'none', cursor: 'pointer' }}>
+                SAVE
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* --- SETTINGS (span 3, collapsible) --- */}
         <div className="gsx-span3" style={card()}>
           <div
@@ -617,13 +695,13 @@ export default function Dashboard() {
             style={{ cursor: 'pointer', fontSize: 12, fontWeight: 700, letterSpacing: 2, userSelect: 'none' }}
           >
             ⚙ SETTINGS {showSettings ? '▾' : '▸'}
-            <span style={label({ marginLeft: 10, color: saveMsg === 'ERROR' ? C.red : C.green })}>{saveMsg}</span>
+            <span style={label({ marginLeft: 10, color: saveMsg.includes('ERROR') ? C.red : C.green })}>{saveMsg}</span>
           </div>
           {showSettings && settingsDraft && (
-            <div style={{ display: 'flex', gap: 12, marginTop: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
               {settingKeys.map(k => (
-                <div key={k}>
-                  <div style={label({ fontSize: 9, marginBottom: 4 })}>{k}</div>
+                <div key={k} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={label({ fontSize: 9 })}>{k}</div>
                   <input
                     type="number" step="any"
                     value={settingsDraft[k] ?? ''}
@@ -633,17 +711,32 @@ export default function Dashboard() {
                       background: C.panelLight, border: `1px solid ${C.border}`, color: C.text,
                     }}
                   />
+                  <button
+                    onClick={() => saveSingle(k, settingsDraft[k])}
+                    disabled={busy}
+                    style={{
+                      fontFamily: C.mono, fontSize: 9, fontWeight: 900, letterSpacing: 1,
+                      padding: '4px 6px', background: C.text, color: C.bg, border: 'none',
+                      cursor: busy ? 'wait' : 'pointer',
+                    }}
+                  >SAVE</button>
                 </div>
               ))}
-              <button
-                onClick={saveSettings}
-                disabled={busy}
-                style={{
-                  fontFamily: C.mono, fontSize: 12, fontWeight: 900, letterSpacing: 2,
-                  padding: '8px 20px', background: C.text, color: C.bg, border: 'none',
-                  cursor: busy ? 'wait' : 'pointer',
-                }}
-              >SAVE ALL</button>
+              {/* Claude toggle */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={label({ fontSize: 9 })}>CLAUDE AI</div>
+                <button
+                  onClick={() => { const v = (settingsDraft.ClaudeEnabled ?? 1) === 1 ? 0 : 1; setSettingsDraft(d => ({ ...d, ClaudeEnabled: v })); saveSingle('ClaudeEnabled', v); }}
+                  style={{
+                    fontFamily: C.mono, fontSize: 12, fontWeight: 900, letterSpacing: 1,
+                    padding: '6px 12px', border: 'none', cursor: 'pointer',
+                    background: (settingsDraft.ClaudeEnabled ?? 1) === 1 ? C.green : C.dim,
+                    color: '#fff',
+                  }}
+                >
+                  {(settingsDraft.ClaudeEnabled ?? 1) === 1 ? 'ON' : 'OFF'}
+                </button>
+              </div>
             </div>
           )}
           {showSettings && !settingsDraft && <div style={label({ marginTop: 10 })}>LOADING SETTINGS...</div>}

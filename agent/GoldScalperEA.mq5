@@ -59,7 +59,16 @@ int      g_cooldownSecs;
 double   g_maxSpread;
 double   g_tpUSD;
 double   g_slUSD;
-bool     g_botRunning = true;
+bool     g_botRunning    = true;
+int      g_direction     = 0;    // 0=free, 1=BUY only, -1=SELL only
+double   g_maxLossPerDay = 50.0;
+double   g_maxProfitPerDay = 200.0;
+int      g_tradeHoursStart = 0;
+int      g_tradeHoursEnd   = 23;
+
+// daily limits tracking
+string   g_today          = "";
+double   g_dayStartBalance = 0.0;
 
 //+------------------------------------------------------------------+
 long MagicFromSymbol(const string sym)
@@ -106,7 +115,12 @@ void LoadSettings()
    g_cooldownSecs = (int)ReadJsonValue("CooldownSecs",(double)CooldownSecs);
    g_tpUSD        = ReadJsonValue("TP_USD",       4.0);
    g_slUSD        = ReadJsonValue("SL_USD",       2.0);
-   g_botRunning   = (ReadJsonValue("BotRunning",  1.0) > 0.5);
+   g_botRunning      = (ReadJsonValue("BotRunning",     1.0) > 0.5);
+   g_direction       = (int)ReadJsonValue("Direction",      0.0);
+   g_maxLossPerDay   = ReadJsonValue("MaxLossPerDay",   50.0);
+   g_maxProfitPerDay = ReadJsonValue("MaxProfitPerDay", 200.0);
+   g_tradeHoursStart = (int)ReadJsonValue("TradeHoursStart", 0.0);
+   g_tradeHoursEnd   = (int)ReadJsonValue("TradeHoursEnd",  23.0);
 
    // كتابة الإعدادات الفعلية للـ Agent
    string tmp = "GSX_Active.tmp";
@@ -114,13 +128,18 @@ void LoadSettings()
    if(fh != INVALID_HANDLE)
      {
       string js = "{";
-      js += "\"LotSize\":"      + DoubleToString(g_lot,2)          + ",";
-      js += "\"TP_USD\":"       + DoubleToString(g_tpUSD,2)        + ",";
-      js += "\"SL_USD\":"       + DoubleToString(g_slUSD,2)        + ",";
-      js += "\"MaxSpread\":"    + IntegerToString((int)g_maxSpread) + ",";
-      js += "\"MaxPositions\":" + IntegerToString(g_maxPositions)   + ",";
-      js += "\"CooldownSecs\":" + IntegerToString(g_cooldownSecs)   + ",";
-      js += "\"BotRunning\":"   + (g_botRunning?"1":"0")            + "}";
+      js += "\"LotSize\":"          + DoubleToString(g_lot,2)          + ",";
+      js += "\"TP_USD\":"           + DoubleToString(g_tpUSD,2)        + ",";
+      js += "\"SL_USD\":"           + DoubleToString(g_slUSD,2)        + ",";
+      js += "\"MaxSpread\":"        + IntegerToString((int)g_maxSpread) + ",";
+      js += "\"MaxPositions\":"     + IntegerToString(g_maxPositions)   + ",";
+      js += "\"CooldownSecs\":"     + IntegerToString(g_cooldownSecs)   + ",";
+      js += "\"BotRunning\":"       + (g_botRunning?"1":"0")            + ",";
+      js += "\"Direction\":"        + IntegerToString(g_direction)      + ",";
+      js += "\"MaxLossPerDay\":"    + DoubleToString(g_maxLossPerDay,2) + ",";
+      js += "\"MaxProfitPerDay\":"  + DoubleToString(g_maxProfitPerDay,2) + ",";
+      js += "\"TradeHoursStart\":"  + IntegerToString(g_tradeHoursStart) + ",";
+      js += "\"TradeHoursEnd\":"    + IntegerToString(g_tradeHoursEnd)   + "}";
       FileWriteString(fh, js);
       FileClose(fh);
       FileMove(tmp, FILE_COMMON, "GSX_Active.json", FILE_COMMON|FILE_REWRITE);
@@ -130,11 +149,27 @@ void LoadSettings()
 //+------------------------------------------------------------------+
 bool InTradingSession()
   {
-   if(!UseSession) return true;
    MqlDateTime dt;
    TimeToStruct(TimeGMT(), dt);
    int h = dt.hour;
-   return (h >= 12 && h < 20);
+   if(UseSession && g_tradeHoursStart == 0 && g_tradeHoursEnd == 23) return true; // legacy: UseSession=false means 24h
+   return (h >= g_tradeHoursStart && h <= g_tradeHoursEnd);
+  }
+
+bool DailyLimitHit()
+  {
+   MqlDateTime dt;
+   TimeToStruct(TimeCurrent(), dt);
+   string todayStr = StringFormat("%04d-%02d-%02d", dt.year, dt.mon, dt.day);
+   if(g_today != todayStr)
+     {
+      g_today = todayStr;
+      g_dayStartBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+     }
+   double dayPnL = AccountInfoDouble(ACCOUNT_BALANCE) - g_dayStartBalance;
+   if(dayPnL <= -g_maxLossPerDay)  return true;
+   if(dayPnL >= g_maxProfitPerDay) return true;
+   return false;
   }
 
 //+------------------------------------------------------------------+
@@ -231,12 +266,17 @@ void OnTick()
    if     (c[1] > o[1]) signal =  1;  // شمعة صاعدة → BUY
    else if(c[1] < o[1]) signal = -1;  // شمعة هابطة → SELL
 
+   // Direction filter
+   if(g_direction ==  1 && signal == -1) signal = 0;  // BUY only
+   if(g_direction == -1 && signal ==  1) signal = 0;  // SELL only
+
    long spread   = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    bool spreadOK = (spread <= (long)g_maxSpread);
    bool coolOK   = (TimeCurrent()-g_lastEntryTime >= g_cooldownSecs);
    bool slotsOK  = (CountMyPositions() < g_maxPositions);
    bool sessOK   = InTradingSession();
-   bool allOK    = spreadOK && coolOK && slotsOK && sessOK && atr1 > 0.0;
+   bool limitOK  = !DailyLimitHit();
+   bool allOK    = spreadOK && coolOK && slotsOK && sessOK && limitOK && atr1 > 0.0;
 
    if(signal != 0 && allOK && g_botRunning)
      {
@@ -245,7 +285,7 @@ void OnTick()
      }
 
    int cdLeft  = (int)MathMax(0, g_cooldownSecs-(TimeCurrent()-g_lastEntryTime));
-   bool blocked = !(spreadOK && slotsOK && sessOK);
+   bool blocked = !(spreadOK && slotsOK && sessOK && limitOK);
    bool emaUp   = ema91 > ema211;
    UpdateDashboard(emaUp?1:-1, rsi1, sessOK, signal,
                    blocked, cdLeft, CountMyPositions(), atr1, spread);
