@@ -458,7 +458,24 @@ void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal,
      { g_lastEntryTime = TimeCurrent(); g_totalTrades++;
        Print(EA_NAME,": ",modeTxt," lot=",lot," TP$=",g_tpUSD," SL$=",g_slUSD); }
    else
-     Print(EA_NAME,": FAIL [",modeTxt,"] ",trade.ResultRetcode()," ",trade.ResultComment());
+     {
+      uint rc = trade.ResultRetcode();
+      Print(EA_NAME,": FAIL [",modeTxt,"] ",rc," ",trade.ResultComment());
+      // fallback للـ MARKET إذا رفض الـ broker الـ pending order
+      if(g_orderType != 0 && (rc==10044||rc==10018||rc==10019||rc==10034))
+        {
+         Print(EA_NAME,": fallback → MARKET");
+         if(type==ORDER_TYPE_BUY)
+           { double sl2=NormalizeDouble(ask-slD,digs); double tp2=NormalizeDouble(ask+tpD,digs);
+             ok=trade.Buy(lot,_Symbol,ask,sl2,tp2,snap); }
+         else
+           { double sl2=NormalizeDouble(bid+slD,digs); double tp2=NormalizeDouble(bid-tpD,digs);
+             ok=trade.Sell(lot,_Symbol,bid,sl2,tp2,snap); }
+         if(ok) { g_lastEntryTime=TimeCurrent(); g_totalTrades++;
+                  Print(EA_NAME,": MARKET fallback OK"); }
+         else    Print(EA_NAME,": MARKET fallback FAIL ",trade.ResultRetcode());
+        }
+     }
   }
 
 //+------------------------------------------------------------------+
