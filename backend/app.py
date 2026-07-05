@@ -34,6 +34,7 @@ data_lock = Lock()
 latest_data = {
     "account": None,
     "positions": [],
+    "pending_orders": [],
     "last_update": None,
     "candles": [],
     "sessions": {},
@@ -310,9 +311,10 @@ def build_dashboard_payload():
         s = get_settings()
 
         return {
-            "account":      latest_data["account"],
-            "positions":    latest_data["positions"],
-            "history":      closed_trades[:50],
+            "account":        latest_data["account"],
+            "positions":      latest_data["positions"],
+            "pending_orders": latest_data["pending_orders"],
+            "history":        closed_trades[:50],
             "is_online":    is_online,
             "last_update":  latest_data["last_update"],
             "stats": {
@@ -494,9 +496,10 @@ def update_data():
 
     history_payload = payload.get("history")
     with data_lock:
-        latest_data["account"]     = payload.get("account")
-        latest_data["positions"]   = payload.get("positions", [])
-        latest_data["last_update"] = now
+        latest_data["account"]        = payload.get("account")
+        latest_data["positions"]      = payload.get("positions", [])
+        latest_data["pending_orders"] = payload.get("pending_orders", [])
+        latest_data["last_update"]    = now
 
         if latest_data["account"]:
             save_account(latest_data["account"], now)

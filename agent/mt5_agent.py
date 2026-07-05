@@ -84,6 +84,32 @@ def get_open_positions():
     return result
 
 
+def get_pending_orders():
+    orders = mt5.orders_get()
+    if orders is None:
+        return []
+    result = []
+    type_map = {
+        mt5.ORDER_TYPE_BUY_LIMIT:   "BUY LIMIT",
+        mt5.ORDER_TYPE_SELL_LIMIT:  "SELL LIMIT",
+        mt5.ORDER_TYPE_BUY_STOP:    "BUY STOP",
+        mt5.ORDER_TYPE_SELL_STOP:   "SELL STOP",
+    }
+    for o in orders:
+        result.append({
+            "ticket":    o.ticket,
+            "symbol":    o.symbol,
+            "type":      type_map.get(o.type, str(o.type)),
+            "volume":    o.volume_initial,
+            "price":     o.price_open,
+            "sl":        o.sl,
+            "tp":        o.tp,
+            "time":      datetime.fromtimestamp(o.time_setup).isoformat(),
+            "expiry":    datetime.fromtimestamp(o.time_expiration).isoformat() if o.time_expiration else None,
+        })
+    return result
+
+
 def detect_gold_symbol():
     """يكتشف رمز الذهب المتاح في الحساب تلقائياً"""
     candidates = ["XAUUSD", "XAUUSDm", "XAUUSD.", "GOLD", "XAUUSDc", "XAUUSD+"]
@@ -453,11 +479,14 @@ def main():
                 history = get_recent_history(days=30)
                 last_history_sync = now
 
+            pending = get_pending_orders()
+
             send_update({
-                "account":   account,
-                "positions": positions,
-                "history":   history if history else None,
-                "timestamp": datetime.now().isoformat(),
+                "account":        account,
+                "positions":      positions,
+                "pending_orders": pending,
+                "history":        history if history else None,
+                "timestamp":      datetime.now().isoformat(),
             })
 
             time.sleep(UPDATE_INTERVAL)

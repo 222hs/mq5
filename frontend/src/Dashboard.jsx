@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v1.6';
+const DASH_VERSION = 'v1.7';
 
 // ── Terminal palette (matches reference design) ─────────────────────
 const C = {
@@ -186,8 +186,9 @@ export default function Dashboard() {
   };
 
   // ── derive ─────────────────────────────────────────────────────
-  const account   = data?.account || null;
-  const positions = Array.isArray(data?.positions) ? data.positions : [];
+  const account        = data?.account || null;
+  const positions      = Array.isArray(data?.positions) ? data.positions : [];
+  const pendingOrders  = Array.isArray(data?.pending_orders) ? data.pending_orders : [];
   const history   = Array.isArray(data?.history)   ? data.history   : [];
   const stats     = data?.stats || { total_trades: 0, wins: 0, losses: 0, win_rate: 0, total_profit: 0 };
   const settings  = data?.settings || {};
@@ -789,6 +790,53 @@ export default function Dashboard() {
                           {fmtMoney(p.profit,true)}
                         </td>
                         <td style={{padding:'8px 8px', color:C.muted}}>{ageStr(p.time)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* ═══ PENDING ORDERS ══════════════════════════════════ */}
+        <div className="bcard" style={bCard({marginBottom:'1.25rem'})}>
+          <div style={{display:'flex', gap:12, alignItems:'baseline', marginBottom:10, flexWrap:'wrap'}}>
+            <span style={{fontSize:12, fontWeight:'bold', letterSpacing:'2px', color:C.ink}}>
+              <span style={{
+                display:'inline-block', width:8, height:8, marginRight:8,
+                background: pendingOrders.length?C.yellow:C.faint,
+                boxShadow: pendingOrders.length?'0 0 8px #f0b429':'none',
+              }}/>
+              &gt; PENDING ORDERS
+            </span>
+            <span style={bLabel()}>{pendingOrders.length} pending</span>
+          </div>
+          {pendingOrders.length === 0 ? (
+            <div style={bLabel({padding:'12px 0', color:C.muted})}>NO PENDING ORDERS · WAITING FOR SETUP_</div>
+          ) : (
+            <div style={{overflowX:'auto'}}>
+              <table style={{width:'100%', borderCollapse:'collapse', fontSize:12, minWidth:560}}>
+                <thead>
+                  <tr style={{borderBottom:'1px solid #30363d'}}>
+                    {['#TICKET','TYPE','SYM','VOL','PRICE','SL','TP','EXPIRY'].map(h=>(
+                      <th key={h} style={{...bLabel({padding:'6px 8px', textAlign:'left', color:C.yellow})}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingOrders.map((o,i)=>{
+                    const isBuy = o.type?.includes('BUY');
+                    return (
+                      <tr key={o.ticket??i} style={{borderBottom:`1px solid ${C.faint}`, borderLeft:`4px solid ${isBuy?C.neon:C.red}`}}>
+                        <td style={{padding:'8px 8px', color:C.muted}}>#{o.ticket}</td>
+                        <td style={{padding:'8px 8px', fontWeight:'bold', color:isBuy?C.neon:C.red, letterSpacing:'1px'}}>{o.type}</td>
+                        <td style={{padding:'8px 8px', color:C.yellow}}>{o.symbol}</td>
+                        <td style={{padding:'8px 8px'}}>{o.volume}</td>
+                        <td style={{padding:'8px 8px', fontVariantNumeric:'tabular-nums'}}>{o.price?.toFixed?.(o.price>100?2:5)??o.price}</td>
+                        <td style={{padding:'8px 8px', color:C.red, fontVariantNumeric:'tabular-nums'}}>{o.sl||'--'}</td>
+                        <td style={{padding:'8px 8px', color:C.neon, fontVariantNumeric:'tabular-nums'}}>{o.tp||'--'}</td>
+                        <td style={{padding:'8px 8px', color:C.muted, fontSize:10}}>{o.expiry?o.expiry.replace('T',' ').slice(0,16):'--'}</td>
                       </tr>
                     );
                   })}
