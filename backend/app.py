@@ -725,8 +725,27 @@ def api_get_snapshot(ticket):
     snap = get_snapshot(ticket)
     if not snap:
         return jsonify({"error": "not found"}), 404
-    # لا نرسل الشمعات الكاملة في كل مرة — ندار من الـ dashboard
     return jsonify(snap)
+
+
+@app.route("/api/snapshots", methods=["GET"])
+def api_get_snapshots():
+    limit = int(request.args.get("limit", 50))
+    snaps = get_snapshots(limit)
+    result = []
+    for s in snaps:
+        result.append({
+            "ticket":      s.get("ticket"),
+            "symbol":      s.get("symbol"),
+            "direction":   s.get("direction"),
+            "entry_price": s.get("entry_price"),
+            "rsi":         s.get("rsi"),
+            "atr":         s.get("atr"),
+            "ema_up":      s.get("ema_up"),
+            "session":     s.get("session"),
+            "candles":     s.get("candles", [])[-30:],
+        })
+    return jsonify(result)
 
 
 @app.route("/api/candles", methods=["POST"])

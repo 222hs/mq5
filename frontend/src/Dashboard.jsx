@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v2.8';
+const DASH_VERSION = 'v2.9';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -103,6 +103,9 @@ export default function Dashboard() {
   const socketRef = useRef(null);
   const [logs, setLogs] = useState([]);
   const logBoxRef = useRef(null);
+  const [showAnalysis, setShowAnalysis] = useState(false);
+  const [snapshots, setSnapshots] = useState([]);
+  const [snapLoading, setSnapLoading] = useState(false);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -214,6 +217,17 @@ export default function Dashboard() {
       clearTimeout(popupTimer.current);
     };
   }, []);
+
+  const loadSnapshots = async () => {
+    setSnapLoading(true);
+    try {
+      const r = await fetch(`${API_URL}/api/snapshots?limit=50`, { headers: {'X-API-Key': API_KEY} });
+      if (r.ok) setSnapshots(await r.json());
+    } catch(_) {}
+    setSnapLoading(false);
+  };
+
+  const openAnalysis = () => { setShowAnalysis(true); loadSnapshots(); };
 
   const botControl = async (action) => {
     setBusy(true);
@@ -432,6 +446,11 @@ export default function Dashboard() {
           }}>
             BOT:{botRunning?'RUNNING':'HALTED'}
           </span>
+          <button onClick={openAnalysis} style={{
+            fontFamily:C.mono, fontWeight:'bold', fontSize:11, letterSpacing:'2px',
+            padding:'5px 14px', border:`2px solid #ff9900`, borderRadius:2,
+            background:'transparent', color:'#ff9900', cursor:'pointer',
+          }}>◆ ANALYSIS</button>
         </div>
         {/* Middle: symbol + account */}
         <div style={{display:'flex', gap:20, alignItems:'center', flexWrap:'wrap'}}>
@@ -1373,6 +1392,148 @@ export default function Dashboard() {
             <button className="bbtn"
               onClick={()=>{ setTradePopup(null); setTradeSnapshot(null); }}
               style={bBtn(true,{width:'100%',marginTop:16})}>CLOSE</button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ ANALYSIS MODAL ══════════════════════════════════ */}
+      {showAnalysis && (
+        <div style={{
+          position:'fixed', inset:0, background:'rgba(0,0,0,0.92)',
+          zIndex:1100, display:'flex', flexDirection:'column',
+          fontFamily:C.mono,
+        }}>
+          {/* Header */}
+          <div style={{
+            display:'flex', alignItems:'center', justifyContent:'space-between',
+            padding:'14px 20px', borderBottom:`2px solid #ff9900`,
+            background:C.surface, flexShrink:0,
+          }}>
+            <div style={{fontSize:13, fontWeight:'bold', letterSpacing:'3px', color:'#ff9900'}}>
+              ◆ ANALYSIS · TRADE SNAPSHOTS
+            </div>
+            <div style={{display:'flex', gap:10, alignItems:'center'}}>
+              <span style={{fontSize:10, color:C.muted}}>{snapshots.length} snapshots</span>
+              <button onClick={loadSnapshots} style={{
+                fontFamily:C.mono, fontSize:9, padding:'4px 10px', letterSpacing:'1px',
+                border:`1px solid ${C.neon}`, color:C.neon, background:'transparent', cursor:'pointer',
+              }}>⟳ REFRESH</button>
+              <button onClick={()=>setShowAnalysis(false)} style={{
+                fontFamily:C.mono, fontSize:11, padding:'5px 14px', letterSpacing:'2px',
+                border:`2px solid ${C.red}`, color:C.red, background:'transparent', cursor:'pointer',
+                fontWeight:'bold',
+              }}>✕ CLOSE</button>
+            </div>
+          </div>
+
+          {/* Pattern AI result */}
+          {patternAdvice && (
+            <div style={{
+              padding:'10px 20px', background:'rgba(255,153,0,0.08)',
+              borderBottom:`1px solid rgba(255,153,0,0.3)`,
+              fontSize:10, color:'#ff9900', letterSpacing:'1px', flexShrink:0,
+            }}>
+              <span style={{fontWeight:'bold', marginRight:8}}>◆ AI:</span>
+              {patternAdvice.split('\n').join('  ·  ')}
+            </div>
+          )}
+
+          {/* Snapshots grid */}
+          <div style={{overflowY:'auto', padding:'16px 20px', flex:1}}>
+            {snapLoading ? (
+              <div style={{color:C.muted, fontSize:12, textAlign:'center', paddingTop:40}}>
+                جاري التحميل...
+              </div>
+            ) : snapshots.length === 0 ? (
+              <div style={{color:C.muted, fontSize:12, textAlign:'center', paddingTop:40}}>
+                لا توجد snapshots بعد — الـ snapshots تُحفظ عند فتح كل صفقة
+              </div>
+            ) : (
+              <div style={{
+                display:'grid',
+                gridTemplateColumns:'repeat(auto-fill, minmax(260px, 1fr))',
+                gap:12,
+              }}>
+                {snapshots.map((s, idx) => {
+                  const isBuy = s.direction === 'BUY';
+                  const candles = s.candles || [];
+                  const W = 240, H = 80, n = Math.min(candles.length, 30);
+                  const sliced = candles.slice(-n);
+                  const allH = sliced.map(c=>c.h), allL = sliced.map(c=>c.l);
+                  const hi = Math.max(...allH), lo = Math.min(...allL);
+                  const range = hi - lo || 1;
+                  const cw = W / n;
+                  const yP = v => H - ((v - lo) / range) * H;
+
+                  return (
+                    <div key={idx} style={{
+                      background:C.surface,
+                      border:`1px solid ${isBuy?'rgba(0,255,65,0.3)':'rgba(255,69,96,0.3)'}`,
+                      padding:'10px',
+                    }}>
+                      {/* Title */}
+                      <div style={{display:'flex', justifyContent:'space-between', marginBottom:6}}>
+                        <span style={{fontSize:9, fontWeight:'bold', color: isBuy?C.neon:C.red, letterSpacing:'1px'}}>
+                          {isBuy?'▲ BUY':'▼ SELL'} #{s.ticket}
+                        </span>
+                        <span style={{fontSize:9, color:C.muted}}>{s.session}</span>
+                      </div>
+
+                      {/* Mini candlestick chart */}
+                      {candles.length > 0 ? (
+                        <svg width={W} height={H} style={{display:'block', marginBottom:6}}>
+                          {sliced.map((c, i) => {
+                            const x = i * cw + cw * 0.15;
+                            const bw = cw * 0.7;
+                            const isGreen = c.c >= c.o;
+                            const col = isGreen ? '#00ff41' : '#ff4560';
+                            const bodyT = yP(Math.max(c.o, c.c));
+                            const bodyB = yP(Math.min(c.o, c.c));
+                            const bodyH = Math.max(bodyB - bodyT, 1);
+                            return (
+                              <g key={i}>
+                                <line x1={x+bw/2} y1={yP(c.h)} x2={x+bw/2} y2={yP(c.l)} stroke={col} strokeWidth={0.8}/>
+                                <rect x={x} y={bodyT} width={bw} height={bodyH} fill={col} opacity={0.85}/>
+                              </g>
+                            );
+                          })}
+                          {/* Entry line */}
+                          {s.entry_price && (
+                            <line
+                              x1={0} y1={yP(s.entry_price)}
+                              x2={W} y2={yP(s.entry_price)}
+                              stroke='#f0b429' strokeWidth={1} strokeDasharray='3,2'
+                            />
+                          )}
+                        </svg>
+                      ) : (
+                        <div style={{height:H, display:'flex', alignItems:'center', justifyContent:'center', color:C.muted, fontSize:9}}>
+                          NO CANDLE DATA
+                        </div>
+                      )}
+
+                      {/* Indicators */}
+                      <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+                        {[
+                          {k:'RSI', v: s.rsi!=null?s.rsi.toFixed(0):'--', c: s.rsi>60?C.red:s.rsi<40?C.neon:C.muted},
+                          {k:'EMA', v: s.ema_up?'↑ BULL':'↓ BEAR', c: s.ema_up?C.neon:C.red},
+                          {k:'ATR', v: s.atr!=null?s.atr.toFixed(1):'--', c:C.yellow},
+                          {k:'@',   v: s.entry_price!=null?s.entry_price.toFixed(2):'--', c:C.ink},
+                        ].map(({k,v,c})=>(
+                          <div key={k} style={{
+                            fontSize:9, padding:'2px 6px',
+                            border:`1px solid rgba(255,255,255,0.1)`,
+                            color:c, letterSpacing:'1px',
+                          }}>
+                            {k}: {v}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
