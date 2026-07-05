@@ -64,7 +64,7 @@ double NormLot(double lot)
 //--- إدارة الصفقات المفتوحة: خروج زمني + TP/SL بالمؤشرات
 void ManagePositions()
   {
-   double pt = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    for(int i = PositionsTotal()-1; i >= 0; i--)
      {
       if(!posInfo.SelectByIndex(i)) continue;
@@ -74,8 +74,8 @@ void ManagePositions()
       int      age     = (int)((TimeCurrent()-openAt)/60); // عمر الصفقة بالدقائق
 
       double profit = posInfo.Profit() + posInfo.Swap();
-      double tpDist = TP_Points * pt;
-      double slDist = SL_Points * pt;
+      double tpDist = TP_Points * tickSize;
+      double slDist = SL_Points * tickSize;
 
       // TP
       if(profit >= tpDist * NormLot(LotSize) * 100)
@@ -144,14 +144,14 @@ void OnTick()
    if(CopyBuffer(hADX, 0, 0, 2, adx)   < 2) return;
    if(CopyClose(_Symbol, TF, 0, 2, close) < 2) return;
 
-   double pt   = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   double tickSz = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    double ask  = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double bid  = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    int    digs = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
    long   sl0  = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
-   double minD = MathMax((double)(sl0+5), 10.0) * pt;
-   double tpD  = MathMax(TP_Points * pt, minD);
-   double slD  = MathMax(SL_Points * pt, minD);
+   double minD = MathMax((double)(sl0+5), 10.0) * tickSz;
+   double tpD  = MathMax(TP_Points * tickSz, minD);
+   double slD  = MathMax(SL_Points * tickSz, minD);
    double lot  = NormLot(LotSize);
 
    bool adxOK = (adx[1] < ADX_Max); // سوق عرضي فقط

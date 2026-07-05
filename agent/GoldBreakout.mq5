@@ -174,13 +174,13 @@ void OnTick()
    if(rangeSize > RangeMaxATR * atr[0])
      { Print("GoldBreakout: range too wide (", DoubleToString(rangeSize,_Digits), " > ", DoubleToString(RangeMaxATR*atr[0],_Digits), ")"); return; }
 
-   double pt    = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   double tickSz= SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    double ask   = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double bid   = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    int    digs  = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
    long   sl0   = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
-   double minD  = MathMax((double)(sl0+5), 10.0) * pt;
-   double offset= MathMax(BreakoutOffset * pt, minD);
+   double minD  = MathMax((double)(sl0+5), 10.0) * tickSz;
+   double offset= MathMax(BreakoutOffset * tickSz, minD);
    double lot   = NormLot(LotSize);
 
    double tpDist = MathMax(rangeSize * TP_RangeMulti, minD*2);
