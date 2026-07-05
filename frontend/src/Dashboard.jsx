@@ -1156,56 +1156,94 @@ export default function Dashboard() {
               }}>{saveMsg}</span>
             )}
           </div>
-          {showSettings && settingsDraft && (
-            <div style={{display:'flex', gap:12, marginTop:14, flexWrap:'wrap', alignItems:'flex-end'}}>
-              {settingKeys.map(k=>(
-                <div key={k} style={{display:'flex', flexDirection:'column', gap:4}}>
-                  <div style={bLabel({fontSize:9, color:C.yellow})}>{k}</div>
-                  <input
-                    type="number" step="any"
-                    value={settingsDraft[k]??''}
-                    onChange={e=>{settingsDirty.current=true;setSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}));}}
-                    style={{
-                      fontFamily:C.mono, fontSize:12, width:88,
-                      padding:'6px 8px', background:C.bg,
-                      border:C.border, color:C.neon,
-                    }}
-                  />
-                  <button className="bbtn"
-                    onClick={()=>saveSingle(k,settingsDraft[k])}
-                    disabled={busy}
-                    style={bBtn(false,{fontSize:9,padding:'4px 6px',letterSpacing:'1px'})}>
-                    SAVE
-                  </button>
+          {showSettings && (
+            <div style={{display:'flex', gap:'1.25rem', marginTop:14, flexWrap:'wrap', alignItems:'flex-start'}}>
+              {/* ── GOLD SETTINGS PANEL ── */}
+              {settingsDraft && (
+                <div style={{flex:'1 1 340px', minWidth:300, background:C.bg, border:'1px solid rgba(255,204,0,0.4)', padding:'1rem'}}>
+                  <div style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#ffd700', marginBottom:12}}>⚙ GOLD SETTINGS</div>
+                  <div style={{display:'flex', gap:10, flexWrap:'wrap', alignItems:'flex-end'}}>
+                    {settingKeys.map(k=>(
+                      <div key={k} style={{display:'flex', flexDirection:'column', gap:4}}>
+                        <div style={bLabel({fontSize:9, color:C.yellow})}>{k}</div>
+                        <input
+                          type="number" step="any"
+                          value={settingsDraft[k]??''}
+                          onChange={e=>{settingsDirty.current=true;setSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}));}}
+                          style={{fontFamily:C.mono, fontSize:12, width:88, padding:'6px 8px', background:'#0d1117', border:'1px solid rgba(255,204,0,0.4)', color:C.neon}}
+                        />
+                        <button className="bbtn" onClick={()=>saveSingle(k,settingsDraft[k])} disabled={busy}
+                          style={bBtn(false,{fontSize:9,padding:'4px 6px',letterSpacing:'1px'})}>SAVE</button>
+                      </div>
+                    ))}
+                    {/* Gold Claude toggle */}
+                    <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                      <div style={bLabel({fontSize:9, color:C.yellow})}>CLAUDE AI</div>
+                      <button className="bbtn"
+                        onClick={()=>{ const v=(settingsDraft.ClaudeEnabled??1)===1?0:1; setSettingsDraft(d=>({...d,ClaudeEnabled:v})); saveSingle('ClaudeEnabled',v); }}
+                        style={bBtn((settingsDraft.ClaudeEnabled??1)===1,{padding:'6px 14px'})}>
+                        {(settingsDraft.ClaudeEnabled??1)===1?'ON':'OFF'}
+                      </button>
+                    </div>
+                    {/* Gold BotRunning toggle */}
+                    <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                      <div style={bLabel({fontSize:9, color:C.yellow})}>BOT ON/OFF</div>
+                      <button className="bbtn"
+                        onClick={()=>{ const v=(settingsDraft.BotRunning??1)===1?0:1; setSettingsDraft(d=>({...d,BotRunning:v})); saveSingle('BotRunning',v); }}
+                        style={bBtn((settingsDraft.BotRunning??1)===1,{padding:'6px 14px'})}>
+                        {(settingsDraft.BotRunning??1)===1?'ON':'OFF'}
+                      </button>
+                    </div>
+                    {/* Gold Dynamic Risk toggle */}
+                    <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                      <div style={bLabel({fontSize:9, color:'#00aaff'})}>SL/TP DYNAMIC</div>
+                      <button className="bbtn"
+                        onClick={()=>{ const v=(settingsDraft.DynamicRisk??0)===1?0:1; setSettingsDraft(d=>({...d,DynamicRisk:v})); saveSingle('DynamicRisk',v); }}
+                        style={bBtn((settingsDraft.DynamicRisk??0)===1,{padding:'6px 14px', borderColor:(settingsDraft.DynamicRisk??0)===1?'#00aaff':'undefined'})}>
+                        {(settingsDraft.DynamicRisk??0)===1?'ON':'OFF'}
+                      </button>
+                      <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>BaseLot={settingsDraft.BaseLot??0.5}</div>
+                    </div>
+                  </div>
                 </div>
-              ))}
-              {/* Claude toggle */}
-              <div style={{display:'flex', flexDirection:'column', gap:4}}>
-                <div style={bLabel({fontSize:9, color:C.yellow})}>CLAUDE AI</div>
-                <button className="bbtn"
-                  onClick={()=>{
-                    const v=(settingsDraft.ClaudeEnabled??1)===1?0:1;
-                    setSettingsDraft(d=>({...d,ClaudeEnabled:v}));
-                    saveSingle('ClaudeEnabled',v);
-                  }}
-                  style={bBtn((settingsDraft.ClaudeEnabled??1)===1,{padding:'6px 14px'})}>
-                  {(settingsDraft.ClaudeEnabled??1)===1?'ON':'OFF'}
-                </button>
-              </div>
-              {/* Dynamic Risk toggle */}
-              <div style={{display:'flex', flexDirection:'column', gap:4}}>
-                <div style={bLabel({fontSize:9, color:'#00aaff'})}>SL/TP DYNAMIC</div>
-                <button className="bbtn"
-                  onClick={()=>{
-                    const v=(settingsDraft.DynamicRisk??0)===1?0:1;
-                    setSettingsDraft(d=>({...d,DynamicRisk:v}));
-                    saveSingle('DynamicRisk',v);
-                  }}
-                  style={bBtn((settingsDraft.DynamicRisk??0)===1,{padding:'6px 14px', borderColor:(settingsDraft.DynamicRisk??0)===1?'#00aaff':'undefined'})}>
-                  {(settingsDraft.DynamicRisk??0)===1?'ON':'OFF'}
-                </button>
-                <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>
-                  BaseLot={settingsDraft.BaseLot??0.5}
+              )}
+
+              {/* ── BTC SETTINGS PANEL ── */}
+              <div style={{flex:'1 1 340px', minWidth:300, background:C.bg, border:'1px solid rgba(0,170,255,0.4)', padding:'1rem'}}>
+                <div style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#00aaff', marginBottom:12}}>₿ BTC SETTINGS</div>
+                <div style={{display:'flex', gap:10, flexWrap:'wrap', alignItems:'flex-end'}}>
+                  {['LotSize','TP_USD','SL_USD','MaxSpread','MaxPositions','CooldownSecs','MaxLossPerDay','MaxProfitPerDay','TradeHoursStart','TradeHoursEnd','RSIBuyMax','RSISellMin','BaseLot'].map(k=>(
+                    <div key={k} style={{display:'flex', flexDirection:'column', gap:4}}>
+                      <div style={bLabel({fontSize:9, color:'#00aaff'})}>{k}</div>
+                      <input
+                        type="number" step="any"
+                        value={btcSettingsDraft[k]??''}
+                        onChange={e=>{btcSettingsDirty.current=true;setBtcSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}));}}
+                        style={{fontFamily:C.mono, fontSize:12, width:88, padding:'6px 8px', background:'#0d1117', border:'1px solid rgba(0,170,255,0.4)', color:'#00aaff'}}
+                      />
+                      <button className="bbtn" onClick={()=>saveBtcSingle(k,btcSettingsDraft[k])} disabled={busy}
+                        style={bBtn(false,{fontSize:9,padding:'4px 6px',letterSpacing:'1px',borderColor:'rgba(0,170,255,0.5)',color:'#00aaff'})}>SAVE</button>
+                    </div>
+                  ))}
+                  {/* BTC BotRunning toggle */}
+                  <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                    <div style={bLabel({fontSize:9, color:'#00aaff'})}>BOT ON/OFF</div>
+                    <button className="bbtn"
+                      onClick={()=>{ const v=(btcSettingsDraft.BotRunning??1)===1?0:1; setBtcSettingsDraft(d=>({...d,BotRunning:v})); saveBtcSingle('BotRunning',v); }}
+                      style={bBtn((btcSettingsDraft.BotRunning??1)===1,{padding:'6px 14px', borderColor:'#00aaff', color:(btcSettingsDraft.BotRunning??1)===1?'#000':'#00aaff'})}>
+                      {(btcSettingsDraft.BotRunning??1)===1?'ON':'OFF'}
+                    </button>
+                  </div>
+                  {/* BTC Dynamic Risk toggle */}
+                  <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                    <div style={bLabel({fontSize:9, color:'#00aaff'})}>SL/TP DYNAMIC</div>
+                    <button className="bbtn"
+                      onClick={()=>{ const v=(btcSettingsDraft.DynamicRisk??0)===1?0:1; setBtcSettingsDraft(d=>({...d,DynamicRisk:v})); saveBtcSingle('DynamicRisk',v); }}
+                      style={bBtn((btcSettingsDraft.DynamicRisk??0)===1,{padding:'6px 14px', borderColor:'#00aaff', color:(btcSettingsDraft.DynamicRisk??0)===1?'#000':'#00aaff'})}>
+                      {(btcSettingsDraft.DynamicRisk??0)===1?'ON':'OFF'}
+                    </button>
+                    <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>BaseLot={btcSettingsDraft.BaseLot??0.01}</div>
+                  </div>
                 </div>
               </div>
             </div>
