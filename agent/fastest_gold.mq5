@@ -89,7 +89,7 @@ double ReadSetting(const string name, const double fallback)
    string s = FileReadString(fh);
    FileClose(fh);
    double v = StringToDouble(s);
-   return (s == "" || v == 0.0 && s != "0" && s != "0.0") ? fallback : v;
+   return (s == "" || (v == 0.0 && s != "0" && s != "0.0")) ? fallback : v;
   }
 
 //+------------------------------------------------------------------+
@@ -137,7 +137,7 @@ void LoadSettings()
    // نطبع فقط لما تتغير الإعدادات
    string hash = DoubleToString(lot,2)+DoubleToString(tp,2)+DoubleToString(sl,2)
                + IntegerToString(maxPos)+DoubleToString(spread,0)
-               + IntegerToString(hStart)+IntegerToString(hEnd)+(botOn?"1":"0");
+               + IntegerToString(hStart)+IntegerToString(hEnd)+(botOn ? "1" : "0");
    bool changed = (hash != g_lastSettingsHash);
    g_lastSettingsHash = hash;
 
