@@ -59,6 +59,14 @@ int      g_cooldownSecs;
 double   g_maxSpread;
 double   g_tpUSD;
 double   g_slUSD;
+double   g_maxLossPerDay;
+double   g_maxProfitPerDay;
+int      g_tradeHoursStart;
+int      g_tradeHoursEnd;
+
+// Day P&L tracking
+double   g_dayPL   = 0.0;
+datetime g_today   = 0;
 
 //+------------------------------------------------------------------+
 long MagicFromSymbol(const string sym)
@@ -105,21 +113,46 @@ void LoadSettings()
    g_maxSpread  = ReadJsonValue("MaxSpread",    (double)MaxSpread);
    g_maxPositions=(int)ReadJsonValue("MaxPositions",(double)MaxPositions);
    g_cooldownSecs=(int)ReadJsonValue("CooldownSecs",(double)CooldownSecs);
-   g_tpUSD      = ReadJsonValue("TP_USD",       3.0);
-   g_slUSD      = ReadJsonValue("SL_USD",       2.0);
-   g_botRunning = (ReadJsonValue("BotRunning",  1.0) > 0.5);
+   g_tpUSD           = ReadJsonValue("TP_USD",           3.0);
+   g_slUSD           = ReadJsonValue("SL_USD",           2.0);
+   g_maxLossPerDay   = ReadJsonValue("MaxLossPerDay",   50.0);
+   g_maxProfitPerDay = ReadJsonValue("MaxProfitPerDay", 200.0);
+   g_tradeHoursStart = (int)ReadJsonValue("TradeHoursStart", 0.0);
+   g_tradeHoursEnd   = (int)ReadJsonValue("TradeHoursEnd",  23.0);
+   g_botRunning      = (ReadJsonValue("BotRunning",  1.0) > 0.5);
    Print(EA_NAME," settings: lot=",g_lot," TP$=",g_tpUSD," SL$=",g_slUSD,
-         " maxPos=",g_maxPositions," spread=",g_maxSpread);
+         " maxPos=",g_maxPositions," spread=",g_maxSpread,
+         " maxLoss$=",g_maxLossPerDay," maxProfit$=",g_maxProfitPerDay,
+         " hours=",g_tradeHoursStart,"-",g_tradeHoursEnd);
+  }
+
+//+------------------------------------------------------------------+
+bool InTradingHours()
+  {
+   MqlDateTime dt;
+   TimeToStruct(TimeGMT(), dt);
+   int h = dt.hour;
+   if(g_tradeHoursStart <= g_tradeHoursEnd)
+      return (h >= g_tradeHoursStart && h < g_tradeHoursEnd);
+   return (h >= g_tradeHoursStart || h < g_tradeHoursEnd); // overnight wrap
+  }
+
+//+------------------------------------------------------------------+
+bool DayLimitHit()
+  {
+   MqlDateTime dt;
+   TimeToStruct(TimeCurrent(), dt);
+   datetime today = (datetime)(TimeCurrent() - dt.hour*3600 - dt.min*60 - dt.sec);
+   if(today != g_today) { g_today = today; g_dayPL = 0.0; }
+   if(g_maxLossPerDay > 0.0   && g_dayPL <= -g_maxLossPerDay)   return true;
+   if(g_maxProfitPerDay > 0.0 && g_dayPL >=  g_maxProfitPerDay) return true;
+   return false;
   }
 
 //+------------------------------------------------------------------+
 bool InTradingSession()
   {
-   if(!UseSession) return true;
-   MqlDateTime dt;
-   TimeToStruct(TimeGMT(), dt);
-   int h = dt.hour;
-   return (h >= 12 && h < 20); // London/NY overlap — best gold hours
+   return InTradingHours();
   }
 
 //+------------------------------------------------------------------+
@@ -263,8 +296,9 @@ void OnTick()
    bool spreadOK = (spread <= (long)g_maxSpread);
    bool coolOK   = (TimeCurrent()-g_lastEntryTime >= g_cooldownSecs);
    bool slotsOK  = (CountMyPositions() < g_maxPositions);
-   bool sessOK   = InTradingSession();
-   bool allOK    = spreadOK && coolOK && slotsOK && sessOK && atr1 > 0.0;
+   bool sessOK   = InTradingHours();
+   bool dayOK    = !DayLimitHit();
+   bool allOK    = spreadOK && coolOK && slotsOK && sessOK && dayOK && atr1 > 0.0;
 
    if(signal != 0 && allOK && g_botRunning)
      {
@@ -277,7 +311,7 @@ void OnTick()
      }
 
    int cdLeft = (int)MathMax(0, g_cooldownSecs-(TimeCurrent()-g_lastEntryTime));
-   bool blocked = !(spreadOK && slotsOK && sessOK);
+   bool blocked = !(spreadOK && slotsOK && sessOK && dayOK);
 
    bool emaUp = ema91 > ema211;
    UpdateDashboard(
@@ -352,6 +386,23 @@ void ManagePositions()
   }
 
 //+------------------------------------------------------------------+
+void OnTradeTransaction(const MqlTradeTransaction &trans,
+                        const MqlTradeRequest &req,
+                        const MqlTradeResult &res)
+  {
+   if(trans.type != TRADE_TRANSACTION_DEAL_ADD) return;
+   ulong dealTicket = trans.deal;
+   if(dealTicket == 0) return;
+   if(!HistoryDealSelect(dealTicket)) return;
+   if(HistoryDealGetInteger(dealTicket, DEAL_MAGIC) != g_magic) return;
+   if(HistoryDealGetInteger(dealTicket, DEAL_ENTRY) != DEAL_ENTRY_OUT) return;
+   double profit     = HistoryDealGetDouble(dealTicket, DEAL_PROFIT);
+   double swap       = HistoryDealGetDouble(dealTicket, DEAL_SWAP);
+   double commission = HistoryDealGetDouble(dealTicket, DEAL_COMMISSION);
+   g_dayPL += profit + swap + commission;
+  }
+
+//+------------------------------------------------------------------+
 //| Dashboard                                                        |
 //+------------------------------------------------------------------+
 void DLabel(const string id,const string txt,const int x,const int y,
@@ -399,7 +450,7 @@ void DDivider(const string id,const int y)
 //+------------------------------------------------------------------+
 void CreateDashboard()
   {
-   int panelH=PAD+TITLE_H+4*8+11*ROW_H+PAD;
+   int panelH=PAD+TITLE_H+5*8+17*ROW_H+PAD;
    string bg=DASH_PREFIX+"BG";
    if(ObjectFind(0,bg)<0)
       ObjectCreate(0,bg,OBJ_RECTANGLE_LABEL,0,0,0);
@@ -426,15 +477,22 @@ void CreateDashboard()
    DLabel("K_RSI",   "RSI(7)",   xK,y,CLR_KEY); y+=ROW_H;
    DDivider("D1",y); y+=8;
 
-   DLabel("K_SESS",  "Session",  xK,y,CLR_KEY); y+=ROW_H;
+   DLabel("K_SESS",  "Hours",    xK,y,CLR_KEY); y+=ROW_H;
    DLabel("K_SIG",   "Signal",   xK,y,CLR_KEY); y+=ROW_H;
    DLabel("K_ENTRY", "Entry",    xK,y,CLR_KEY); y+=ROW_H;
    DDivider("D2",y); y+=8;
 
    DLabel("K_POS",   "Positions",xK,y,CLR_KEY); y+=ROW_H;
    DLabel("K_PNL",   "Float P&L",xK,y,CLR_KEY); y+=ROW_H;
+   DLabel("K_DAYPNL","Day P&L",  xK,y,CLR_KEY); y+=ROW_H;
    DLabel("K_TRADES","Trades",   xK,y,CLR_KEY); y+=ROW_H;
    DDivider("D3",y); y+=8;
+
+   DLabel("K_LOT",   "Lot",      xK,y,CLR_KEY); y+=ROW_H;
+   DLabel("K_TPSL",  "TP$/SL$",  xK,y,CLR_KEY); y+=ROW_H;
+   DLabel("K_DLOSS", "MaxLoss$", xK,y,CLR_KEY); y+=ROW_H;
+   DLabel("K_DPROF", "MaxProfit$",xK,y,CLR_KEY); y+=ROW_H;
+   DDivider("D4",y); y+=8;
 
    DLabel("K_SPREAD","Spread",   xK,y,CLR_KEY); y+=ROW_H;
    DLabel("K_ATR",   "ATR(14)",  xK,y,CLR_KEY);
@@ -459,7 +517,10 @@ void UpdateDashboard(const int trend,const double rsi,
    color rClr=rsi>=70?CLR_BAD:rsi<=30?CLR_GOOD:CLR_NEUTRAL;
    DLabel("V_RSI",DoubleToString(rsi,1),xV,y,rClr); y+=ROW_H+8;
 
-   DLabel("V_SESS",sessOK?"ACTIVE":"CLOSED",xV,y,sessOK?CLR_GOOD:CLR_BAD); y+=ROW_H;
+   bool dayHit = DayLimitHit();
+   string sessStr = dayHit ? "DAY LIMIT" : (sessOK ? "ACTIVE" : "CLOSED");
+   color  sessClr = dayHit ? CLR_BAD : (sessOK ? CLR_GOOD : CLR_BAD);
+   DLabel("V_SESS",sessStr,xV,y,sessClr); y+=ROW_H;
 
    string sTxt=signal>0?"BUY ▲":signal<0?"SELL ▼":"NONE";
    color  sClr=signal>0?CLR_GOOD:signal<0?CLR_BAD:CLR_NEUTRAL;
@@ -478,7 +539,19 @@ void UpdateDashboard(const int trend,const double rsi,
    color  plClr=pl>0?CLR_GOOD:pl<0?CLR_BAD:CLR_NEUTRAL;
    DLabel("V_PNL",(pl>=0?"+":"")+DoubleToString(pl,2),xV,y,plClr); y+=ROW_H;
 
+   color dpClr=g_dayPL>0?CLR_GOOD:g_dayPL<0?CLR_BAD:CLR_NEUTRAL;
+   DLabel("V_DAYPNL",(g_dayPL>=0?"+":"")+DoubleToString(g_dayPL,2),xV,y,dpClr); y+=ROW_H;
+
    DLabel("V_TRADES",string(g_totalTrades),xV,y,CLR_NEUTRAL); y+=ROW_H+8;
+
+   DLabel("V_LOT",DoubleToString(g_lot,2),xV,y,CLR_HILITE); y+=ROW_H;
+   DLabel("V_TPSL","$"+DoubleToString(g_tpUSD,2)+" / $"+DoubleToString(g_slUSD,2),xV,y,CLR_HILITE); y+=ROW_H;
+
+   bool lossLimitNear = (g_dayPL <= -g_maxLossPerDay*0.8);
+   DLabel("V_DLOSS","$"+DoubleToString(g_maxLossPerDay,2),xV,y,lossLimitNear?CLR_BAD:CLR_NEUTRAL); y+=ROW_H;
+
+   bool profLimitNear = (g_maxProfitPerDay>0 && g_dayPL >= g_maxProfitPerDay*0.8);
+   DLabel("V_DPROF","$"+DoubleToString(g_maxProfitPerDay,2),xV,y,profLimitNear?CLR_GOOD:CLR_NEUTRAL); y+=ROW_H+8;
 
    color spClr=spreadPts>(long)g_maxSpread?CLR_BAD:spreadPts>200?clrOrange:CLR_NEUTRAL;
    DLabel("V_SPREAD",string(spreadPts)+" pts",xV,y,spClr); y+=ROW_H;
