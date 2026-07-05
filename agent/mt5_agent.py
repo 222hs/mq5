@@ -153,28 +153,6 @@ def get_recent_history(days=30):
     return result
 
 
-def write_global_variables(settings):
-    """يكتب الإعدادات مباشرةً في MT5 Global Variables — بدون ملفات"""
-    mapping = {
-        "GSX_LotSize":         float(settings.get("LotSize",        0.5)),
-        "GSX_TP_USD":          float(settings.get("TP_USD",          4.0)),
-        "GSX_SL_USD":          float(settings.get("SL_USD",          2.0)),
-        "GSX_MaxSpread":       float(settings.get("MaxSpread",       9999)),
-        "GSX_MaxPositions":    float(settings.get("MaxPositions",      10)),
-        "GSX_CooldownSecs":    float(settings.get("CooldownSecs",       0)),
-        "GSX_MaxLossPerDay":   float(settings.get("MaxLossPerDay",    50.0)),
-        "GSX_MaxProfitPerDay": float(settings.get("MaxProfitPerDay", 200.0)),
-        "GSX_TradeHoursStart": float(settings.get("TradeHoursStart",    0)),
-        "GSX_TradeHoursEnd":   float(settings.get("TradeHoursEnd",     24)),
-        "GSX_BotRunning":      float(1 if settings.get("BotRunning", True) else 0),
-    }
-    ok = 0
-    for name, value in mapping.items():
-        if mt5.globalvariable_set(name, value):
-            ok += 1
-    print(f"   🔧 Global Variables: {ok}/{len(mapping)} مكتوبة | Lot={mapping['GSX_LotSize']}")
-
-
 def send_update(data):
     try:
         response = requests.post(
@@ -289,9 +267,6 @@ def sync_settings():
                 _last_settings_hash = new_hash
             else:
                 print(f"   ✓ لا تغييرات")
-
-            # كتابة مباشرة في MT5 Global Variables (أسرع وأكثر موثوقية من الملف)
-            write_global_variables(settings)
 
             content = json.dumps(settings, indent=2, ensure_ascii=False)
             os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)

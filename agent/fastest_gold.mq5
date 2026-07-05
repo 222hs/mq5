@@ -80,11 +80,34 @@ long MagicFromSymbol(const string sym)
   }
 
 //+------------------------------------------------------------------+
-double GVar(const string name, const double fallback)
+double ReadJsonValue(const string key, const double fallback)
   {
-   // يقرأ من MT5 Global Variables — يكتبها الـ Agent مباشرةً في RAM (لا ملفات)
-   if(!GlobalVariableCheck(name)) return fallback;
-   return GlobalVariableGet(name);
+   int fh = FileOpen(SETTINGS_FILE, FILE_READ|FILE_TXT|FILE_ANSI|FILE_COMMON);
+   if(fh == INVALID_HANDLE)
+     {
+      if(key == "LotSize")
+         Print(EA_NAME,": ⚠️ فشل فتح ",SETTINGS_FILE," — ",GetLastError()," — inputs defaults");
+      return fallback;
+     }
+   string content = "";
+   while(!FileIsEnding(fh))
+      content += FileReadString(fh);
+   FileClose(fh);
+   string search = "\"" + key + "\"";
+   int pos = StringFind(content, search);
+   if(pos < 0) return fallback;
+   pos += StringLen(search);
+   while(pos < StringLen(content) && (StringGetCharacter(content,pos)==' ' ||
+         StringGetCharacter(content,pos)==':' || StringGetCharacter(content,pos)=='\t'))
+      pos++;
+   string num = "";
+   while(pos < StringLen(content))
+     {
+      ushort c = StringGetCharacter(content, pos);
+      if(c=='-'||c=='.'||(c>='0'&&c<='9')) { num+=ShortToString(c); pos++; }
+      else break;
+     }
+   return StringLen(num)==0 ? fallback : StringToDouble(num);
   }
 
 //+------------------------------------------------------------------+
@@ -115,17 +138,17 @@ void WriteCurrentSettings()
 
 void LoadSettings()
   {
-   g_lot             = GVar("GSX_LotSize",        LotSize);
-   g_maxSpread       = GVar("GSX_MaxSpread",       (double)MaxSpread);
-   g_maxPositions    = (int)GVar("GSX_MaxPositions",(double)MaxPositions);
-   g_cooldownSecs    = (int)GVar("GSX_CooldownSecs",(double)CooldownSecs);
-   g_tpUSD           = GVar("GSX_TP_USD",          3.0);
-   g_slUSD           = GVar("GSX_SL_USD",          2.0);
-   g_maxLossPerDay   = GVar("GSX_MaxLossPerDay",  50.0);
-   g_maxProfitPerDay = GVar("GSX_MaxProfitPerDay",200.0);
-   g_tradeHoursStart = (int)GVar("GSX_TradeHoursStart", 0.0);
-   g_tradeHoursEnd   = (int)GVar("GSX_TradeHoursEnd",  24.0);
-   g_botRunning      = (GVar("GSX_BotRunning", 1.0) > 0.5);
+   g_lot             = ReadJsonValue("LotSize",        LotSize);
+   g_maxSpread       = ReadJsonValue("MaxSpread",       (double)MaxSpread);
+   g_maxPositions    = (int)ReadJsonValue("MaxPositions",(double)MaxPositions);
+   g_cooldownSecs    = (int)ReadJsonValue("CooldownSecs",(double)CooldownSecs);
+   g_tpUSD           = ReadJsonValue("TP_USD",          3.0);
+   g_slUSD           = ReadJsonValue("SL_USD",          2.0);
+   g_maxLossPerDay   = ReadJsonValue("MaxLossPerDay",  50.0);
+   g_maxProfitPerDay = ReadJsonValue("MaxProfitPerDay",200.0);
+   g_tradeHoursStart = (int)ReadJsonValue("TradeHoursStart", 0.0);
+   g_tradeHoursEnd   = (int)ReadJsonValue("TradeHoursEnd",  24.0);
+   g_botRunning      = (ReadJsonValue("BotRunning", 1.0) > 0.5);
    Print(EA_NAME," ✅ إعدادات محملة:"
          " Lot=",g_lot,
          " TP$=",g_tpUSD,
