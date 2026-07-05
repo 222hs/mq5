@@ -492,17 +492,6 @@ void OpenBasket(const ENUM_ORDER_TYPE dir, const double atrVal,
    double minD   = MathMax((double)(sl0+frz+5), 10.0) * tickSz;
    double lot    = CalcLot();
 
-   // فلتر: لا تدخل إذا الـ spread يأكل أكثر من 30% من الـ SL
-   long spread_ob = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
-   double spreadCost_ob = spread_ob * SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-   double slThreshold_ob = EffectiveSL(lot) * 0.30;
-   if(slThreshold_ob > 0 && spreadCost_ob > slThreshold_ob)
-     {
-      Print(EA_NAME,": SKIP — spread $",DoubleToString(spreadCost_ob,2),
-            " > 30% of SL $",DoubleToString(EffectiveSL(lot),2));
-      return;
-     }
-
    double tickVal  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
    double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    double pointVal = (tickSize > 0.0 && lot > 0.0) ? (tickVal / tickSize) * lot : 1.0;
@@ -600,17 +589,6 @@ void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal,
    long   frz    = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_FREEZE_LEVEL);
    double minD   = MathMax((double)(sl0+frz+5), 10.0) * tickSz;
    double lot    = CalcLot();
-
-   // فلتر: لا تدخل إذا الـ spread يأكل أكثر من 30% من الـ SL
-   long spread_ot = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
-   double spreadCost_ot = spread_ot * SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-   double slThreshold_ot = EffectiveSL(lot) * 0.30;
-   if(slThreshold_ot > 0 && spreadCost_ot > slThreshold_ot)
-     {
-      Print(EA_NAME,": SKIP — spread $",DoubleToString(spreadCost_ot,2),
-            " > 30% of SL $",DoubleToString(EffectiveSL(lot),2));
-      return;
-     }
 
    // تحويل SL/TP من دولار لمسافة سعرية
    double tickVal  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
