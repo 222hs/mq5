@@ -81,6 +81,36 @@ def get_open_positions():
     return result
 
 
+def get_candles(symbol="XAUUSD", timeframe=mt5.TIMEFRAME_M1, count=80):
+    """يجلب آخر N شمعة M1"""
+    rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
+    if rates is None:
+        return []
+    result = []
+    for r in rates:
+        result.append({
+            "t": int(r["time"]),
+            "o": float(r["open"]),
+            "h": float(r["high"]),
+            "l": float(r["low"]),
+            "c": float(r["close"]),
+        })
+    return result
+
+
+def get_trading_sessions():
+    """يرجع الوقت الحالي وحالة جلسات التداول"""
+    now_utc = datetime.utcnow()
+    h = now_utc.hour
+    return {
+        "utc_hour": h,
+        "london":  7 <= h < 16,
+        "ny":      13 <= h < 22,
+        "tokyo":   0 <= h < 9,
+        "active":  7 <= h < 22,
+    }
+
+
 def get_recent_history(days=30):
     from_date = datetime.now().timestamp() - (days * 24 * 60 * 60)
     deals = mt5.history_deals_get(datetime.fromtimestamp(from_date), datetime.now())
@@ -185,10 +215,15 @@ def main():
                 history = get_recent_history(days=30)
                 last_history_sync = now
 
+            candles  = get_candles()
+            sessions = get_trading_sessions()
+
             send_update({
                 "account":   account,
                 "positions": positions,
                 "history":   history if history else None,
+                "candles":   candles,
+                "sessions":  sessions,
                 "timestamp": datetime.now().isoformat(),
             })
 

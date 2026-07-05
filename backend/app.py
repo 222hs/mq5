@@ -29,6 +29,8 @@ latest_data = {
     "account": None,
     "positions": [],
     "last_update": None,
+    "candles": [],
+    "sessions": {},
 }
 
 DEFAULT_SETTINGS = {
@@ -191,6 +193,10 @@ def update_data():
         latest_data["account"]     = payload.get("account")
         latest_data["positions"]   = payload.get("positions", [])
         latest_data["last_update"] = now
+        if payload.get("candles"):
+            latest_data["candles"] = payload.get("candles", [])
+        if payload.get("sessions"):
+            latest_data["sessions"] = payload.get("sessions", {})
 
         if latest_data["account"]:
             save_account(latest_data["account"], now)
@@ -232,6 +238,8 @@ def get_dashboard():
             },
             "settings":    get_settings(),
             "bot_running": int(get_settings().get("BotRunning", 1)) == 1,
+            "candles":     latest_data["candles"],
+            "sessions":    latest_data["sessions"],
         })
 
 

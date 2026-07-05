@@ -141,6 +141,8 @@ export default function Dashboard() {
   const settings = data?.settings || {};
   const isOnline = !!data?.is_online;
   const botRunning = !!data?.bot_running;
+  const candles = Array.isArray(data?.candles) ? data.candles : [];
+  const sessions = data?.sessions || {};
 
   const netOf = t => (t.profit || 0) + (t.swap || 0) + (t.commission || 0);
 
@@ -336,34 +338,92 @@ export default function Dashboard() {
           <div style={label({ marginTop: 2 })}>STREAK {streak}</div>
         </div>
 
-        {/* --- CASH FLOW / TRADE HISTORY BARS (span 1) --- */}
+        {/* --- M1 CANDLESTICK CHART (span 1) --- */}
         <div style={card()}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <div style={label()}>CASH FLOW · WIN STACK</div>
-            <div style={{ fontSize: 15, fontWeight: 900, color: pnlColor }}>{fmtMoney(stats.total_profit, true)}</div>
-          </div>
-          <div style={label({ margin: '4px 0 10px 0' })}>
-            {stats.total_trades} TRADES · {Math.ceil(spanDays)} DAYS · {stats.win_rate}% WIN RATE
-          </div>
-          <svg width="100%" height={Math.max(60, bars.length * 14)} style={{ display: 'block' }}>
-            {bars.map((b, i) => {
-              const w = (Math.abs(b.net) / maxAbs) * 44;
-              const y = i * 14;
-              const win = b.net > 0;
-              return (
-                <g key={b.ticket ?? i}>
-                  <line x1="50%" y1={y} x2="50%" y2={y + 10} stroke={C.border} strokeWidth="1" />
-                  <rect
-                    x={win ? '50%' : `${50 - w}%`} y={y + 1} width={`${Math.max(0.4, w)}%`} height={8}
-                    fill={win ? C.greenBright : C.red}
-                  />
-                </g>
-              );
-            })}
-            {bars.length === 0 && (
-              <text x="50%" y="30" textAnchor="middle" fontSize="10" fill={C.dim} fontFamily={C.mono} letterSpacing="2">NO CLOSED TRADES</text>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+            <div style={label()}>XAUUSD · M1 · LIVE</div>
+            {candles.length > 0 && (
+              <div style={{ fontSize: 13, fontWeight: 900, color: candles[candles.length-1]?.c >= candles[candles.length-1]?.o ? C.green : C.red }}>
+                {candles[candles.length-1]?.c?.toFixed(2)}
+              </div>
             )}
-          </svg>
+          </div>
+          {/* Trading sessions */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            {[
+              { name: 'TOKYO', key: 'tokyo', hours: '00-09' },
+              { name: 'LONDON', key: 'london', hours: '07-16' },
+              { name: 'NY', key: 'ny', hours: '13-22' },
+            ].map(s => (
+              <div key={s.key} style={{
+                flex: 1, textAlign: 'center', padding: '4px 2px',
+                background: sessions[s.key] ? C.green : C.border,
+                color: sessions[s.key] ? '#fff' : C.dim,
+                fontSize: 9, letterSpacing: 1, fontFamily: C.mono,
+              }}>
+                <div style={{ fontWeight: 900 }}>{s.name}</div>
+                <div style={{ opacity: 0.8 }}>{s.hours} UTC</div>
+              </div>
+            ))}
+          </div>
+          {/* Candlestick SVG */}
+          {candles.length < 2 ? (
+            <div style={label({ padding: '20px 0', textAlign: 'center' })}>AWAITING CANDLE DATA</div>
+          ) : (() => {
+            const last = candles.slice(-60);
+            const W = 400, H = 200, padL = 8, padR = 45, padT = 8, padB = 8;
+            const cw = Math.max(2, (W - padL - padR) / last.length);
+            const allH = last.flatMap(c => [c.h, c.l]);
+            const lo = Math.min(...allH), hi = Math.max(...allH);
+            const range = Math.max(hi - lo, 0.01);
+            const Y = v => padT + ((hi - v) / range) * (H - padT - padB);
+            const X = i => padL + i * cw + cw * 0.1;
+            // find open positions entry prices for markers
+            const entryPrices = positions.map(p => p.price_open);
+            return (
+              <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+                {/* price grid lines */}
+                {[0, 0.25, 0.5, 0.75, 1].map(f => {
+                  const price = lo + f * range;
+                  const y = Y(price);
+                  return (
+                    <g key={f}>
+                      <line x1={padL} y1={y} x2={W - padR} y2={y} stroke={C.border} strokeWidth="0.5" strokeDasharray="3 3" />
+                      <text x={W - padR + 4} y={y + 3} fontSize="8" fill={C.dim} fontFamily={C.mono}>{price.toFixed(1)}</text>
+                    </g>
+                  );
+                })}
+                {/* candles */}
+                {last.map((c, i) => {
+                  const bull = c.c >= c.o;
+                  const col = bull ? C.green : C.red;
+                  const cx = X(i) + cw * 0.4;
+                  const bodyT = Y(Math.max(c.o, c.c));
+                  const bodyB = Y(Math.min(c.o, c.c));
+                  const bodyH = Math.max(1, bodyB - bodyT);
+                  return (
+                    <g key={c.t ?? i}>
+                      {/* wick */}
+                      <line x1={cx} y1={Y(c.h)} x2={cx} y2={Y(c.l)} stroke={col} strokeWidth="0.8" />
+                      {/* body */}
+                      <rect x={X(i)} y={bodyT} width={Math.max(1, cw * 0.8)} height={bodyH} fill={col} />
+                    </g>
+                  );
+                })}
+                {/* entry price lines for open positions */}
+                {entryPrices.map((p, i) => {
+                  const y = Y(p);
+                  if (y < 0 || y > H) return null;
+                  return (
+                    <g key={i}>
+                      <line x1={padL} y1={y} x2={W - padR} y2={y} stroke={C.amber} strokeWidth="1" strokeDasharray="4 2" />
+                      <text x={W - padR + 4} y={y + 3} fontSize="8" fill={C.amber} fontFamily={C.mono}>{p?.toFixed(1)}</text>
+                    </g>
+                  );
+                })}
+              </svg>
+            );
+          })()}
         </div>
 
         {/* --- 24H PNL CHART (span 2) --- */}
