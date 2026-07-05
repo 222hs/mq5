@@ -389,8 +389,11 @@ void OnTick()
       int slots = g_maxPositions - CountMyPositions();
       if(slots > 0)
         {
-         if(signal == 1) OpenBasket(ORDER_TYPE_BUY,  atr1, c[1], h[1], l[1], slots);
-         else            OpenBasket(ORDER_TYPE_SELL, atr1, c[1], h[1], l[1], slots);
+         ENUM_ORDER_TYPE dir = (signal == 1) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+         if(g_orderType == 3)
+            OpenBasket(dir, atr1, c[1], h[1], l[1], slots);
+         else
+            OpenTrade(dir, atr1, c[1], h[1], l[1]);
         }
      }
 
@@ -458,6 +461,12 @@ void OpenBasket(const ENUM_ORDER_TYPE dir, const double atrVal,
    bool isBuy = (dir == ORDER_TYPE_BUY);
    int  fired  = 0;
 
+   // هل البروكر يقبل pending orders لهذا الرمز؟
+   ENUM_SYMBOL_TRADE_EXECUTION execMode =
+      (ENUM_SYMBOL_TRADE_EXECUTION)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_EXECUTION_MODE);
+   bool pendingOK = (execMode == SYMBOL_TRADE_EXECUTION_EXCHANGE ||
+                     execMode == SYMBOL_TRADE_EXECUTION_MARKET);
+
    // ── [0] MARKET — فوري دائماً ────────────────────────────────────
    if(slots >= 1)
      {
@@ -474,7 +483,7 @@ void OpenBasket(const ENUM_ORDER_TYPE dir, const double atrVal,
      }
 
    // ── [1] STOP — يصطاد الكسر فوق High / تحت Low ─────────────────
-   if(slots >= 2 && SymbolTradable())
+   if(slots >= 2 && SymbolTradable() && pendingOK)
      {
       double buf = MathMax(tickSz * 5, minD);
       bool ok;
@@ -494,7 +503,7 @@ void OpenBasket(const ENUM_ORDER_TYPE dir, const double atrVal,
      }
 
    // ── [2] LIMIT — يصطاد الرجوع لـ close الشمعة ───────────────────
-   if(slots >= 3 && SymbolTradable())
+   if(slots >= 3 && SymbolTradable() && pendingOK)
      {
       bool ok;
       if(isBuy)
