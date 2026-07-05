@@ -582,8 +582,6 @@ def sync_btc_settings():
 def sync_settings():
     """يسحب الإعدادات من الصفحة ويكتبها للبوت — مع retry تلقائي"""
     global _last_settings_hash
-    # أولاً: seed — إذا Railway انعمل له redeploy، نرجّع إعداداتنا قبل السحب
-    push_local_settings()
     for attempt in range(2):
         try:
             r = _session.get(
@@ -784,6 +782,9 @@ def main():
                 print(f"🧹 حذف {os.path.basename(fpath)} (متلوث بقيم الذهب)")
         except Exception:
             pass
+
+    # عند الـ startup فقط: ارفع الإعدادات المحلية للـ backend (Railway redeploy recovery)
+    push_local_settings()
 
     # بناء snapshots من MT5 history مباشرة ثم رفعها
     threading.Thread(target=bootstrap_snapshots, daemon=True).start()
