@@ -1,24 +1,26 @@
 //+------------------------------------------------------------------+
 //|                                                GoldScalperEA.mq5 |
-//|                                        GoldScalperX version 7.00 |
+//|                                        GoldScalperX version 9.00 |
+//|  Gold-specialized scalper — EMA9/21 + RSI7 + session filter      |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "7.01"
+#property version   "9.00"
 #property strict
 
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
 
 //--- inputs
-input double          LotSize      = 0.5;        // Lot size
-input ENUM_TIMEFRAMES TF           = PERIOD_M1;  // Working timeframe
-input int             MaxPositions = 15;         // Max open positions
-input int             CooldownSecs = 5;          // Cooldown between entries (sec)
-input int             MaxSpread    = 500;        // Max spread (points)
+input double          LotSize      = 0.5;       // Lot size
+input ENUM_TIMEFRAMES TF           = PERIOD_M1; // Working timeframe
+input int             MaxPositions = 15;        // Max open positions
+input int             CooldownSecs = 3;         // Cooldown between entries (sec)
+input int             MaxSpread    = 150;       // Max spread in points (150=15 pips)
+input bool            UseSession   = true;      // Filter: London+NY sessions only
 
 //--- constants
 #define EA_NAME     "GoldScalperX"
-#define EA_VERSION  "7.01"
+#define EA_VERSION  "9.00"
 #define GV_PREFIX   "GSX_"
 #define DASH_PREFIX "GSX_D_"
 
@@ -27,7 +29,7 @@ CTrade         trade;
 CPositionInfo  posInfo;
 
 long     g_magic         = 0;
-int      hRSI = INVALID_HANDLE, hEMA8 = INVALID_HANDLE, hEMA21 = INVALID_HANDLE, hATR = INVALID_HANDLE;
+int      hRSI = INVALID_HANDLE, hEMA9 = INVALID_HANDLE, hEMA21 = INVALID_HANDLE, hATR = INVALID_HANDLE;
 datetime g_lastEntryTime = 0;
 int      g_totalTrades   = 0;
 
@@ -36,8 +38,6 @@ int      g_maxPositions;
 int      g_cooldownSecs;
 double   g_maxSpread;
 
-//+------------------------------------------------------------------+
-//| Magic number from symbol name hash (djb2)                        |
 //+------------------------------------------------------------------+
 long MagicFromSymbol(const string sym)
   {
@@ -48,8 +48,6 @@ long MagicFromSymbol(const string sym)
    return (long)(100000 + (h % 900000));
   }
 
-//+------------------------------------------------------------------+
-//| Read setting from MT5 Global Variable with fallback              |
 //+------------------------------------------------------------------+
 double GVOrDefault(const string name, const double fallback)
   {
@@ -69,20 +67,32 @@ void LoadSettings()
   }
 
 //+------------------------------------------------------------------+
+//| Check if current hour is within London or NY session (UTC)       |
+//+------------------------------------------------------------------+
+bool InTradingSession()
+  {
+   if(!UseSession) return true;
+   MqlDateTime dt;
+   TimeToStruct(TimeGMT(), dt);
+   int h = dt.hour;
+   // London: 07:00-17:00 UTC | NY: 13:00-21:00 UTC → combined 07:00-21:00
+   return (h >= 7 && h < 21);
+  }
+
+//+------------------------------------------------------------------+
 int OnInit()
   {
    g_magic = MagicFromSymbol(_Symbol);
-
    trade.SetExpertMagicNumber(g_magic);
    trade.SetDeviationInPoints(50);
    trade.SetTypeFillingBySymbol(_Symbol);
 
    hRSI   = iRSI(_Symbol, TF, 7, PRICE_CLOSE);
-   hEMA8  = iMA(_Symbol, TF, 8,  0, MODE_EMA, PRICE_CLOSE);
+   hEMA9  = iMA(_Symbol, TF, 9,  0, MODE_EMA, PRICE_CLOSE);
    hEMA21 = iMA(_Symbol, TF, 21, 0, MODE_EMA, PRICE_CLOSE);
-   hATR   = iATR(_Symbol, TF, 14);
+   hATR   = iATR(_Symbol, TF, 7);
 
-   if(hRSI == INVALID_HANDLE || hEMA8 == INVALID_HANDLE ||
+   if(hRSI == INVALID_HANDLE || hEMA9 == INVALID_HANDLE ||
       hEMA21 == INVALID_HANDLE || hATR == INVALID_HANDLE)
      {
       Print(EA_NAME, ": failed to create indicator handles");
@@ -91,6 +101,8 @@ int OnInit()
 
    LoadSettings();
    CreateDashboard();
+   Print(EA_NAME, " v", EA_VERSION, " initialized | Magic=", g_magic,
+         " | TF=", EnumToString(TF));
    return(INIT_SUCCEEDED);
   }
 
@@ -98,15 +110,13 @@ int OnInit()
 void OnDeinit(const int reason)
   {
    if(hRSI   != INVALID_HANDLE) IndicatorRelease(hRSI);
-   if(hEMA8  != INVALID_HANDLE) IndicatorRelease(hEMA8);
+   if(hEMA9  != INVALID_HANDLE) IndicatorRelease(hEMA9);
    if(hEMA21 != INVALID_HANDLE) IndicatorRelease(hEMA21);
    if(hATR   != INVALID_HANDLE) IndicatorRelease(hATR);
    ObjectsDeleteAll(0, DASH_PREFIX);
    ChartRedraw();
   }
 
-//+------------------------------------------------------------------+
-//| Count positions of this EA on this symbol                        |
 //+------------------------------------------------------------------+
 int CountMyPositions()
   {
@@ -130,50 +140,88 @@ double MyFloatingPL()
   }
 
 //+------------------------------------------------------------------+
+//| Strong candle: body > 40% of total range (filter weak dojis)    |
+//+------------------------------------------------------------------+
+bool StrongBullCandle(const double open1, const double close1,
+                      const double high1, const double low1)
+  {
+   double body  = close1 - open1;
+   double range = high1  - low1;
+   if(range < 1e-10) return false;
+   return (body > 0.0 && body / range >= 0.4);
+  }
+
+bool StrongBearCandle(const double open1, const double close1,
+                      const double high1, const double low1)
+  {
+   double body  = open1  - close1;
+   double range = high1  - low1;
+   if(range < 1e-10) return false;
+   return (body > 0.0 && body / range >= 0.4);
+  }
+
+//+------------------------------------------------------------------+
 void OnTick()
   {
    LoadSettings();
 
-   //--- indicator buffers (series orientation: index 0 = current)
-   double rsi[], ema8[], ema21[], atr[], close[];
-   ArraySetAsSeries(rsi,   true);
-   ArraySetAsSeries(ema8,  true);
-   ArraySetAsSeries(ema21, true);
-   ArraySetAsSeries(atr,   true);
-   ArraySetAsSeries(close, true);
+   double rsi[], ema9[], ema21[], atr[];
+   double open1[], high1[], low1[], close1[];
+   ArraySetAsSeries(rsi,    true);
+   ArraySetAsSeries(ema9,   true);
+   ArraySetAsSeries(ema21,  true);
+   ArraySetAsSeries(atr,    true);
+   ArraySetAsSeries(open1,  true);
+   ArraySetAsSeries(high1,  true);
+   ArraySetAsSeries(low1,   true);
+   ArraySetAsSeries(close1, true);
 
-   if(CopyBuffer(hRSI,   0, 0, 3, rsi)   < 3) return;
-   if(CopyBuffer(hEMA8,  0, 0, 3, ema8)  < 3) return;
-   if(CopyBuffer(hEMA21, 0, 0, 3, ema21) < 3) return;
-   if(CopyBuffer(hATR,   0, 0, 2, atr)   < 2) return;
-   if(CopyClose(_Symbol, TF, 0, 3, close) < 3) return;
+   if(CopyBuffer(hRSI,   0, 0, 3, rsi)    < 3) return;
+   if(CopyBuffer(hEMA9,  0, 0, 3, ema9)   < 3) return;
+   if(CopyBuffer(hEMA21, 0, 0, 3, ema21)  < 3) return;
+   if(CopyBuffer(hATR,   0, 0, 2, atr)    < 2) return;
+   if(CopyOpen  (_Symbol, TF, 0, 3, open1)  < 3) return;
+   if(CopyHigh  (_Symbol, TF, 0, 3, high1)  < 3) return;
+   if(CopyLow   (_Symbol, TF, 0, 3, low1)   < 3) return;
+   if(CopyClose (_Symbol, TF, 0, 3, close1) < 3) return;
 
-   double curRSI  = rsi[0];
-   double curATR  = atr[0];
-   bool   emaUp   = ema8[0] > ema21[0];
-   bool   emaDown = ema8[0] < ema21[0];
-   bool   crossDn = (ema8[1] >= ema21[1] && ema8[0] < ema21[0]);
-   bool   crossUp = (ema8[1] <= ema21[1] && ema8[0] > ema21[0]);
-   bool   momUp   = close[0] > close[1];
-   bool   momDown = close[0] < close[1];
+   double curRSI = rsi[0];
+   double curATR = atr[0];
 
-   //--- smart exits + trailing
+   // EMA trend on current bar
+   bool emaUp   = ema9[0] > ema21[0];
+   bool emaDown = ema9[0] < ema21[0];
+
+   // EMA9/21 crossover (bar[1] to bar[0])
+   bool crossUp = (ema9[1] <= ema21[1] && ema9[0] > ema21[0]);
+   bool crossDn = (ema9[1] >= ema21[1] && ema9[0] < ema21[0]);
+
+   // Candle quality on the last completed bar (index 1)
+   bool bullBar = StrongBullCandle(open1[1], close1[1], high1[1], low1[1]);
+   bool bearBar = StrongBearCandle(open1[1], close1[1], high1[1], low1[1]);
+
+   //--- manage open positions
    ManagePositions(curRSI, crossUp, crossDn, curATR);
 
-   //--- entry signal
+   //--- entry: crossover OR trend + candle confirmation
+   //    BUY:  (EMA cross up OR emaUp) AND RSI 40-78 AND strong bull bar last candle
+   //    SELL: (EMA cross dn OR emaDown) AND RSI 22-60 AND strong bear bar last candle
    string signal = "NONE";
-   if(emaUp && curRSI >= 45.0 && curRSI <= 75.0 && momUp)
+   if((crossUp || emaUp) && curRSI >= 40.0 && curRSI <= 78.0 && bullBar)
       signal = "BUY";
-   else if(emaDown && curRSI >= 25.0 && curRSI <= 55.0 && momDown)
+   else if((crossDn || emaDown) && curRSI >= 22.0 && curRSI <= 60.0 && bearBar)
       signal = "SELL";
 
-   //--- entry filters
+   //--- filters
    long spread     = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    bool spreadOK   = (spread <= (long)g_maxSpread);
    bool cooldownOK = (TimeCurrent() - g_lastEntryTime >= g_cooldownSecs);
    bool slotsOK    = (CountMyPositions() < g_maxPositions);
+   bool sessionOK  = InTradingSession();
 
-   if(signal != "NONE" && spreadOK && cooldownOK && slotsOK && curATR > 0.0)
+   bool allOK = spreadOK && cooldownOK && slotsOK && sessionOK && curATR > 0.0;
+
+   if(signal != "NONE" && allOK)
      {
       if(signal == "BUY")
          OpenTrade(ORDER_TYPE_BUY, curATR);
@@ -181,7 +229,7 @@ void OnTick()
          OpenTrade(ORDER_TYPE_SELL, curATR);
      }
 
-   UpdateDashboard(emaUp, emaDown, curRSI, signal, spreadOK && cooldownOK && slotsOK);
+   UpdateDashboard(emaUp, emaDown, curRSI, signal, spreadOK && cooldownOK && slotsOK && sessionOK);
   }
 
 //+------------------------------------------------------------------+
@@ -192,10 +240,12 @@ void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal)
    double point  = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
    int    digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
    long   stopsLevel = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
-   double minDist = stopsLevel * point;
+   long   freezeLevel= SymbolInfoInteger(_Symbol, SYMBOL_TRADE_FREEZE_LEVEL);
+   double minDist = MathMax((double)(stopsLevel + freezeLevel + 5), 10.0) * point;
 
+   // SL = 1.5x ATR, TP = 2.0x ATR (RR 1:1.33) — gold-tuned
    double slDist = MathMax(atrVal * 1.5, minDist);
-   double tpDist = MathMax(atrVal * 2.5, minDist);
+   double tpDist = MathMax(atrVal * 2.0, minDist * 1.5);
 
    double lot = NormalizeLot(g_lot);
    double sl, tp;
@@ -218,7 +268,12 @@ void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal)
      {
       g_lastEntryTime = TimeCurrent();
       g_totalTrades++;
+      Print(EA_NAME, ": ", EnumToString(type), " lot=", lot,
+            " sl=", sl, " tp=", tp, " atr=", DoubleToString(atrVal, 5));
      }
+   else
+      Print(EA_NAME, ": open failed retcode=", trade.ResultRetcode(),
+            " comment=", trade.ResultComment());
   }
 
 //+------------------------------------------------------------------+
@@ -229,12 +284,9 @@ double NormalizeLot(double lot)
    double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
    if(lotStep > 0.0)
       lot = MathFloor(lot / lotStep) * lotStep;
-   lot = MathMax(minLot, MathMin(maxLot, lot));
-   return lot;
+   return MathMax(minLot, MathMin(maxLot, lot));
   }
 
-//+------------------------------------------------------------------+
-//| Smart exits and ATR trailing stop                                |
 //+------------------------------------------------------------------+
 void ManagePositions(const double curRSI, const bool crossUp,
                      const bool crossDn, const double atrVal)
@@ -242,15 +294,13 @@ void ManagePositions(const double curRSI, const bool crossUp,
    double point  = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
    int    digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
    long   stopsLevel = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
-   double minDist = stopsLevel * point;
+   double minDist = MathMax((double)(stopsLevel + 5), 10.0) * point;
    double trail   = MathMax(atrVal * 1.0, minDist);
 
    for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
-      if(!posInfo.SelectByIndex(i))
-         continue;
-      if(posInfo.Symbol() != _Symbol || posInfo.Magic() != g_magic)
-         continue;
+      if(!posInfo.SelectByIndex(i)) continue;
+      if(posInfo.Symbol() != _Symbol || posInfo.Magic() != g_magic) continue;
 
       ulong  ticket    = posInfo.Ticket();
       double openPrice = posInfo.PriceOpen();
@@ -260,30 +310,22 @@ void ManagePositions(const double curRSI, const bool crossUp,
 
       if(posInfo.PositionType() == POSITION_TYPE_BUY)
         {
-         double priceGain = curPrice - openPrice;
-         //--- smart close
-         if(curRSI > 75.0 || crossDn || (atrVal > 0.0 && priceGain >= atrVal * 1.5))
-           {
-            trade.PositionClose(ticket);
-            continue;
-           }
-         //--- trailing stop
-         if(atrVal > 0.0 && priceGain > trail)
+         double gain = curPrice - openPrice;
+         if(curRSI > 78.0 || crossDn || (atrVal > 0.0 && gain >= atrVal * 2.0))
+           { trade.PositionClose(ticket); continue; }
+         if(atrVal > 0.0 && gain > trail)
            {
             double newSL = NormalizeDouble(curPrice - trail, digits);
             if(newSL > sl + point && curPrice - newSL >= minDist)
                trade.PositionModify(ticket, newSL, tp);
            }
         }
-      else // SELL
+      else
         {
-         double priceGain = openPrice - curPrice;
-         if(curRSI < 25.0 || crossUp || (atrVal > 0.0 && priceGain >= atrVal * 1.5))
-           {
-            trade.PositionClose(ticket);
-            continue;
-           }
-         if(atrVal > 0.0 && priceGain > trail)
+         double gain = openPrice - curPrice;
+         if(curRSI < 22.0 || crossUp || (atrVal > 0.0 && gain >= atrVal * 2.0))
+           { trade.PositionClose(ticket); continue; }
+         if(atrVal > 0.0 && gain > trail)
            {
             double newSL = NormalizeDouble(curPrice + trail, digits);
             if((sl == 0.0 || newSL < sl - point) && newSL - curPrice >= minDist)
@@ -303,8 +345,8 @@ void CreateDashboard()
    ObjectSetInteger(0, bg, OBJPROP_CORNER,      CORNER_LEFT_UPPER);
    ObjectSetInteger(0, bg, OBJPROP_XDISTANCE,   10);
    ObjectSetInteger(0, bg, OBJPROP_YDISTANCE,   20);
-   ObjectSetInteger(0, bg, OBJPROP_XSIZE,       250);
-   ObjectSetInteger(0, bg, OBJPROP_YSIZE,       205);
+   ObjectSetInteger(0, bg, OBJPROP_XSIZE,       260);
+   ObjectSetInteger(0, bg, OBJPROP_YSIZE,       215);
    ObjectSetInteger(0, bg, OBJPROP_BGCOLOR,     C'15,15,25');
    ObjectSetInteger(0, bg, OBJPROP_BORDER_TYPE, BORDER_FLAT);
    ObjectSetInteger(0, bg, OBJPROP_COLOR,       clrDimGray);
@@ -312,8 +354,8 @@ void CreateDashboard()
    ObjectSetInteger(0, bg, OBJPROP_SELECTABLE,  false);
    ObjectSetInteger(0, bg, OBJPROP_HIDDEN,      true);
 
-   string labels[9] = {"TITLE","MAGIC","TREND","RSI","SIGNAL","ENTRY","POS","PL","TRADES"};
-   for(int i = 0; i < 9; i++)
+   string labels[10] = {"TITLE","MAGIC","TREND","RSI","SESSION","SIGNAL","ENTRY","POS","PL","TRADES"};
+   for(int i = 0; i < 10; i++)
      {
       string name = DASH_PREFIX + labels[i];
       ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
@@ -340,27 +382,28 @@ void SetLabel(const string suffix, const string text, const color clr)
 void UpdateDashboard(const bool emaUp, const bool emaDown, const double rsiVal,
                      const string signal, const bool ready)
   {
-   string trend = emaUp ? "UP" : (emaDown ? "DOWN" : "FLAT");
-   color  trClr = emaUp ? clrLime : (emaDown ? clrOrangeRed : clrSilver);
+   string trend  = emaUp ? "UP" : (emaDown ? "DOWN" : "FLAT");
+   color  trClr  = emaUp ? clrLime : (emaDown ? clrOrangeRed : clrSilver);
+   bool   inSess = InTradingSession();
 
    int    posCount = CountMyPositions();
    double floatPL  = MyFloatingPL();
    long   cdLeft   = (long)g_cooldownSecs - (long)(TimeCurrent() - g_lastEntryTime);
 
-   SetLabel("TITLE",  EA_NAME + " v" + EA_VERSION + "  " + _Symbol, clrGold);
-   SetLabel("MAGIC",  "Magic   : " + (string)g_magic, clrSilver);
-   SetLabel("TREND",  "Trend   : " + trend, trClr);
-   SetLabel("RSI",    "RSI(7)  : " + DoubleToString(rsiVal, 2), clrDeepSkyBlue);
-   SetLabel("SIGNAL", "Signal  : " + signal,
+   SetLabel("TITLE",   EA_NAME + " v" + EA_VERSION + "  " + _Symbol, clrGold);
+   SetLabel("MAGIC",   "Magic   : " + (string)g_magic, clrSilver);
+   SetLabel("TREND",   "Trend   : " + trend, trClr);
+   SetLabel("RSI",     "RSI(7)  : " + DoubleToString(rsiVal, 2), clrDeepSkyBlue);
+   SetLabel("SESSION", "Session : " + (inSess ? "ACTIVE" : "CLOSED"), inSess ? clrLime : clrDimGray);
+   SetLabel("SIGNAL",  "Signal  : " + signal,
             signal == "BUY" ? clrLime : (signal == "SELL" ? clrOrangeRed : clrSilver));
-   SetLabel("ENTRY",  "Entry   : " + (ready ? "READY" :
+   SetLabel("ENTRY",   "Entry   : " + (ready ? "READY" :
             (cdLeft > 0 ? "COOLDOWN " + (string)cdLeft + "s" : "BLOCKED")),
             ready ? clrLime : clrYellow);
-   SetLabel("POS",    "Open Pos: " + (string)posCount + " / " + (string)g_maxPositions, clrWhite);
-   SetLabel("PL",     "Float PL: " + DoubleToString(floatPL, 2),
+   SetLabel("POS",     "Open Pos: " + (string)posCount + " / " + (string)g_maxPositions, clrWhite);
+   SetLabel("PL",      "Float PL: " + DoubleToString(floatPL, 2),
             floatPL >= 0.0 ? clrLime : clrOrangeRed);
-   SetLabel("TRADES", "Trades  : " + (string)g_totalTrades, clrSilver);
-
+   SetLabel("TRADES",  "Trades  : " + (string)g_totalTrades, clrSilver);
    ChartRedraw();
   }
 //+------------------------------------------------------------------+
