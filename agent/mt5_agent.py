@@ -704,6 +704,18 @@ def main():
     if not connect_mt5():
         return
 
+    # حذف ملفات BSX_ المتلوثة (TP/SL/Lot مختلفة لكل بوت — لا تُشارَك)
+    _btc_exclusive = ["LotSize","TP_USD","SL_USD","MaxSpread","MaxPositions",
+                      "CooldownSecs","MaxLossPerDay","MaxProfitPerDay","BaseLot"]
+    for k in _btc_exclusive:
+        fpath = os.path.join(_MT5_COMMON, f"BSX_{k}.txt")
+        try:
+            if os.path.exists(fpath):
+                os.remove(fpath)
+                print(f"🧹 حذف {os.path.basename(fpath)} (متلوث بقيم الذهب)")
+        except Exception:
+            pass
+
     # بناء snapshots من MT5 history مباشرة ثم رفعها
     threading.Thread(target=bootstrap_snapshots, daemon=True).start()
 
