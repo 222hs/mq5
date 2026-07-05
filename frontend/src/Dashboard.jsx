@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const POLL_MS = 1500;
-const CANDLE_POLL_MS = 10000;
 
 // ── Terminal palette (matches reference design) ─────────────────────
 const C = {
@@ -102,48 +101,37 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    let alive = true;
-    const fetchData = async () => {
-      try {
-        const r = await fetch(`${API_URL}/api/dashboard`);
-        if (!r.ok) return;
-        const d = await r.json();
-        if (!alive) return;
-        const hist = Array.isArray(d.history) ? d.history : [];
-        const tickets = new Set(hist.map(t => t.ticket));
-        if (seenTickets.current !== null) {
-          const fresh = hist.filter(t => !seenTickets.current.has(t.ticket));
-          if (fresh.length > 0) {
-            const t = fresh[0];
-            const net = (t.profit || 0) + (t.swap || 0) + (t.commission || 0);
-            setPopup({ profit: net });
-            clearTimeout(popupTimer.current);
-            popupTimer.current = setTimeout(() => setPopup(null), 3500);
-          }
-        }
-        seenTickets.current = tickets;
-        setData(d);
-        setSettingsDraft(prev => (prev === null && d.settings) ? { ...d.settings } : prev);
-      } catch (e) {}
-    };
-    fetchData();
-    const t = setInterval(fetchData, POLL_MS);
-    return () => { alive = false; clearInterval(t); clearTimeout(popupTimer.current); };
-  }, []);
+    const socket = io(API_URL || window.location.origin, {
+      transports: ['websocket', 'polling'],
+    });
 
-  useEffect(() => {
-    let alive = true;
-    const fetchCandles = async () => {
-      try {
-        const r = await fetch(`${API_URL}/api/candles`);
-        if (!r.ok || !alive) return;
-        const d = await r.json();
-        setCandleData(d);
-      } catch (e) {}
+    const handleDashboard = (d) => {
+      const hist = Array.isArray(d.history) ? d.history : [];
+      const tickets = new Set(hist.map(t => t.ticket));
+      if (seenTickets.current !== null) {
+        const fresh = hist.filter(t => !seenTickets.current.has(t.ticket));
+        if (fresh.length > 0) {
+          const t = fresh[0];
+          const net = (t.profit || 0) + (t.swap || 0) + (t.commission || 0);
+          setPopup({ profit: net });
+          clearTimeout(popupTimer.current);
+          popupTimer.current = setTimeout(() => setPopup(null), 3500);
+        }
+      }
+      seenTickets.current = tickets;
+      setData(d);
+      setSettingsDraft(prev => (prev === null && d.settings) ? { ...d.settings } : prev);
     };
-    fetchCandles();
-    const t = setInterval(fetchCandles, CANDLE_POLL_MS);
-    return () => { alive = false; clearInterval(t); };
+
+    socket.on('dashboard', handleDashboard);
+    socket.on('candles', (d) => setCandleData(d));
+
+    return () => {
+      socket.off('dashboard', handleDashboard);
+      socket.off('candles');
+      socket.disconnect();
+      clearTimeout(popupTimer.current);
+    };
   }, []);
 
   const botControl = async (action) => {
