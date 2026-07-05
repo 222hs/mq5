@@ -215,7 +215,7 @@ export default function Dashboard() {
   const cumPts = dayTrades.map(t => (cum += netOf(t)));
   const peak24 = cumPts.length ? Math.max(...cumPts) : 0;
 
-  const R = 44, CIRC = 2 * Math.PI * R;
+  const R = 80, CIRC = 2 * Math.PI * R;
   const streakPct = Math.min(1, streak / 20);
 
   const allNets   = history.map(t => netOf(t));
@@ -284,11 +284,10 @@ export default function Dashboard() {
 
       {/* ═══ TOP BAR ═════════════════════════════════════════════ */}
       <header style={{
-        position:'sticky', top:0, zIndex:600,
         background:C.bg,
-        padding:'10px 20px', borderBottom:'1px solid #30363d',
+        padding:'6px 16px', borderBottom:'1px solid #30363d',
         display:'flex', justifyContent:'space-between', alignItems:'center',
-        flexWrap:'wrap', gap:'12px',
+        flexWrap:'wrap', gap:'8px',
         fontFamily:C.mono,
       }}>
         {/* Left: title + status pill + controls */}
@@ -344,6 +343,41 @@ export default function Dashboard() {
 
       <div style={{padding:'1.25rem'}}>
 
+        {/* ═══ WIN STREAK BIG RING ══════════════════════════════ */}
+        <div className="bcard" style={bCard({marginBottom:'1.25rem', display:'flex', alignItems:'center', justifyContent:'center', gap:32, padding:'1.5rem 2rem'})}>
+          <svg width="200" height="200" viewBox="0 0 200 200">
+            <circle cx="100" cy="100" r={R} fill="none" stroke={C.faint} strokeWidth="10"/>
+            <circle cx="100" cy="100" r={R} fill="none"
+              stroke={streak>0 ? C.neon : C.faint} strokeWidth="10"
+              strokeDasharray={`${CIRC*streakPct} ${CIRC}`}
+              transform="rotate(-90 100 100)" strokeLinecap="butt"
+              style={{filter: streak>0 ? `drop-shadow(0 0 8px ${C.neon})` : 'none'}}/>
+            <text x="100" y="112" textAnchor="middle"
+              fontSize="60" fontWeight="bold" fontFamily={C.mono}
+              fill={streak>0 ? C.neon : C.muted}>{streak}</text>
+          </svg>
+          <div>
+            <div style={bLabel({fontSize:13, color:C.muted, marginBottom:8})}>WIN STREAK</div>
+            <div style={{fontSize:28, fontWeight:'bold', color: streak>0?C.neon:C.muted, letterSpacing:'4px'}}>
+              {streak > 0 ? `${streak} IN A ROW` : 'NO STREAK'}
+            </div>
+            <div style={{marginTop:12, display:'flex', gap:24}}>
+              <div>
+                <div style={bLabel({fontSize:9})}>WINS</div>
+                <div style={{fontSize:22, fontWeight:'bold', color:C.neon}}>{stats.wins??0}</div>
+              </div>
+              <div>
+                <div style={bLabel({fontSize:9})}>LOSSES</div>
+                <div style={{fontSize:22, fontWeight:'bold', color:C.red}}>{stats.losses??0}</div>
+              </div>
+              <div>
+                <div style={bLabel({fontSize:9})}>WIN RATE</div>
+                <div style={{fontSize:22, fontWeight:'bold', color: stats.win_rate>=50?C.neon:C.red}}>{stats.win_rate}%</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* ═══ MAIN 3-COL GRID: STATS | CHART | PIPELINE ══════ */}
         <div className="g3" style={{marginBottom:'1.25rem', alignItems:'stretch'}}>
 
@@ -383,26 +417,6 @@ export default function Dashboard() {
                   <div style={{fontSize:18, fontWeight:'bold', color:x.c, fontVariantNumeric:'tabular-nums'}}>{x.v}</div>
                 </div>
               ))}
-            </div>
-
-            {/* streak ring */}
-            <div style={{display:'flex', alignItems:'center', gap:14, borderTop:C.border, paddingTop:12}}>
-              <svg width="84" height="84" viewBox="0 0 108 108">
-                <circle cx="54" cy="54" r={R} fill="none" stroke={C.faint} strokeWidth="6"/>
-                <circle cx="54" cy="54" r={R} fill="none"
-                  stroke={streak>0 ? C.neon : C.faint} strokeWidth="6"
-                  strokeDasharray={`${CIRC*streakPct} ${CIRC}`}
-                  transform="rotate(-90 54 54)" strokeLinecap="butt"/>
-                <text x="54" y="64" textAnchor="middle"
-                  fontSize="32" fontWeight="bold" fontFamily={C.mono}
-                  fill={streak>0 ? C.neon : C.muted}>{streak}</text>
-              </svg>
-              <div>
-                <div style={bLabel({color:C.ink})}>WIN STREAK</div>
-                <div style={{fontSize:10, letterSpacing:'2px', color: streak>0?C.neon:C.muted, marginTop:4, fontWeight:'bold'}}>
-                  {streak > 0 ? `${streak} IN A ROW` : 'NO STREAK'}
-                </div>
-              </div>
             </div>
 
             {/* mini trade strip */}
