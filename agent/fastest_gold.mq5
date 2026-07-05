@@ -83,7 +83,12 @@ long MagicFromSymbol(const string sym)
 double ReadJsonValue(const string key, const double fallback)
   {
    int fh = FileOpen(SETTINGS_FILE, FILE_READ|FILE_TXT|FILE_COMMON);
-   if(fh == INVALID_HANDLE) return fallback;
+   if(fh == INVALID_HANDLE)
+     {
+      if(key == "LotSize")  // طبع مرة واحدة فقط لتجنب الإزعاج
+         Print(EA_NAME,": ⚠️ فشل فتح ",SETTINGS_FILE," — رمز الخطأ: ",GetLastError()," — يستخدم الـ inputs الافتراضية");
+      return fallback;
+     }
    string content = "";
    while(!FileIsEnding(fh))
       content += FileReadString(fh);
@@ -144,10 +149,14 @@ void LoadSettings()
    g_tradeHoursStart = (int)ReadJsonValue("TradeHoursStart", 0.0);
    g_tradeHoursEnd   = (int)ReadJsonValue("TradeHoursEnd",  24.0);
    g_botRunning      = (ReadJsonValue("BotRunning",  1.0) > 0.5);
-   Print(EA_NAME," settings: lot=",g_lot," TP$=",g_tpUSD," SL$=",g_slUSD,
-         " maxPos=",g_maxPositions," spread=",g_maxSpread,
-         " maxLoss$=",g_maxLossPerDay," maxProfit$=",g_maxProfitPerDay,
-         " hours=",g_tradeHoursStart,"-",g_tradeHoursEnd);
+   Print(EA_NAME," ✅ إعدادات محملة:"
+         " Lot=",g_lot,
+         " TP$=",g_tpUSD,
+         " SL$=",g_slUSD,
+         " MaxPos=",g_maxPositions,
+         " Spread=",g_maxSpread,
+         " Hours=",g_tradeHoursStart,"-",g_tradeHoursEnd,
+         " Bot=",g_botRunning?"ON":"OFF");
    WriteCurrentSettings();
   }
 
