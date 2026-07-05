@@ -4,7 +4,7 @@
 //|  Gold scalper — bar-gated, closed-bar signals, smart filters     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.12"
+#property version   "9.13"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.12"
+#define EA_VERSION    "9.13"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE   "GSX_Settings.json"
 #define CURRENT_FILE    "GSX_Current.json"
@@ -68,6 +68,8 @@ double   g_maxProfitPerDay = 200.0;
 int      g_tradeHoursStart = 0;
 int      g_tradeHoursEnd   = 24;
 int      g_orderType       = 0;   // 0=MARKET  1=LIMIT  2=STOP
+bool     g_newsBlock       = false; // true = أخبار عالية التأثير قادمة → لا تداول
+string   g_newsTitle       = "";    // اسم الخبر
 
 // Day P&L tracking
 double   g_dayPL   = 0.0;
@@ -125,6 +127,25 @@ void WriteCurrentSettings()
 
 string g_lastSettingsHash = "";
 
+//+------------------------------------------------------------------+
+// يقرأ حالة فلتر الأخبار من ملف يكتبه الـ Agent كل دقيقة
+void LoadNewsBlock()
+  {
+   int fh = FileOpen("GSX_NewsBlock.txt", FILE_READ|FILE_TXT|FILE_COMMON);
+   if(fh == INVALID_HANDLE) { g_newsBlock=false; g_newsTitle=""; return; }
+   string line = FileReadString(fh);
+   FileClose(fh);
+   // الصيغة: "1|NFP 30min" أو "0"
+   if(StringLen(line) > 0 && line[0] == '1')
+     {
+      g_newsBlock = true;
+      int sep = StringFind(line, "|");
+      g_newsTitle = sep > 0 ? StringSubstr(line, sep+1) : "High Impact News";
+     }
+   else
+     { g_newsBlock=false; g_newsTitle=""; }
+  }
+
 void LoadSettings()
   {
    double lot    = ReadSetting("LotSize",        LotSize);
@@ -152,6 +173,7 @@ void LoadSettings()
    g_tpUSD=tp; g_slUSD=sl; g_maxLossPerDay=maxL; g_maxProfitPerDay=maxP;
    g_tradeHoursStart=hStart; g_tradeHoursEnd=hEnd; g_botRunning=botOn;
    g_orderType=ordTyp;
+   LoadNewsBlock();
 
    if(changed)
      {
@@ -339,7 +361,8 @@ void OnTick()
    bool slotsOK  = (CountMyPositions() < g_maxPositions);
    bool sessOK   = InTradingHours();
    bool dayOK    = !DayLimitHit();
-   bool allOK    = spreadOK && coolOK && slotsOK && sessOK && dayOK && atr1 > 0.0;
+   bool newsOK   = !g_newsBlock;
+   bool allOK    = spreadOK && coolOK && slotsOK && sessOK && dayOK && newsOK && atr1 > 0.0;
 
    if(signal != 0 && allOK && g_botRunning && SymbolTradable())
      {
@@ -698,7 +721,10 @@ void UpdateDashboard(const int trend,const double rsi,
    DLabel("V_ATR",DoubleToString(atrVal,_Digits),xV,y,CLR_HILITE); y+=ROW_H;
    string otTxt = g_orderType==1?"LIMIT":g_orderType==2?"STOP":"MARKET";
    color  otClr = g_orderType==1?clrDodgerBlue:g_orderType==2?clrOrange:CLR_GOOD;
-   DLabel("V_ORDTYP",otTxt,xV,y,otClr);
+   DLabel("V_ORDTYP",otTxt,xV,y,otClr); y+=ROW_H;
+   string newsTxt = g_newsBlock ? ("NEWS: "+g_newsTitle) : "NO NEWS";
+   color  newsClr = g_newsBlock ? CLR_BAD : CLR_NEUTRAL;
+   DLabel("V_NEWS",newsTxt,xV,y,newsClr);
    ChartRedraw();
   }
 //+------------------------------------------------------------------+

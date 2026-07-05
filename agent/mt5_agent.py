@@ -15,7 +15,8 @@ import requests
 import time
 import json
 import os
-from datetime import datetime
+import urllib.request
+from datetime import datetime, timezone
 
 # ============== الإعدادات ==============
 BACKEND_URL             = "https://mq5-production.up.railway.app"
@@ -259,6 +260,86 @@ def push_local_settings():
 
 _last_settings_hash = None  # نتتبع التغييرات
 _known_positions    = {}    # ticket -> position — لكشف الصفقات الجديدة
+_news_cache         = []    # آخر قائمة أخبار مجلوبة
+_news_cache_time    = 0     # وقت آخر تحديث للأخبار
+
+
+# ── فلتر الأخبار ─────────────────────────────────────────────────────
+NEWS_BLOCK_BEFORE_MIN = 30   # دقائق قبل الخبر نوقف التداول
+NEWS_BLOCK_AFTER_MIN  = 15   # دقائق بعد الخبر نوقف التداول
+NEWS_CACHE_TTL        = 3600  # تحديث التقويم كل ساعة
+
+def _fetch_news_calendar():
+    """يجلب تقويم الأخبار من ForexFactory — يُخزّن للتذاكرة"""
+    global _news_cache, _news_cache_time
+    now = time.time()
+    if now - _news_cache_time < NEWS_CACHE_TTL and _news_cache:
+        return _news_cache
+    try:
+        url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            events = json.loads(r.read())
+        _news_cache = events
+        _news_cache_time = now
+        print(f"📰 {datetime.now().strftime('%H:%M:%S')} - تحديث تقويم الأخبار ({len(events)} حدث)")
+    except Exception as e:
+        print(f"⚠️  فشل جلب تقويم الأخبار: {e}")
+    return _news_cache
+
+
+def check_news_filter():
+    """
+    يتحقق من الأخبار العالية التأثير القادمة/الحديثة.
+    يكتب GSX_NewsBlock.txt:
+      '1|NFP -25min'  → محظور
+      '0'             → مسموح
+    يرسل حالة الأخبار للـ Backend.
+    """
+    events = _fetch_news_calendar()
+    now_utc = datetime.now(timezone.utc)
+
+    blocked = False
+    block_title = ""
+
+    high_countries = {"USD", "XAU"}
+
+    for e in events:
+        if e.get("impact") not in ("High",):
+            continue
+        if e.get("country") not in high_countries:
+            continue
+        try:
+            # ForexFactory format: "2025-05-02T12:30:00-0400"
+            raw = e["date"]
+            # Python fromisoformat لا يدعم -0400 بدون ':'، نصلحه
+            if len(raw) > 19 and raw[-5] in ('+', '-') and ':' not in raw[-6:]:
+                raw = raw[:-2] + ':' + raw[-2:]
+            t = datetime.fromisoformat(raw)
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=timezone.utc)
+            diff_min = (t - now_utc).total_seconds() / 60
+
+            if -NEWS_BLOCK_AFTER_MIN <= diff_min <= NEWS_BLOCK_BEFORE_MIN:
+                blocked = True
+                sign = "+" if diff_min > 0 else ""
+                block_title = f"{e.get('title','News')} {sign}{round(diff_min)}min"
+                break
+        except Exception:
+            continue
+
+    # كتابة ملف الحظر للـ EA
+    news_file = os.path.join(_MT5_COMMON, "GSX_NewsBlock.txt")
+    try:
+        os.makedirs(os.path.dirname(news_file), exist_ok=True)
+        with open(news_file, "w", encoding="ascii") as f:
+            f.write(f"1|{block_title}" if blocked else "0")
+    except Exception:
+        pass
+
+    if blocked:
+        print(f"🚫 {datetime.now().strftime('%H:%M:%S')} - أخبار مرتفعة: {block_title} → تداول موقوف")
+    return {"blocked": blocked, "title": block_title}
 
 
 # ── حساب المؤشرات من الشمعات ────────────────────────────────────────
@@ -447,6 +528,8 @@ def main():
     last_history_sync  = 0
     last_settings_sync = 0
     last_candles_sync  = 0
+    last_news_sync     = 0
+    news_status        = {"blocked": False, "title": ""}
 
     try:
         while True:
@@ -455,6 +538,11 @@ def main():
             if now - last_settings_sync >= SETTINGS_CHECK_INTERVAL:
                 sync_settings()
                 last_settings_sync = now
+
+            # فلتر الأخبار كل دقيقة
+            if now - last_news_sync >= 60:
+                news_status = check_news_filter()
+                last_news_sync = now
 
             # شمعات كل 10 ثواني (endpoint منفصل)
             if now - last_candles_sync >= CANDLES_INTERVAL:
@@ -485,6 +573,7 @@ def main():
                 "account":        account,
                 "positions":      positions,
                 "pending_orders": pending,
+                "news_filter":    news_status,
                 "history":        history if history else None,
                 "timestamp":      datetime.now().isoformat(),
             })

@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v1.7';
+const DASH_VERSION = 'v1.8';
 
 // ── Terminal palette (matches reference design) ─────────────────────
 const C = {
@@ -189,6 +189,7 @@ export default function Dashboard() {
   const account        = data?.account || null;
   const positions      = Array.isArray(data?.positions) ? data.positions : [];
   const pendingOrders  = Array.isArray(data?.pending_orders) ? data.pending_orders : [];
+  const newsFilter     = data?.news_filter || { blocked: false, title: '' };
   const history   = Array.isArray(data?.history)   ? data.history   : [];
   const stats     = data?.stats || { total_trades: 0, wins: 0, losses: 0, win_rate: 0, total_profit: 0 };
   const settings  = data?.settings || {};
@@ -324,6 +325,18 @@ export default function Dashboard() {
           }}>
             <span style={{animation: isOnline?'blink 2s infinite':'none', display:'inline-block'}}>■</span> {isOnline ? 'LIVE' : 'OFFLINE'}
           </div>
+          {newsFilter.blocked && (
+            <div style={{
+              fontFamily: C.mono, fontSize: 10, fontWeight: 'bold',
+              letterSpacing: '1px', padding: '3px 10px',
+              border: `2px solid ${C.red}`,
+              color: C.red, background: 'rgba(255,69,96,0.12)',
+              boxShadow: '0 0 8px rgba(255,69,96,0.4)',
+              animation: 'blink 1s infinite',
+            }}>
+              🚫 NEWS: {newsFilter.title}
+            </div>
+          )}
           <button
             className={botRunning ? 'bbtn-red' : 'bbtn'}
             onClick={() => botControl(botRunning?'stop':'start')}
