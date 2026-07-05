@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.4';
+const DASH_VERSION = 'v3.5';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -314,6 +314,22 @@ export default function Dashboard() {
     } catch (e) { setSaveMsg('ERROR'); }
     setBusy(false);
     setTimeout(() => setSaveMsg(''), 2500);
+  };
+
+  // ── symbol branding ────────────────────────────────────────────
+  const symInfo = (sym='') => {
+    const s = (sym||'').toUpperCase();
+    if(s.includes('XAU') || s.includes('GOLD')) return {icon:'🥇', color:'#FFD700', label:'GOLD'};
+    if(s.includes('BTC') || s.includes('BITCOIN')) return {icon:'₿',  color:'#F7931A', label:'BTC'};
+    if(s.includes('ETH') || s.includes('ETHEREUM')) return {icon:'Ξ',  color:'#627EEA', label:'ETH'};
+    if(s.includes('XAG') || s.includes('SILVER')) return {icon:'🥈', color:'#C0C0C0', label:'SILVER'};
+    if(s.includes('EUR')) return {icon:'€',  color:'#4CAF50', label:'EUR'};
+    if(s.includes('GBP')) return {icon:'£',  color:'#2196F3', label:'GBP'};
+    if(s.includes('JPY')) return {icon:'¥',  color:'#FF9800', label:'JPY'};
+    if(s.includes('OIL') || s.includes('WTI') || s.includes('BRENT')) return {icon:'🛢', color:'#795548', label:'OIL'};
+    if(s.includes('NAS') || s.includes('US100')) return {icon:'📈', color:'#00BCD4', label:'NAS'};
+    if(s.includes('SPX') || s.includes('US500')) return {icon:'📊', color:'#9C27B0', label:'SPX'};
+    return {icon:'◈', color:'#90A4AE', label: s.slice(0,6)};
   };
 
   // ── derive ─────────────────────────────────────────────────────
@@ -1081,7 +1097,7 @@ export default function Dashboard() {
               <table style={{width:'100%', borderCollapse:'collapse', fontSize:12, minWidth:520}}>
                 <thead>
                   <tr style={{borderBottom:'1px solid #30363d'}}>
-                    {['#TICKET','TYPE','VOL','ENTRY','PROFIT','AGE'].map(h=>(
+                    {['SYMBOL','TYPE','VOL','ENTRY','PROFIT','AGE'].map(h=>(
                       <th key={h} style={{...bLabel({padding:'6px 8px', textAlign:'left', color:C.neon})}}>{h}</th>
                     ))}
                   </tr>
@@ -1089,13 +1105,17 @@ export default function Dashboard() {
                 <tbody>
                   {positions.map((p,i)=>{
                     const buy=p.type==='BUY';
+                    const si=symInfo(p.symbol);
                     return (
                       <tr key={p.ticket??i} className="hrow" style={{
                         borderBottom:`1px solid ${C.faint}`,
-                        borderLeft:`4px solid ${buy?C.neon:C.red}`,
+                        borderLeft:`4px solid ${si.color}`,
                         cursor:'pointer',
                       }} onClick={()=>openTradeDetail(p)}>
-                        <td style={{padding:'8px 8px', color:C.muted}}>#{p.ticket}</td>
+                        <td style={{padding:'8px 8px'}}>
+                          <span style={{fontSize:15, marginRight:5}}>{si.icon}</span>
+                          <span style={{fontWeight:'bold', color:si.color, letterSpacing:'1px', fontSize:11}}>{p.symbol||si.label}</span>
+                        </td>
                         <td style={{padding:'8px 8px', fontWeight:'bold', color:buy?C.neon:C.red, letterSpacing:'2px'}}>{p.type}</td>
                         <td style={{padding:'8px 8px'}}>{p.volume}</td>
                         <td style={{padding:'8px 8px', fontVariantNumeric:'tabular-nums'}}>{p.price_open}</td>
@@ -1328,7 +1348,7 @@ export default function Dashboard() {
               <table style={{width:'100%', borderCollapse:'collapse', fontSize:11, minWidth:560}}>
                 <thead>
                   <tr style={{borderBottom:'1px solid #30363d'}}>
-                    {['#','TIME','TYPE','VOL','ENTRY','EXIT','PROFIT','SWAP','NET'].map(h=>(
+                    {['#','SYMBOL','TIME','TYPE','VOL','ENTRY','EXIT','PROFIT','SWAP','NET'].map(h=>(
                       <th key={h} style={{...bLabel({padding:'6px 8px',textAlign:'left', color:C.neon})}}>{h}</th>
                     ))}
                   </tr>
@@ -1337,15 +1357,21 @@ export default function Dashboard() {
                   {history.slice(0,20).map((t,i)=>{
                     const net=netOf(t);
                     const buy=t.type==='BUY';
+                    const si=symInfo(t.symbol);
                     return (
                       <tr key={t.ticket??i} className="hrow"
                         style={{
                           borderBottom:`1px solid ${C.faint}`, cursor:'pointer',
+                          borderLeft:`4px solid ${si.color}`,
                           background: i%2===0 ? '#000' : 'rgba(255,255,255,0.04)',
                         }}
                         onClick={()=>setTradePopup(t)}>
-                        <td style={{padding:'7px 8px', color:C.muted, borderLeft:`3px solid ${net>=0?C.neon:C.red}`}}>
+                        <td style={{padding:'7px 8px', color:C.muted}}>
                           {i+1}
+                        </td>
+                        <td style={{padding:'7px 8px'}}>
+                          <span style={{fontSize:13, marginRight:4}}>{si.icon}</span>
+                          <span style={{fontWeight:'bold', color:si.color, fontSize:10, letterSpacing:'1px'}}>{t.symbol||si.label}</span>
                         </td>
                         <td style={{padding:'7px 8px', color:C.muted, fontVariantNumeric:'tabular-nums'}}>
                           {t.time ? new Date(t.time).toLocaleTimeString() : '--'}
