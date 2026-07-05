@@ -3,6 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
+const DASH_VERSION = 'v1.6';
 
 // ── Terminal palette (matches reference design) ─────────────────────
 const C = {
@@ -310,6 +311,7 @@ export default function Dashboard() {
         <div style={{display:'flex', alignItems:'center', gap:14, flexWrap:'wrap'}}>
           <div style={{fontSize:14, fontWeight:'bold', letterSpacing:'2px', color:C.ink, textTransform:'uppercase'}}>
             GOLD_SCALPER_X<span style={{color:C.neon}}>&gt;_</span>
+            <span style={{fontSize:9, color:C.muted, marginLeft:8, letterSpacing:'1px'}}>{DASH_VERSION}</span>
           </div>
           <div style={{
             border:`2px solid ${isOnline?C.neon:C.red}`,
