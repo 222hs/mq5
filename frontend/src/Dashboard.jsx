@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.1';
+const DASH_VERSION = 'v3.2';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -91,6 +91,9 @@ export default function Dashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsDraft, setSettingsDraft] = useState(null);
   const settingsDirty = useRef(false);
+  const [btcSettings, setBtcSettings] = useState({});
+  const [btcSettingsDraft, setBtcSettingsDraft] = useState({});
+  const btcSettingsDirty = useRef(false);
   const [saveMsg, setSaveMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const [candleData, setCandleData] = useState({ candles: [], sessions: {} });
@@ -134,6 +137,10 @@ export default function Dashboard() {
           const d = await r.json();
           setData(d);
           if (d.settings && !settingsDirty.current) setSettingsDraft({ ...d.settings });
+          if (d.btc_settings && !btcSettingsDirty.current) {
+            setBtcSettings({ ...d.btc_settings });
+            setBtcSettingsDraft({ ...d.btc_settings });
+          }
           if (Array.isArray(d.candles) && d.candles.length > 0)
             setCandleData({ candles: d.candles, sessions: d.sessions || {} });
         }
@@ -194,6 +201,11 @@ export default function Dashboard() {
       settingsDirty.current = false;
       setSettingsDraft({ ...s });
     });
+    socket.on('btc_settings', (s) => {
+      btcSettingsDirty.current = false;
+      setBtcSettings({ ...s });
+      setBtcSettingsDraft({ ...s });
+    });
     socket.on('log', (entry) => {
       setLogs(prev => {
         const next = [...prev, entry];
@@ -208,6 +220,7 @@ export default function Dashboard() {
       socket.off('dashboard', handleDashboard);
       socket.off('candles');
       socket.off('settings');
+      socket.off('btc_settings');
       socket.off('log');
       socket.off('log_history');
       socket.off('connect');
@@ -282,6 +295,22 @@ export default function Dashboard() {
       });
       if (r.ok) settingsDirty.current = false;
       setSaveMsg(r.ok ? `✓ ${key} SAVED` : 'ERROR');
+    } catch (e) { setSaveMsg('ERROR'); }
+    setBusy(false);
+    setTimeout(() => setSaveMsg(''), 2500);
+  };
+
+  const saveBtcSingle = async (key, value) => {
+    setBusy(true);
+    setSaveMsg(`SAVING BTC ${key}...`);
+    try {
+      const r = await fetch(`${API_URL}/api/settings/btc`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+        body: JSON.stringify({ [key]: value }),
+      });
+      if (r.ok) btcSettingsDirty.current = false;
+      setSaveMsg(r.ok ? `✓ BTC ${key} SAVED` : 'ERROR');
     } catch (e) { setSaveMsg('ERROR'); }
     setBusy(false);
     setTimeout(() => setSaveMsg(''), 2500);

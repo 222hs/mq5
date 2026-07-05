@@ -46,8 +46,9 @@ _MT5_COMMON = os.path.join(
     os.environ.get("APPDATA", ""),
     "MetaQuotes", "Terminal", "Common", "Files"
 )
-SETTINGS_FILE = os.path.join(_MT5_COMMON, "GSX_Settings.json")
-CURRENT_FILE  = os.path.join(_MT5_COMMON, "GSX_Current.json")  # الإعدادات الفعلية التي يكتبها البوت
+SETTINGS_FILE   = os.path.join(_MT5_COMMON, "GSX_Settings.json")
+CURRENT_FILE    = os.path.join(_MT5_COMMON, "GSX_Current.json")  # الإعدادات الفعلية التي يكتبها البوت
+BTC_CURRENT_FILE = os.path.join(_MT5_COMMON, "BSX_Current.json")
 
 # ── قاعدة بيانات محلية على جهاز Windows ─────────────────────────────
 _LOCAL_DIR       = os.path.dirname(os.path.abspath(__file__))
@@ -360,7 +361,8 @@ def push_local_settings():
         pass  # غير حرج — سيُعاد في الدورة القادمة
 
 
-_last_settings_hash = None  # نتتبع التغييرات
+_last_settings_hash     = None  # نتتبع التغييرات
+_last_btc_settings_hash = None
 _known_positions    = {}    # ticket -> position — لكشف الصفقات الجديدة
 _snapped_tickets    = set() # tickets مفتوحة أُرسل لها snapshot
 _snapped_history    = set() # tickets مغلقة أُرسل لها snapshot من history
@@ -510,6 +512,71 @@ def send_trade_snapshot(ticket, position, candles_list, sessions):
     """يبني snapshot ويرسله في background — لا يعطل الـ loop الرئيسي"""
     snapshot = _build_snapshot(ticket, position, candles_list, sessions)
     threading.Thread(target=_send_snapshot_bg, args=(snapshot,), daemon=True).start()
+
+def detect_active_bots():
+    """يكتشف البوتات النشطة من ملفات Current.json — معدّل خلال آخر 60 ثانية"""
+    now = time.time()
+    gold_active = False
+    btc_active  = False
+    for fpath, flag in [(CURRENT_FILE, "gold"), (BTC_CURRENT_FILE, "btc")]:
+        if os.path.exists(fpath):
+            try:
+                age = now - os.path.getmtime(fpath)
+                if age < 60:
+                    if flag == "gold": gold_active = True
+                    else:              btc_active  = True
+            except Exception:
+                pass
+    return gold_active, btc_active
+
+
+def sync_btc_settings():
+    """يسحب إعدادات البتكوين من الصفحة ويكتبها لـ BSX_*.txt"""
+    global _last_btc_settings_hash
+    for attempt in range(2):
+        try:
+            r = _session.get(f"{BACKEND_URL}/api/settings/btc", timeout=(5, 12))
+            if r.status_code != 200:
+                return
+            settings = r.json()
+            t = datetime.now().strftime('%H:%M:%S')
+            ot = {0:'MARKET', 1:'LIMIT', 2:'STOP', 3:'BASKET'}.get(int(settings.get('OrderType', 0)), 'MARKET')
+            dr = 'ON' if int(settings.get('DynamicRisk', 0)) == 1 else 'OFF'
+            print(f"\n{'='*55}")
+            print(f"₿  [{t}] إعدادات البتكوين:")
+            print(f"   Lot={settings.get('LotSize')}  TP$={settings.get('TP_USD')}  SL$={settings.get('SL_USD')}")
+            print(f"   MaxSpread={settings.get('MaxSpread')}  MaxPos={settings.get('MaxPositions')}  CD={settings.get('CooldownSecs')}s")
+            print(f"   OrderType={ot}  Bot={'ON' if settings.get('BotRunning') else 'OFF'}  SL/TP Dynamic={dr}")
+            import hashlib
+            new_hash = hashlib.md5(json.dumps(settings, sort_keys=True).encode()).hexdigest()
+            changed = new_hash != _last_btc_settings_hash
+            if changed:
+                print(f"   🔄 تغييرات مكتشفة — يُكتب BSX_*.txt")
+                _last_btc_settings_hash = new_hash
+            else:
+                print(f"   ✓ لا تغييرات")
+            btc_keys = [
+                "LotSize", "TP_USD", "SL_USD", "MaxSpread", "MaxPositions",
+                "CooldownSecs", "MaxLossPerDay", "MaxProfitPerDay",
+                "TradeHoursStart", "TradeHoursEnd", "BotRunning",
+                "OrderType", "RiskMode", "RiskPercent",
+                "RSIBuyMax", "RSISellMin", "DynamicRisk", "BaseLot",
+            ]
+            for k in btc_keys:
+                if k in settings:
+                    fpath = os.path.join(_MT5_COMMON, f"BSX_{k}.txt")
+                    try:
+                        with open(fpath, "w", encoding="ascii") as f:
+                            f.write(str(settings[k]))
+                    except Exception:
+                        pass
+            print(f"   📝 BSX_*.txt ✓")
+            print(f"{'='*55}\n")
+            return
+        except Exception as e:
+            print(f"⚠️ BTC sync: {type(e).__name__}")
+            return
+
 
 def sync_settings():
     """يسحب الإعدادات من الصفحة ويكتبها للبوت — مع retry تلقائي"""
@@ -734,8 +801,15 @@ def main():
             now = time.time()
 
             if now - last_settings_sync >= SETTINGS_CHECK_INTERVAL:
-                sync_settings()
-                last_settings_sync = now
+                gold_active, btc_active = detect_active_bots()
+                if gold_active or not btc_active:  # always sync gold if no bot detected
+                    sync_settings()
+                if btc_active:
+                    sync_btc_settings()
+                if gold_active or btc_active:
+                    last_settings_sync = now
+                else:
+                    last_settings_sync = now  # sync anyway to keep files fresh
 
             # فلتر الأخبار كل دقيقة
             if now - last_news_sync >= 60:

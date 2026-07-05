@@ -96,6 +96,27 @@ DEFAULT_SETTINGS = {
     "BaseLot":        0.5,
 }
 
+BTC_DEFAULT_SETTINGS = {
+    "LotSize":        0.01,
+    "TP_USD":         20.0,
+    "SL_USD":         10.0,
+    "MaxSpread":      2000,
+    "MaxPositions":   3,
+    "CooldownSecs":   90,
+    "MaxLossPerDay":  100.0,
+    "MaxProfitPerDay":500.0,
+    "TradeHoursStart":0,
+    "TradeHoursEnd":  24,
+    "BotRunning":     1,
+    "OrderType":      0,
+    "RiskMode":       0,
+    "RiskPercent":    1.0,
+    "RSIBuyMax":      65.0,
+    "RSISellMin":     35.0,
+    "DynamicRisk":    0,
+    "BaseLot":        0.01,
+}
+
 
 # ---------- SQLite ----------
 def get_db():
@@ -143,6 +164,36 @@ def init_db():
                 time        TEXT
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS btc_settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        # استعادة إعدادات BTC من الـ backup
+        _btc_backup = os.path.join(_db_dir if _db_dir else ".", "btc_settings_backup.json")
+        saved_btc = {}
+        if os.path.exists(_btc_backup):
+            try:
+                with open(_btc_backup, "r") as f:
+                    saved_btc = json.load(f)
+            except Exception:
+                saved_btc = {}
+        for k, v in saved_btc.items():
+            if k in BTC_DEFAULT_SETTINGS:
+                conn.execute(
+                    "INSERT OR REPLACE INTO btc_settings (key, value) VALUES (?, ?)",
+                    (k, str(v))
+                )
+        if saved_btc.get("_btc_user_saved"):
+            conn.execute(
+                "INSERT OR REPLACE INTO btc_settings (key, value) VALUES ('btc_user_saved', '1')"
+            )
+        for k, v in BTC_DEFAULT_SETTINGS.items():
+            conn.execute(
+                "INSERT OR IGNORE INTO btc_settings (key, value) VALUES (?, ?)",
+                (k, str(v))
+            )
         # استعادة الإعدادات من الـ backup أولاً (يتجاوز الافتراضية)
         saved = {}
         if os.path.exists(SETTINGS_BACKUP):
@@ -323,6 +374,57 @@ def _write_settings_backup():
         pass
 
 
+def get_btc_settings():
+    with get_db() as conn:
+        rows = conn.execute("SELECT key, value FROM btc_settings").fetchall()
+        result = dict(BTC_DEFAULT_SETTINGS)
+        for row in rows:
+            k, v = row["key"], row["value"]
+            if k in BTC_DEFAULT_SETTINGS:
+                try:
+                    result[k] = type(BTC_DEFAULT_SETTINGS[k])(v)
+                except Exception:
+                    result[k] = v
+        return result
+
+
+def save_btc_settings(new_settings, mark_user_saved=True):
+    with get_db() as conn:
+        for k, v in new_settings.items():
+            if k in BTC_DEFAULT_SETTINGS:
+                conn.execute(
+                    "INSERT INTO btc_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (k, str(v))
+                )
+        if mark_user_saved:
+            conn.execute(
+                "INSERT OR REPLACE INTO btc_settings (key, value) VALUES ('btc_user_saved', '1')"
+            )
+        conn.commit()
+    _write_btc_settings_backup()
+
+
+def is_btc_user_saved():
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT value FROM btc_settings WHERE key='btc_user_saved'"
+        ).fetchone()
+        return row is not None
+
+
+def _write_btc_settings_backup():
+    _btc_backup = os.path.join(_db_dir if _db_dir else ".", "btc_settings_backup.json")
+    try:
+        current = get_btc_settings()
+        current["_btc_user_saved"] = 1 if is_btc_user_saved() else 0
+        tmp = _btc_backup + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(current, f, indent=2)
+        os.replace(tmp, _btc_backup)
+    except Exception:
+        pass
+
+
 def build_dashboard_payload():
     """بناء payload الداشبورد الكامل — يُستخدم للـ REST والـ WebSocket"""
     with data_lock:
@@ -359,6 +461,7 @@ def build_dashboard_payload():
                 "total_profit": round(total_profit, 2),
             },
             "settings":     s,
+            "btc_settings": get_btc_settings(),
             "bot_running":  int(s.get("BotRunning", 1)) == 1,
             "candles":      latest_data["candles"],
             "sessions":     latest_data["sessions"],
@@ -803,6 +906,45 @@ def api_seed_settings():
     except Exception:
         pass
     return jsonify({"status": "ok", "applied": True, "settings": get_settings()})
+
+
+@app.route("/api/settings/btc", methods=["GET"])
+def api_get_btc_settings():
+    if not check_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify(get_btc_settings()), 200
+
+
+@app.route("/api/settings/btc", methods=["POST"])
+def api_save_btc_settings():
+    if not check_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True)
+    if not body:
+        return jsonify({"error": "No data"}), 400
+    save_btc_settings(body)
+    try:
+        socketio.emit("btc_settings", get_btc_settings())
+    except Exception:
+        pass
+    return jsonify({"status": "ok", "settings": get_btc_settings()})
+
+
+@app.route("/api/settings/btc/seed", methods=["POST"])
+def api_seed_btc_settings():
+    if not check_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True)
+    if not body:
+        return jsonify({"error": "No data"}), 400
+    if is_btc_user_saved():
+        return jsonify({"status": "ok", "applied": False, "settings": get_btc_settings()})
+    save_btc_settings(body, mark_user_saved=False)
+    try:
+        socketio.emit("btc_settings", get_btc_settings())
+    except Exception:
+        pass
+    return jsonify({"status": "ok", "applied": True, "settings": get_btc_settings()})
 
 
 @app.route("/api/trade_snapshot", methods=["POST"])
