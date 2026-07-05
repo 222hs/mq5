@@ -241,7 +241,7 @@ def build_dashboard_payload():
             last = datetime.fromisoformat(latest_data["last_update"])
             is_online = (datetime.now() - last).total_seconds() < 30
 
-        closed_trades = get_history(500)
+        closed_trades = get_history(100)
         wins   = [t for t in closed_trades if t["profit"] > 0]
         losses = [t for t in closed_trades if t["profit"] <= 0]
         win_rate     = (len(wins) / len(closed_trades) * 100) if closed_trades else 0
@@ -249,6 +249,7 @@ def build_dashboard_payload():
             t["profit"] + t.get("swap", 0) + t.get("commission", 0)
             for t in closed_trades
         )
+        s = get_settings()
 
         return {
             "account":      latest_data["account"],
@@ -263,8 +264,8 @@ def build_dashboard_payload():
                 "win_rate":     round(win_rate, 1),
                 "total_profit": round(total_profit, 2),
             },
-            "settings":     get_settings(),
-            "bot_running":  int(get_settings().get("BotRunning", 1)) == 1,
+            "settings":     s,
+            "bot_running":  int(s.get("BotRunning", 1)) == 1,
             "candles":      latest_data["candles"],
             "sessions":     latest_data["sessions"],
             "claude_advice":  latest_data["claude_advice"],
