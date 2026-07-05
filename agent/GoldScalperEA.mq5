@@ -4,7 +4,7 @@
 //|  Gold scalper — bar-gated, closed-bar signals, smart filters     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.13"
+#property version   "9.14"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.13"
+#define EA_VERSION    "9.14"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -101,15 +101,29 @@ bool     g_botRunning = true;
 
 void LoadSettings()
   {
-   g_lot        = ReadJsonValue("LotSize",      LotSize);
-   g_maxSpread  = ReadJsonValue("MaxSpread",    (double)MaxSpread);
-   g_maxPositions=(int)ReadJsonValue("MaxPositions",(double)MaxPositions);
-   g_cooldownSecs=(int)ReadJsonValue("CooldownSecs",(double)CooldownSecs);
-   g_tpUSD      = ReadJsonValue("TP_USD",       3.0);
-   g_slUSD      = ReadJsonValue("SL_USD",       2.0);
-   g_botRunning = (ReadJsonValue("BotRunning",  1.0) > 0.5);
-   Print(EA_NAME," settings: lot=",g_lot," TP$=",g_tpUSD," SL$=",g_slUSD,
-         " maxPos=",g_maxPositions," spread=",g_maxSpread);
+   g_lot          = ReadJsonValue("LotSize",      LotSize);
+   g_maxSpread    = ReadJsonValue("MaxSpread",    (double)MaxSpread);
+   g_maxPositions = (int)ReadJsonValue("MaxPositions",(double)MaxPositions);
+   g_cooldownSecs = (int)ReadJsonValue("CooldownSecs",(double)CooldownSecs);
+   g_tpUSD        = ReadJsonValue("TP_USD",       3.0);
+   g_slUSD        = ReadJsonValue("SL_USD",       2.0);
+   g_botRunning   = (ReadJsonValue("BotRunning",  1.0) > 0.5);
+
+   // كتابة الإعدادات الفعلية في ملف يقرأه الـ Agent → يرفعها للصفحة
+   int fh = FileOpen("GSX_Active.json", FILE_WRITE|FILE_TXT|FILE_COMMON);
+   if(fh != INVALID_HANDLE)
+     {
+      string js = "{";
+      js += "\"LotSize\":"      + DoubleToString(g_lot,2)         + ",";
+      js += "\"TP_USD\":"       + DoubleToString(g_tpUSD,2)       + ",";
+      js += "\"SL_USD\":"       + DoubleToString(g_slUSD,2)       + ",";
+      js += "\"MaxSpread\":"    + IntegerToString((int)g_maxSpread)+ ",";
+      js += "\"MaxPositions\":" + IntegerToString(g_maxPositions)  + ",";
+      js += "\"CooldownSecs\":" + IntegerToString(g_cooldownSecs)  + ",";
+      js += "\"BotRunning\":"   + (g_botRunning?"1":"0")           + "}";
+      FileWriteString(fh, js);
+      FileClose(fh);
+     }
   }
 
 //+------------------------------------------------------------------+
