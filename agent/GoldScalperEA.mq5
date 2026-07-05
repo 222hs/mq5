@@ -4,7 +4,7 @@
 //|  Gold scalper — bar-gated, closed-bar signals, smart filters     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.09"
+#property version   "9.10"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.09"
+#define EA_VERSION    "9.10"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -235,26 +235,19 @@ void OnTick()
    if(CopyLow  (_Symbol,TF,0,4,l)<4)    return;
    if(CopyClose(_Symbol,TF,0,4,c)<4)    return;
 
-   double rsi1  = rsi[1],  rsi2  = rsi[2];
-   double ema91 = ema9[1], ema211= ema21[1];
-   double atr1  = atr[1];
+   double rsi1 = rsi[1];
+   double ema91= ema9[1], ema211= ema21[1];
+   double atr1 = atr[1];
 
-   bool emaUp   = ema91 > ema211;
-   bool emaDown = ema91 < ema211;
-   bool emaSep  = MathAbs(ema91 - ema211) >= 0.05 * atr1;
-   bool rsiBuy  = (rsi1 > rsi2 || rsi1 >= 55.0) && rsi1 > 45.0 && rsi1 < 85.0;
-   bool rsiSell = (rsi1 < rsi2 || rsi1 <= 45.0) && rsi1 < 55.0 && rsi1 > 15.0;
-   bool bullBar = StrongBull(o[1],c[1],h[1],l[1],atr1);
-   bool bearBar = StrongBear(o[1],c[1],h[1],l[1],atr1);
-   bool priceAboveEMA = c[1] > ema91;
-   bool priceBelowEMA = c[1] < ema91;
-
-   int buyScore  = (emaSep?1:0)+(rsiBuy ?1:0)+(bullBar?1:0)+(priceAboveEMA?1:0);
-   int sellScore = (emaSep?1:0)+(rsiSell?1:0)+(bearBar?1:0)+(priceBelowEMA?1:0);
+   // ── CANDLE MOMENTUM: follow the last closed candle direction ──
+   bool bullBar = (c[1] > o[1]) && ((c[1]-o[1])/(h[1]-l[1]+1e-10) >= 0.25)
+               && (h[1]-l[1]) <= 5.0*atr1;
+   bool bearBar = (c[1] < o[1]) && ((o[1]-c[1])/(h[1]-l[1]+1e-10) >= 0.25)
+               && (h[1]-l[1]) <= 5.0*atr1;
 
    int signal = 0;
-   if(emaUp   && buyScore  >= 2) signal =  1;
-   else if(emaDown && sellScore >= 2) signal = -1;
+   if(bullBar) signal =  1; // BUY — candle closed up
+   else if(bearBar) signal = -1; // SELL — candle closed down
 
    long spread   = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    bool spreadOK = (spread <= (long)g_maxSpread);
@@ -272,8 +265,9 @@ void OnTick()
    int cdLeft = (int)MathMax(0, g_cooldownSecs-(TimeCurrent()-g_lastEntryTime));
    bool blocked = !(spreadOK && slotsOK && sessOK);
 
+   bool emaUp = ema91 > ema211;
    UpdateDashboard(
-      emaUp?1:emaDown?-1:0, rsi1, sessOK, signal,
+      emaUp?1:-1, rsi1, sessOK, signal,
       blocked, cdLeft, CountMyPositions(), atr1, spread
    );
   }
