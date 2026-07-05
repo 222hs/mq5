@@ -218,6 +218,14 @@ def sync_settings():
                   f"SL$={settings.get('SL_USD','?')} "
                   f"Lot={settings.get('LotSize','?')} "
                   f"MaxPos={settings.get('MaxPositions','?')}")
+            print(f"📁 كُتب الملف: {SETTINGS_FILE}")
+            # تحقق أن الملف فعلاً موجود وقابل للقراءة
+            if os.path.exists(SETTINGS_FILE):
+                with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    content = f.read()
+                print(f"✅ محتوى الملف ({len(content)} bytes): {content[:200]}")
+            else:
+                print(f"❌ الملف غير موجود بعد الكتابة!")
             return  # نجح
 
         except PermissionError:
