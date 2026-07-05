@@ -130,32 +130,61 @@ def read_local_settings():
         return None
 
 
-def sync_settings():
-    """
-    1. اقرأ ما يكتبه البوت فعلاً (GSX_Active.json) وارفعه للصفحة
-    2. اقرأ الإعدادات الجديدة من الصفحة واكتبها للبوت (GSX_Settings.json)
-    """
+def safe_read_json(path):
+    """يقرأ JSON بأمان — يتجاهل الملف الفارغ أو المكسور"""
     try:
-        # ── الخطوة 1: ارفع الإعدادات الحالية من البوت للصفحة ──
-        if os.path.exists(ACTIVE_FILE):
-            with open(ACTIVE_FILE, "r") as f:
-                active = json.load(f)
+        if not os.path.exists(path):
+            return None
+        size = os.path.getsize(path)
+        if size == 0:
+            return None
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def safe_write_json(path, data):
+    """كتابة atomic: يكتب في ملف مؤقت ثم يعيد تسميته — يتجنب Permission denied"""
+    tmp = path + ".tmp"
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        # replace atomic على Windows
+        if os.path.exists(path):
+            os.replace(tmp, path)
+        else:
+            os.rename(tmp, path)
+        return True
+    except Exception as e:
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+        return False
+
+
+def sync_settings():
+    try:
+        # ── الخطوة 1: ارفع إعدادات البوت الفعلية للصفحة ──
+        active = safe_read_json(ACTIVE_FILE)
+        if active:
             requests.post(
                 f"{BACKEND_URL}/api/settings",
                 json=active, headers=HEADERS, timeout=10
             )
-            print(f"📤 إعدادات البوت الفعلية: TP$={active.get('TP_USD','?')} "
+            print(f"📤 بوت: TP$={active.get('TP_USD','?')} "
                   f"SL$={active.get('SL_USD','?')} "
                   f"Lot={active.get('LotSize','?')} "
                   f"MaxPos={active.get('MaxPositions','?')}")
 
-        # ── الخطوة 2: اسحب أي تغييرات من الصفحة واكتبها للبوت ──
+        # ── الخطوة 2: اكتب إعدادات الصفحة للبوت ──
         r = requests.get(f"{BACKEND_URL}/api/settings", headers=HEADERS, timeout=10)
         if r.status_code == 200:
-            new_settings = r.json()
-            os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
-            with open(SETTINGS_FILE, "w") as f:
-                json.dump(new_settings, f, indent=2)
+            ok = safe_write_json(SETTINGS_FILE, r.json())
+            if not ok:
+                print("⚠️  تعذرت كتابة GSX_Settings.json — سيعاد المحاولة")
 
     except Exception as e:
         print(f"❌ فشل مزامنة الإعدادات: {e}")

@@ -4,7 +4,7 @@
 //|  Gold scalper — bar-gated, closed-bar signals, smart filters     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.14"
+#property version   "9.15"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.14"
+#define EA_VERSION    "9.15"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -109,20 +109,22 @@ void LoadSettings()
    g_slUSD        = ReadJsonValue("SL_USD",       2.0);
    g_botRunning   = (ReadJsonValue("BotRunning",  1.0) > 0.5);
 
-   // كتابة الإعدادات الفعلية في ملف يقرأه الـ Agent → يرفعها للصفحة
-   int fh = FileOpen("GSX_Active.json", FILE_WRITE|FILE_TXT|FILE_COMMON);
+   // كتابة الإعدادات الفعلية في ملف مؤقت ثم rename (atomic — يتجنب تعارض القراءة)
+   string js = "{";
+   js += "\"LotSize\":"      + DoubleToString(g_lot,2)         + ",";
+   js += "\"TP_USD\":"       + DoubleToString(g_tpUSD,2)       + ",";
+   js += "\"SL_USD\":"       + DoubleToString(g_slUSD,2)       + ",";
+   js += "\"MaxSpread\":"    + IntegerToString((int)g_maxSpread)+ ",";
+   js += "\"MaxPositions\":" + IntegerToString(g_maxPositions)  + ",";
+   js += "\"CooldownSecs\":" + IntegerToString(g_cooldownSecs)  + ",";
+   js += "\"BotRunning\":"   + (g_botRunning?"1":"0")           + "}";
+   int fh = FileOpen("GSX_Active.tmp", FILE_WRITE|FILE_TXT|FILE_COMMON);
    if(fh != INVALID_HANDLE)
      {
-      string js = "{";
-      js += "\"LotSize\":"      + DoubleToString(g_lot,2)         + ",";
-      js += "\"TP_USD\":"       + DoubleToString(g_tpUSD,2)       + ",";
-      js += "\"SL_USD\":"       + DoubleToString(g_slUSD,2)       + ",";
-      js += "\"MaxSpread\":"    + IntegerToString((int)g_maxSpread)+ ",";
-      js += "\"MaxPositions\":" + IntegerToString(g_maxPositions)  + ",";
-      js += "\"CooldownSecs\":" + IntegerToString(g_cooldownSecs)  + ",";
-      js += "\"BotRunning\":"   + (g_botRunning?"1":"0")           + "}";
       FileWriteString(fh, js);
       FileClose(fh);
+      // rename المؤقت → الأساسي (عملية واحدة — لا يُقرأ ملف ناقص)
+      FileMove("GSX_Active.tmp", FILE_COMMON, "GSX_Active.json", FILE_COMMON|FILE_REWRITE);
      }
   }
 
