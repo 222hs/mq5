@@ -4,7 +4,7 @@
 //|  Gold scalper — bar-gated, closed-bar signals, smart filters     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.08"
+#property version   "9.09"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.08"
+#define EA_VERSION    "9.09"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -203,15 +203,22 @@ bool StrongBear(double o, double c, double h, double l, double atr)
 //+------------------------------------------------------------------+
 void OnTick()
   {
-   // ── NEW BAR GATE: only act once per completed bar ──
-   datetime barTime = iTime(_Symbol, TF, 0);
-   if(barTime == g_lastBar) return;
-   g_lastBar = barTime;
+   // ── ManagePositions runs EVERY TICK (TP/SL by P&L must be instant) ──
+   ManagePositions();
 
-   // load settings once per bar (not every tick)
+   // ── BAR GATE: entry signals only once per completed bar ──
+   datetime barTime = iTime(_Symbol, TF, 0);
+   if(barTime == g_lastBar)
+     {
+      // still update dashboard every tick so values stay fresh
+      long sp = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+      UpdateDashboard(0, 50, InTradingSession(), 0, false, 0,
+                      CountMyPositions(), 0, sp);
+      return;
+     }
+   g_lastBar = barTime;
    LoadSettings();
 
-   // read 4 bars: need bar[1]=signal bar, bar[2]=prior bar
    double rsi[], ema9[], ema21[], atr[];
    double o[], h[], l[], c[];
    ArraySetAsSeries(rsi,true);  ArraySetAsSeries(ema9,true);
@@ -228,59 +235,33 @@ void OnTick()
    if(CopyLow  (_Symbol,TF,0,4,l)<4)    return;
    if(CopyClose(_Symbol,TF,0,4,c)<4)    return;
 
-   // all signals from CLOSED bars (bar[1] and bar[2])
    double rsi1  = rsi[1],  rsi2  = rsi[2];
    double ema91 = ema9[1], ema211= ema21[1];
-   double ema92 = ema9[2], ema212= ema21[2];
    double atr1  = atr[1];
 
-   //=================================================================
-   // SIGNAL LOGIC v9.05 — trend gate + 3-of-4 scoring
-   //=================================================================
-
-   // ── PRIMARY FILTER (mandatory): EMA9/EMA21 trend direction ──
    bool emaUp   = ema91 > ema211;
    bool emaDown = ema91 < ema211;
-
-   // EMA crossover on closed bars (bar[2]→bar[1]) — still used for exits
-   bool crossUp = (ema92 <= ema212 && ema91 > ema211);
-   bool crossDn = (ema92 >= ema212 && ema91 < ema211);
-
-   // ── SCORED CONDITION 1: EMA separation (loosened 0.15→0.05 ATR) ──
    bool emaSep  = MathAbs(ema91 - ema211) >= 0.05 * atr1;
-
-   // ── SCORED CONDITION 2: RSI(7) momentum confirmation ──
-   // Direction of RSI, not a zone: rising + above midline = bullish push.
-   // Hard block only at true exhaustion (>85 / <15).
    bool rsiBuy  = (rsi1 > rsi2 || rsi1 >= 55.0) && rsi1 > 45.0 && rsi1 < 85.0;
    bool rsiSell = (rsi1 < rsi2 || rsi1 <= 45.0) && rsi1 < 55.0 && rsi1 > 15.0;
-
-   // ── SCORED CONDITION 3: candle direction (minimal — not a doji) ──
    bool bullBar = StrongBull(o[1],c[1],h[1],l[1],atr1);
    bool bearBar = StrongBear(o[1],c[1],h[1],l[1],atr1);
-
-   // ── SCORED CONDITION 4: price location vs fast EMA ──
    bool priceAboveEMA = c[1] > ema91;
    bool priceBelowEMA = c[1] < ema91;
 
-   // manage exits (also on closed-bar signals)
-   ManagePositions(rsi1, crossUp, crossDn, atr1);
-
-   // ── SCORING: trend is the gate, then 3 of 4 confirmations fire ──
-   int buyScore  = (emaSep?1:0) + (rsiBuy ?1:0) + (bullBar?1:0) + (priceAboveEMA?1:0);
-   int sellScore = (emaSep?1:0) + (rsiSell?1:0) + (bearBar?1:0) + (priceBelowEMA?1:0);
+   int buyScore  = (emaSep?1:0)+(rsiBuy ?1:0)+(bullBar?1:0)+(priceAboveEMA?1:0);
+   int sellScore = (emaSep?1:0)+(rsiSell?1:0)+(bearBar?1:0)+(priceBelowEMA?1:0);
 
    int signal = 0;
-   if(emaUp   && buyScore  >= 2) signal =  1; // BUY
-   else if(emaDown && sellScore >= 2) signal = -1; // SELL
+   if(emaUp   && buyScore  >= 2) signal =  1;
+   else if(emaDown && sellScore >= 2) signal = -1;
 
-   // filters
-   long spread    = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
-   bool spreadOK  = (spread <= (long)g_maxSpread);
-   bool coolOK    = (TimeCurrent()-g_lastEntryTime >= g_cooldownSecs);
-   bool slotsOK   = (CountMyPositions() < g_maxPositions);
-   bool sessOK    = InTradingSession();
-   bool allOK     = spreadOK && coolOK && slotsOK && sessOK && atr1 > 0.0;
+   long spread   = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+   bool spreadOK = (spread <= (long)g_maxSpread);
+   bool coolOK   = (TimeCurrent()-g_lastEntryTime >= g_cooldownSecs);
+   bool slotsOK  = (CountMyPositions() < g_maxPositions);
+   bool sessOK   = InTradingSession();
+   bool allOK    = spreadOK && coolOK && slotsOK && sessOK && atr1 > 0.0;
 
    if(signal != 0 && allOK && g_botRunning)
      {
@@ -288,14 +269,12 @@ void OnTick()
       else            OpenTrade(ORDER_TYPE_SELL, atr1);
      }
 
-   int cdLeft  = (int)MathMax(0, g_cooldownSecs-(TimeCurrent()-g_lastEntryTime));
-   bool blocked= !(spreadOK && slotsOK && sessOK);
+   int cdLeft = (int)MathMax(0, g_cooldownSecs-(TimeCurrent()-g_lastEntryTime));
+   bool blocked = !(spreadOK && slotsOK && sessOK);
 
    UpdateDashboard(
-      emaUp?1:emaDown?-1:0,
-      rsi1, sessOK, signal,
-      blocked, cdLeft,
-      CountMyPositions(), atr1, spread
+      emaUp?1:emaDown?-1:0, rsi1, sessOK, signal,
+      blocked, cdLeft, CountMyPositions(), atr1, spread
    );
   }
 
@@ -322,13 +301,12 @@ void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal)
      { slD=MathMax(atrVal*1.5,minD); tpD=MathMax(atrVal*2.0,minD*2.0); }
    double sl,tp; bool ok;
 
-   // TP managed by ManagePositions (P&L-based), SL kept as safety net on broker
    if(type==ORDER_TYPE_BUY)
-     { sl=NormalizeDouble(ask-slD,digits);
-       ok=trade.Buy(lot,_Symbol,ask,sl,0,EA_NAME); }
+     { sl=NormalizeDouble(ask-slD,digits); tp=NormalizeDouble(ask+tpD,digits);
+       ok=trade.Buy(lot,_Symbol,ask,sl,tp,EA_NAME); }
    else
-     { sl=NormalizeDouble(bid+slD,digits);
-       ok=trade.Sell(lot,_Symbol,bid,sl,0,EA_NAME); }
+     { sl=NormalizeDouble(bid+slD,digits); tp=NormalizeDouble(bid-tpD,digits);
+       ok=trade.Sell(lot,_Symbol,bid,sl,tp,EA_NAME); }
 
    if(ok) { g_lastEntryTime=TimeCurrent(); g_totalTrades++;
              Print(EA_NAME,": ",EnumToString(type)," lot=",lot,
@@ -348,7 +326,7 @@ double NormalizeLot(double lot)
   }
 
 //+------------------------------------------------------------------+
-void ManagePositions(double rsi1, bool crossUp, bool crossDn, double atrVal)
+void ManagePositions()
   {
    for(int i=PositionsTotal()-1;i>=0;i--)
      {
@@ -357,15 +335,12 @@ void ManagePositions(double rsi1, bool crossUp, bool crossDn, double atrVal)
       ulong  tk     = posInfo.Ticket();
       double profit = posInfo.Profit() + posInfo.Swap() + posInfo.Commission();
 
-      // ── PRIMARY: close by dollar P&L target (what user set on dashboard) ──
       if(profit >= g_tpUSD)
         { trade.PositionClose(tk);
-          Print(EA_NAME,": TP HIT $",DoubleToString(profit,2));
-          continue; }
+          Print(EA_NAME,": TP $",DoubleToString(profit,2)); continue; }
       if(profit <= -g_slUSD)
         { trade.PositionClose(tk);
-          Print(EA_NAME,": SL HIT $",DoubleToString(profit,2));
-          continue; }
+          Print(EA_NAME,": SL $",DoubleToString(profit,2)); continue; }
      }
   }
 
