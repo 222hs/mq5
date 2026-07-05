@@ -100,6 +100,16 @@ def init_db():
                 value TEXT
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS trade_snapshots (
+                ticket      INTEGER PRIMARY KEY,
+                symbol      TEXT,
+                direction   TEXT,
+                entry_price REAL,
+                data        TEXT,
+                time        TEXT
+            )
+        """)
         # استعادة الإعدادات من الـ backup أولاً (يتجاوز الافتراضية)
         saved = {}
         if os.path.exists(SETTINGS_BACKUP):
@@ -170,6 +180,53 @@ def upsert_history(trades):
                 (:ticket, :symbol, :type, :volume, :price, :profit, :swap, :commission, :time, :comment)
         """, trades)
         conn.commit()
+
+
+def save_snapshot(snap):
+    ticket = snap.get("ticket")
+    if not ticket:
+        return
+    with get_db() as conn:
+        conn.execute("""
+            INSERT OR IGNORE INTO trade_snapshots
+                (ticket, symbol, direction, entry_price, data, time)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            ticket,
+            snap.get("symbol"),
+            snap.get("direction"),
+            snap.get("entry_price"),
+            json.dumps(snap),
+            snap.get("time", datetime.now().isoformat()),
+        ))
+        conn.commit()
+
+
+def get_snapshot(ticket):
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT data FROM trade_snapshots WHERE ticket=?", (ticket,)
+        ).fetchone()
+        if row:
+            try:
+                return json.loads(row["data"])
+            except Exception:
+                return None
+    return None
+
+
+def get_snapshots(limit=50):
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT data FROM trade_snapshots ORDER BY time DESC LIMIT ?", (limit,)
+        ).fetchall()
+        result = []
+        for r in rows:
+            try:
+                result.append(json.loads(r["data"]))
+            except Exception:
+                pass
+        return result
 
 
 def get_history(limit=500):
@@ -315,31 +372,65 @@ def call_claude(consecutive_losses, recent_trades, account):
 
 
 def analyze_patterns():
-    """يحلل snapshots الصفقات ويستخرج patterns — يُستدعى كل 20 صفقة جديدة"""
+    """يحلل trade snapshots ويستخرج patterns — يُستدعى كل 20 صفقة"""
     if not ANTHROPIC_API_KEY:
         return
-    trades = get_history(50)
-    # فلتر الصفقات اللي عندها snapshot
-    snaps = [t for t in trades if t.get("comment") and "RSI=" in (t.get("comment") or "")]
-    if len(snaps) < 8:
-        return
-    wins  = [t for t in snaps if (t["profit"] or 0) > 0]
-    loses = [t for t in snaps if (t["profit"] or 0) <= 0]
-    def fmt(lst):
-        return " | ".join([t["comment"] for t in lst[:8]])
-    prompt = (
-        f"MT5 scalping bot trade analysis. Last {len(snaps)} trades with entry snapshots.\n"
-        f"WIN trades ({len(wins)}): {fmt(wins)}\n"
-        f"LOSS trades ({len(loses)}): {fmt(loses)}\n\n"
-        f"Fields: RSI=value EMA=U(up)/D(down) ATR=value S=session\n"
-        f"Analyze: what conditions appear most in wins vs losses? "
-        f"Give ONE specific actionable pattern insight in max 25 words. "
-        f"Be direct, mention specific values (e.g. 'RSI>65 with EMA=D causes 70% of losses')."
-    )
+
+    trades     = get_history(100)
+    trade_map  = {t["ticket"]: t for t in trades}
+    snaps      = get_snapshots(60)
+
+    # ربط الـ snapshots بنتائج الصفقات
+    enriched = []
+    for s in snaps:
+        t = trade_map.get(s.get("ticket"))
+        if t:
+            enriched.append({
+                "rsi":       s.get("rsi"),
+                "ema_up":    s.get("ema_up"),
+                "atr":       s.get("atr"),
+                "session":   s.get("session"),
+                "direction": s.get("direction"),
+                "profit":    t.get("profit", 0),
+            })
+
+    # fallback للـ comment-based إذا snapshots ناقصة
+    if len(enriched) < 8:
+        comment_trades = [t for t in trades if t.get("comment") and "RSI=" in (t.get("comment") or "")]
+        if len(comment_trades) < 8:
+            return
+        wins  = [t for t in comment_trades if (t["profit"] or 0) > 0]
+        loses = [t for t in comment_trades if (t["profit"] or 0) <= 0]
+        def fmt_c(lst):
+            return " | ".join([t["comment"] for t in lst[:8]])
+        prompt = (
+            f"XAUUSD M1 scalping. WIN ({len(wins)}): {fmt_c(wins)}\n"
+            f"LOSS ({len(loses)}): {fmt_c(loses)}\n"
+            f"RSI/EMA=U‑D/ATR/S=session. ONE pattern insight max 25 words."
+        )
+    else:
+        wins  = [e for e in enriched if e["profit"] > 0]
+        loses = [e for e in enriched if e["profit"] <= 0]
+
+        def fmt_e(lst):
+            return " | ".join(
+                f"RSI={e['rsi']} EMA={'U' if e['ema_up'] else 'D'} ATR={e['atr']} S={e['session']}"
+                for e in lst[:12]
+            )
+
+        prompt = (
+            f"XAUUSD M1 scalping bot — {len(enriched)} trades with entry snapshots.\n"
+            f"WINS ({len(wins)}): {fmt_e(wins)}\n"
+            f"LOSSES ({len(loses)}): {fmt_e(loses)}\n\n"
+            f"Analyze RSI levels, EMA direction (U=up/D=down), ATR volatility range, "
+            f"and session timing vs trade outcomes.\n"
+            f"ONE specific actionable insight max 25 words. Cite specific values."
+        )
+
     try:
         body = json.dumps({
             "model": "claude-haiku-4-5-20251001",
-            "max_tokens": 100,
+            "max_tokens": 120,
             "messages": [{"role": "user", "content": prompt}]
         }).encode()
         req = urllib.request.Request(
@@ -351,7 +442,7 @@ def analyze_patterns():
                 "content-type": "application/json",
             }
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=20) as resp:
             result = json.loads(resp.read())["content"][0]["text"].strip()
         with data_lock:
             latest_data["pattern_advice"] = result
@@ -507,6 +598,26 @@ def api_seed_settings():
     except Exception:
         pass
     return jsonify({"status": "ok", "applied": True, "settings": get_settings()})
+
+
+@app.route("/api/trade_snapshot", methods=["POST"])
+def api_save_snapshot():
+    if not check_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+    snap = request.get_json(silent=True)
+    if not snap or not snap.get("ticket"):
+        return jsonify({"error": "No data"}), 400
+    save_snapshot(snap)
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/trade_snapshot/<int:ticket>", methods=["GET"])
+def api_get_snapshot(ticket):
+    snap = get_snapshot(ticket)
+    if not snap:
+        return jsonify({"error": "not found"}), 404
+    # لا نرسل الشمعات الكاملة في كل مرة — ندار من الـ dashboard
+    return jsonify(snap)
 
 
 @app.route("/api/candles", methods=["POST"])
