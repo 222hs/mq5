@@ -590,8 +590,10 @@ def sync_settings():
                 "OrderType":  "OrderType",
                 "RiskMode":   "RiskMode",
                 "RiskPercent":"RiskPercent",
-                "RSIBuyMax":  "RSIBuyMax",
-                "RSISellMin": "RSISellMin",
+                "RSIBuyMax":    "RSIBuyMax",
+                "RSISellMin":   "RSISellMin",
+                "DynamicRisk":  "DynamicRisk",
+                "BaseLot":      "BaseLot",
             }
             for k in key_map:
                 if k in settings:

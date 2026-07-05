@@ -76,6 +76,8 @@ int      g_riskMode        = 0;    // 0=لوت ثابت  1=نسبة من الر�
 double   g_riskPct         = 1.0;
 double   g_rsiBuyMax       = 65.0; // Claude auto-adjust
 double   g_rsiSellMin      = 35.0;
+bool     g_dynamicRisk     = false; // SL/TP تتناسب مع حجم اللوت
+double   g_baseLot         = 0.01;  // اللوت الأساسي اللي ضُبطت عليه SL/TP
 bool     g_botRunning      = true;
 
 // Day P&L tracking
@@ -123,6 +125,8 @@ void WriteCurrentSettings()
    j += "  \"TradeHoursStart\": "+ IntegerToString(g_tradeHoursStart) + ",\n";
    j += "  \"TradeHoursEnd\": "  + IntegerToString(g_tradeHoursEnd)   + ",\n";
    j += "  \"BotRunning\": "     + (g_botRunning ? "1" : "0")         + ",\n";
+   j += "  \"DynamicRisk\": "   + (g_dynamicRisk ? "1" : "0")        + ",\n";
+   j += "  \"BaseLot\": "       + DoubleToString(g_baseLot,2)         + ",\n";
    j += "  \"OrderType\": "      + IntegerToString(g_orderType)       + "\n";
    j += "}";
    FileWriteString(fh, j);
@@ -143,6 +147,17 @@ void LoadNewsBlock()
        g_newsTitle = sep>0 ? StringSubstr(line,sep+1) : "High Impact News"; }
    else
      { g_newsBlock=false; g_newsTitle=""; }
+  }
+
+double EffectiveSL(double lot)
+  {
+   if(!g_dynamicRisk || g_baseLot <= 0) return g_slUSD;
+   return g_slUSD * (lot / g_baseLot);
+  }
+double EffectiveTP(double lot)
+  {
+   if(!g_dynamicRisk || g_baseLot <= 0) return g_tpUSD;
+   return g_tpUSD * (lot / g_baseLot);
   }
 
 //+------------------------------------------------------------------+
@@ -180,13 +195,16 @@ void LoadSettings()
    double rPct   = ReadSetting("RiskPercent",    1.0);
    double rsiBM  = ReadSetting("RSIBuyMax",      65.0);
    double rsiSM  = ReadSetting("RSISellMin",     35.0);
+   bool   dynR   = (ReadSetting("DynamicRisk",   0.0) > 0.5);
+   double baseL  = ReadSetting("BaseLot",        0.01);
 
    string hash = DoubleToString(lot,2)+DoubleToString(tp,2)+DoubleToString(sl,2)
                + IntegerToString(maxPos)+DoubleToString(spread,0)
                + IntegerToString(hStart)+IntegerToString(hEnd)
                + IntegerToString(ordTyp)+(botOn?"1":"0")
                + IntegerToString(rMode)+DoubleToString(rPct,1)
-               + DoubleToString(rsiBM,1)+DoubleToString(rsiSM,1);
+               + DoubleToString(rsiBM,1)+DoubleToString(rsiSM,1)
+               + (dynR?"1":"0")+DoubleToString(baseL,2);
    bool changed = (hash != g_lastSettingsHash);
    g_lastSettingsHash = hash;
 
@@ -195,6 +213,7 @@ void LoadSettings()
    g_tradeHoursStart=hStart; g_tradeHoursEnd=hEnd; g_botRunning=botOn;
    g_orderType=ordTyp; g_riskMode=rMode; g_riskPct=rPct;
    g_rsiBuyMax=rsiBM; g_rsiSellMin=rsiSM;
+   g_dynamicRisk=dynR; g_baseLot=(baseL>0?baseL:0.01);
    LoadNewsBlock();
 
    if(changed)
@@ -425,8 +444,8 @@ void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal,
    double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    double pointVal = (tickSize > 0.0 && lot > 0.0) ? (tickVal / tickSize) * lot : 1.0;
    double safeMin  = MathMax(minD, atrVal * 1.5);
-   double slD = MathMax(g_slUSD / pointVal, safeMin);
-   double tpD = MathMax(g_tpUSD / pointVal, safeMin);
+   double slD = MathMax(EffectiveSL(lot) / pointVal, safeMin);
+   double tpD = MathMax(EffectiveTP(lot) / pointVal, safeMin);
 
    MqlDateTime dt; TimeToStruct(TimeGMT(), dt);
    int hr = dt.hour;
@@ -516,8 +535,8 @@ void OpenBasket(const ENUM_ORDER_TYPE dir, const double atrVal,
    double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    double pointVal = (tickSize>0.0&&lot>0.0) ? (tickVal/tickSize)*lot : 1.0;
    double safeMin  = MathMax(minD, atrVal*1.5);
-   double slD = MathMax(g_slUSD/pointVal, safeMin);
-   double tpD = MathMax(g_tpUSD/pointVal, safeMin);
+   double slD = MathMax(EffectiveSL(lot)/pointVal, safeMin);
+   double tpD = MathMax(EffectiveTP(lot)/pointVal, safeMin);
 
    MqlDateTime dt; TimeToStruct(TimeGMT(), dt);
    int hr=dt.hour;
@@ -599,13 +618,16 @@ void ManagePositions()
       datetime openAt  = (datetime)posInfo.Time();
       double   profit  = posInfo.Profit()+posInfo.Swap()+posInfo.Commission();
       int      ageSec  = (int)(now-openAt);
+      double   posLot  = posInfo.Volume();
+      double   effTP   = EffectiveTP(posLot);
+      double   effSL   = EffectiveSL(posLot);
 
-      if(profit >= g_tpUSD)
+      if(profit >= effTP)
         { trade.PositionClose(tk);
-          Print(EA_NAME,": TP $",DoubleToString(profit,2)); continue; }
-      if(ageSec >= 60 && profit <= -g_slUSD)
+          Print(EA_NAME,": TP $",DoubleToString(profit,2)," (limit $",DoubleToString(effTP,2),")"); continue; }
+      if(ageSec >= 60 && profit <= -effSL)
         { trade.PositionClose(tk);
-          Print(EA_NAME,": SL $",DoubleToString(profit,2)); continue; }
+          Print(EA_NAME,": SL $",DoubleToString(profit,2)," (limit $",DoubleToString(effSL,2),")"); continue; }
      }
   }
 
@@ -758,7 +780,10 @@ void UpdateDashboard(const int trend,const double rsi,
    DLabel("V_TRADES",string(g_totalTrades),xV,y,CLR_NEUTRAL); y+=ROW_H+8;
 
    DLabel("V_LOT",DoubleToString(g_lot,2),xV,y,CLR_HILITE); y+=ROW_H;
-   DLabel("V_TPSL","$"+DoubleToString(g_tpUSD,2)+" / $"+DoubleToString(g_slUSD,2),xV,y,CLR_HILITE); y+=ROW_H;
+   string tpslTxt="$"+DoubleToString(g_tpUSD,2)+" / $"+DoubleToString(g_slUSD,2);
+   if(g_dynamicRisk) tpslTxt+=" [D]";
+   color btcBlue=C'0,150,255';
+   DLabel("V_TPSL",tpslTxt,xV,y,g_dynamicRisk?btcBlue:CLR_HILITE); y+=ROW_H;
 
    bool lossNear=(g_dayPL<=-g_maxLossPerDay*0.8);
    DLabel("V_DLOSS","$"+DoubleToString(g_maxLossPerDay,2),xV,y,lossNear?CLR_BAD:CLR_NEUTRAL); y+=ROW_H;

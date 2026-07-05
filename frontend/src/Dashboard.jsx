@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.0';
+const DASH_VERSION = 'v3.1';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -349,7 +349,7 @@ export default function Dashboard() {
   const patternAdvice = data?.pattern_advice || null;
   const patternTime   = data?.pattern_time   || null;
 
-  const settingKeys = ['LotSize','TP_USD','SL_USD','MaxSpread','MaxPositions','CooldownSecs','TrailUSD','MaxLossPerDay','MaxProfitPerDay','TradeHoursStart','TradeHoursEnd','RSIBuyMax','RSISellMin'];
+  const settingKeys = ['LotSize','TP_USD','SL_USD','MaxSpread','MaxPositions','CooldownSecs','TrailUSD','MaxLossPerDay','MaxProfitPerDay','TradeHoursStart','TradeHoursEnd','RSIBuyMax','RSISellMin','BaseLot'];
 
   const pipeline = [
     { n:'01', t:'SCAN',   s:'candle dir',            ok: botRunning },
@@ -1162,6 +1162,22 @@ export default function Dashboard() {
                   style={bBtn((settingsDraft.ClaudeEnabled??1)===1,{padding:'6px 14px'})}>
                   {(settingsDraft.ClaudeEnabled??1)===1?'ON':'OFF'}
                 </button>
+              </div>
+              {/* Dynamic Risk toggle */}
+              <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                <div style={bLabel({fontSize:9, color:'#00aaff'})}>SL/TP DYNAMIC</div>
+                <button className="bbtn"
+                  onClick={()=>{
+                    const v=(settingsDraft.DynamicRisk??0)===1?0:1;
+                    setSettingsDraft(d=>({...d,DynamicRisk:v}));
+                    saveSingle('DynamicRisk',v);
+                  }}
+                  style={bBtn((settingsDraft.DynamicRisk??0)===1,{padding:'6px 14px', borderColor:(settingsDraft.DynamicRisk??0)===1?'#00aaff':'undefined'})}>
+                  {(settingsDraft.DynamicRisk??0)===1?'ON':'OFF'}
+                </button>
+                <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>
+                  BaseLot={settingsDraft.BaseLot??0.5}
+                </div>
               </div>
             </div>
           )}

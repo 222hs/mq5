@@ -92,6 +92,8 @@ DEFAULT_SETTINGS = {
     "RiskPercent":    1.0,
     "RSIBuyMax":      65.0,
     "RSISellMin":     35.0,
+    "DynamicRisk":    0,
+    "BaseLot":        0.5,
 }
 
 
