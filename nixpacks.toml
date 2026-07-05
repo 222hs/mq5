@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["python311", "nodejs_20", "nodePackages.npm"]
+
+[phases.build]
+cmds = [
+  "cd frontend && npm install && npm run build",
+  "pip install -r backend/requirements.txt"
+]
+
+[start]
+cmd = "cd backend && gunicorn app:app"
