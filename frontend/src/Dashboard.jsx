@@ -223,19 +223,27 @@ export default function Dashboard() {
   const loadSnapshots = async () => {
     setSnapLoading(true);
     try {
-      const [r, rc] = await Promise.all([
-        fetch(`${API_URL}/api/snapshots?limit=50`, { headers: {'X-API-Key': API_KEY} }),
+      const [r, rc, rh] = await Promise.all([
+        fetch(`${API_URL}/api/snapshots?limit=100`, { headers: {'X-API-Key': API_KEY} }),
         fetch(`${API_URL}/api/snapshots/count`),
+        fetch(`${API_URL}/api/history?limit=200`, { headers: {'X-API-Key': API_KEY} }),
       ]);
+      if (rc.ok) { const d = await rc.json(); setSnapCount(d.count); }
+      // ربط الـ snapshots بالـ history للحصول على P&L
+      let histMap = {};
+      if (rh.ok) {
+        const hist = await rh.json();
+        hist.forEach(t => { histMap[t.ticket] = t; });
+      }
       if (r.ok) {
         const d = await r.json();
-        console.log('snapshots loaded:', d.length, d[0]);
-        setSnapshots(d);
-      } else {
-        console.log('snapshots error:', r.status);
+        const enriched = d.map(s => {
+          const t = histMap[s.ticket];
+          return t ? { ...s, profit: (t.profit||0)+(t.swap||0)+(t.commission||0) } : s;
+        });
+        setSnapshots(enriched);
       }
-      if (rc.ok) { const d = await rc.json(); setSnapCount(d.count); }
-    } catch(e) { console.log('snapshots fetch error:', e); }
+    } catch(e) {}
     setSnapLoading(false);
   };
 
@@ -1475,92 +1483,96 @@ export default function Dashboard() {
                   لو عندك local_snapshots.json، أعد تشغيل الأيجنت ليرفعها.
                 </div>
               </div>
-            ) : (
-              <div style={{
-                display:'grid',
-                gridTemplateColumns:'repeat(auto-fill, minmax(260px, 1fr))',
-                gap:12,
-              }}>
-                {snapshots.map((s, idx) => {
-                  const isBuy = s.direction === 'BUY';
-                  const candles = s.candles || [];
-                  const W = 240, H = 80, n = Math.min(candles.length, 30);
-                  const sliced = candles.slice(-n);
-                  const allH = sliced.map(c=>c.h), allL = sliced.map(c=>c.l);
-                  const hi = Math.max(...allH), lo = Math.min(...allL);
-                  const range = hi - lo || 1;
-                  const cw = W / n;
-                  const yP = v => H - ((v - lo) / range) * H;
+            ) : (() => {
+              // إحصائيات سريعة
+              const wins  = snapshots.filter(s=>s.profit>0).length;
+              const total = snapshots.length;
+              const avgRsiWin  = total ? (snapshots.filter(s=>s.profit>0).reduce((a,s)=>a+(s.rsi||50),0)/(wins||1)).toFixed(1) : '--';
+              const avgRsiLoss = total ? (snapshots.filter(s=>s.profit<=0).reduce((a,s)=>a+(s.rsi||50),0)/((total-wins)||1)).toFixed(1) : '--';
+              const sessions = {};
+              snapshots.forEach(s=>{ const k=s.session||'?'; sessions[k]=(sessions[k]||{w:0,l:0}); s.profit>0?sessions[k].w++:sessions[k].l++; });
 
-                  return (
-                    <div key={idx} style={{
-                      background:C.surface,
-                      border:`1px solid ${isBuy?'rgba(0,255,65,0.3)':'rgba(255,69,96,0.3)'}`,
-                      padding:'10px',
-                    }}>
-                      {/* Title */}
-                      <div style={{display:'flex', justifyContent:'space-between', marginBottom:6}}>
-                        <span style={{fontSize:9, fontWeight:'bold', color: isBuy?C.neon:C.red, letterSpacing:'1px'}}>
-                          {isBuy?'▲ BUY':'▼ SELL'} #{s.ticket}
-                        </span>
-                        <span style={{fontSize:9, color:C.muted}}>{s.session}</span>
-                      </div>
-
-                      {/* Mini candlestick chart */}
-                      {candles.length > 0 ? (
-                        <svg width={W} height={H} style={{display:'block', marginBottom:6}}>
-                          {sliced.map((c, i) => {
-                            const x = i * cw + cw * 0.15;
-                            const bw = cw * 0.7;
-                            const isGreen = c.c >= c.o;
-                            const col = isGreen ? '#00ff41' : '#ff4560';
-                            const bodyT = yP(Math.max(c.o, c.c));
-                            const bodyB = yP(Math.min(c.o, c.c));
-                            const bodyH = Math.max(bodyB - bodyT, 1);
-                            return (
-                              <g key={i}>
-                                <line x1={x+bw/2} y1={yP(c.h)} x2={x+bw/2} y2={yP(c.l)} stroke={col} strokeWidth={0.8}/>
-                                <rect x={x} y={bodyT} width={bw} height={bodyH} fill={col} opacity={0.85}/>
-                              </g>
-                            );
-                          })}
-                          {/* Entry line */}
-                          {s.entry_price && (
-                            <line
-                              x1={0} y1={yP(s.entry_price)}
-                              x2={W} y2={yP(s.entry_price)}
-                              stroke='#f0b429' strokeWidth={1} strokeDasharray='3,2'
-                            />
-                          )}
-                        </svg>
-                      ) : (
-                        <div style={{height:H, display:'flex', alignItems:'center', justifyContent:'center', color:C.muted, fontSize:9}}>
-                          NO CANDLE DATA
-                        </div>
-                      )}
-
-                      {/* Indicators */}
-                      <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-                        {[
-                          {k:'RSI', v: s.rsi!=null?s.rsi.toFixed(0):'--', c: s.rsi>60?C.red:s.rsi<40?C.neon:C.muted},
-                          {k:'EMA', v: s.ema_up?'↑ BULL':'↓ BEAR', c: s.ema_up?C.neon:C.red},
-                          {k:'ATR', v: s.atr!=null?s.atr.toFixed(1):'--', c:C.yellow},
-                          {k:'@',   v: s.entry_price!=null?s.entry_price.toFixed(2):'--', c:C.ink},
-                        ].map(({k,v,c})=>(
-                          <div key={k} style={{
-                            fontSize:9, padding:'2px 6px',
-                            border:`1px solid rgba(255,255,255,0.1)`,
-                            color:c, letterSpacing:'1px',
-                          }}>
-                            {k}: {v}
-                          </div>
-                        ))}
-                      </div>
+              return (
+                <div>
+                  {/* Summary bar */}
+                  <div style={{display:'flex', gap:16, marginBottom:16, flexWrap:'wrap'}}>
+                    <div style={{background:C.surface, border:C.border, padding:'8px 14px', fontSize:10}}>
+                      <span style={{color:C.muted}}>WIN RATE </span>
+                      <span style={{color:C.neon, fontWeight:'bold'}}>{total?Math.round(wins/total*100):0}%</span>
+                      <span style={{color:C.muted}}> ({wins}/{total})</span>
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                    <div style={{background:C.surface, border:C.border, padding:'8px 14px', fontSize:10}}>
+                      <span style={{color:C.muted}}>RSI WIN avg </span>
+                      <span style={{color:C.neon, fontWeight:'bold'}}>{avgRsiWin}</span>
+                      <span style={{color:C.muted}}> · LOSS avg </span>
+                      <span style={{color:C.red, fontWeight:'bold'}}>{avgRsiLoss}</span>
+                    </div>
+                    {Object.entries(sessions).map(([k,v])=>(
+                      <div key={k} style={{background:C.surface, border:C.border, padding:'8px 14px', fontSize:10}}>
+                        <span style={{color:C.yellow}}>{k} </span>
+                        <span style={{color:C.neon}}>{v.w}W</span>
+                        <span style={{color:C.muted}}>/</span>
+                        <span style={{color:C.red}}>{v.l}L</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Table */}
+                  <div style={{overflowX:'auto'}}>
+                    <table style={{width:'100%', borderCollapse:'collapse', fontSize:11}}>
+                      <thead>
+                        <tr style={{borderBottom:`1px solid ${C.faint}`, color:C.muted, fontSize:9, letterSpacing:'1px'}}>
+                          {['#TICKET','DIR','ENTRY','RSI','EMA','ATR','SESSION','P&L','RSI ZONE'].map(h=>(
+                            <th key={h} style={{padding:'6px 10px', textAlign:'left', fontWeight:'normal'}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {snapshots.map((s,i)=>{
+                          const isBuy = s.direction==='BUY';
+                          const profit = s.profit;
+                          const hasProfit = profit != null;
+                          const win = hasProfit && profit > 0;
+                          const rsi = s.rsi;
+                          const rsiZone = rsi==null?'--':rsi>=70?'OVERBOUGHT':rsi<=30?'OVERSOLD':rsi>=55?'HIGH':rsi<=45?'LOW':'NEUTRAL';
+                          const rsiZoneC = rsi==null?C.muted:rsi>=70||rsi<=30?C.red:rsi>=55||rsi<=45?C.yellow:C.neon;
+                          return (
+                            <tr key={i} style={{
+                              borderBottom:`1px solid ${C.faint}`,
+                              background: i%2===0?'transparent':'rgba(255,255,255,0.02)',
+                            }}>
+                              <td style={{padding:'7px 10px', color:C.muted, fontSize:10}}>#{s.ticket}</td>
+                              <td style={{padding:'7px 10px', fontWeight:'bold', color:isBuy?C.neon:C.red}}>
+                                {isBuy?'▲ BUY':'▼ SELL'}
+                              </td>
+                              <td style={{padding:'7px 10px', fontVariantNumeric:'tabular-nums'}}>
+                                {s.entry_price!=null?s.entry_price.toFixed(2):'--'}
+                              </td>
+                              <td style={{padding:'7px 10px', fontVariantNumeric:'tabular-nums',
+                                color:rsi>60?C.red:rsi<40?C.neon:C.ink}}>
+                                {rsi!=null?rsi.toFixed(0):'--'}
+                              </td>
+                              <td style={{padding:'7px 10px', color:s.ema_up?C.neon:C.red}}>
+                                {s.ema_up?'↑ BULL':'↓ BEAR'}
+                              </td>
+                              <td style={{padding:'7px 10px', color:C.yellow, fontVariantNumeric:'tabular-nums'}}>
+                                {s.atr!=null?s.atr.toFixed(1):'--'}
+                              </td>
+                              <td style={{padding:'7px 10px', color:C.muted}}>{s.session||'--'}</td>
+                              <td style={{padding:'7px 10px', fontWeight:'bold', fontVariantNumeric:'tabular-nums',
+                                color: hasProfit?(win?C.neon:C.red):C.muted}}>
+                                {hasProfit?(win?'+':'')+profit.toFixed(2):'--'}
+                              </td>
+                              <td style={{padding:'7px 10px', fontSize:9, color:rsiZoneC}}>{rsiZone}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

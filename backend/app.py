@@ -902,6 +902,13 @@ def bot_control():
     return jsonify({"status": "ok", "BotRunning": 1 if action == "start" else 0})
 
 
+@app.route("/api/history", methods=["GET"])
+def api_get_history():
+    limit = int(request.args.get("limit", 200))
+    trades = get_history(limit)
+    return jsonify(trades)
+
+
 @app.route("/api/snapshots/count", methods=["GET"])
 def api_snapshots_count():
     with get_db() as conn:
