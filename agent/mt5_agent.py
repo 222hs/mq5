@@ -550,11 +550,12 @@ def sync_btc_settings():
             import hashlib
             new_hash = hashlib.md5(json.dumps(settings, sort_keys=True).encode()).hexdigest()
             changed = new_hash != _last_btc_settings_hash
-            if changed:
-                print(f"   🔄 تغييرات مكتشفة — يُكتب BSX_*.txt")
-                _last_btc_settings_hash = new_hash
-            else:
+            if not changed:
                 print(f"   ✓ لا تغييرات")
+                print(f"{'='*55}\n")
+                return
+            print(f"   🔄 تغييرات مكتشفة — يُكتب BSX_*.txt")
+            _last_btc_settings_hash = new_hash
             btc_keys = [
                 "LotSize", "TP_USD", "SL_USD", "MaxSpread", "MaxPositions",
                 "CooldownSecs", "MaxLossPerDay", "MaxProfitPerDay",
@@ -611,11 +612,12 @@ def sync_settings():
             # نتحقق إذا تغيرت الإعدادات
             import hashlib
             new_hash = hashlib.md5(json.dumps(settings, sort_keys=True).encode()).hexdigest()
-            if new_hash != _last_settings_hash:
-                print(f"   🔄 تغييرات مكتشفة — يُكتب الملف")
-                _last_settings_hash = new_hash
-            else:
+            if new_hash == _last_settings_hash:
                 print(f"   ✓ لا تغييرات")
+                print(f"{'='*55}\n")
+                return
+            print(f"   🔄 تغييرات مكتشفة — يُكتب الملف")
+            _last_settings_hash = new_hash
 
             content = json.dumps(settings, indent=2, ensure_ascii=False)
             os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
