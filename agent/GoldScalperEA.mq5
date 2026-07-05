@@ -1,10 +1,10 @@
 //+------------------------------------------------------------------+
 //|                                                GoldScalperEA.mq5 |
-//|                                        GoldScalperX version 9.22 |
+//|                                        GoldScalperX version 9.30 |
 //|  Gold scalper — bar-gated, closed-bar signals, trailing stop     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "9.22"
+#property version   "9.30"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -20,7 +20,7 @@ input bool            UseSession   = false;    // Session filter (false=trade 24
 
 //--- constants
 #define EA_NAME       "GoldScalperX"
-#define EA_VERSION    "9.22"
+#define EA_VERSION    "9.30"
 #define DASH_PREFIX   "GSX_D_"
 #define SETTINGS_FILE "GSX_Settings.json"
 
@@ -265,21 +265,37 @@ void OnTick()
    double ema91= ema9[1], ema211= ema21[1];
    double atr1 = atr[1];
 
-   // ── CANDLE MOMENTUM: 2-bar confirmation (bar[1] + bar[2] same direction) ──
-   double range1 = h[1]-l[1]+1e-10, range2 = h[2]-l[2]+1e-10;
-   bool bull1 = (c[1]>o[1]) && ((c[1]-o[1])/range1 >= 0.25) && range1 <= 5.0*atr1;
-   bool bull2 = (c[2]>o[2]) && ((c[2]-o[2])/range2 >= 0.20);
-   bool bear1 = (c[1]<o[1]) && ((o[1]-c[1])/range1 >= 0.25) && range1 <= 5.0*atr1;
-   bool bear2 = (c[2]<o[2]) && ((o[2]-c[2])/range2 >= 0.20);
+   // ── TREND + MOMENTUM SIGNAL (Fable 5 redesign) ──
+   double range1 = h[1] - l[1] + 1e-10;
+   double body1  = MathAbs(c[1] - o[1]);
 
-   // RSI directional filter — avoid trading against extreme RSI
-   // BUY only when RSI not overbought; SELL only when RSI not oversold
-   bool rsiBuyOK  = (rsi1 < 68.0);
-   bool rsiSellOK = (rsi1 > 32.0);
+   // 1) Trend filter: EMA9 vs EMA21 — only trade with trend, ignore chop
+   double emaGap  = ema91 - ema211;
+   double minGap  = 0.10 * atr1;
+   bool   upTrend = (emaGap >  minGap);
+   bool   dnTrend = (emaGap < -minGap);
+
+   // 2) One decisive signal candle: strong body, sane size (not a spike, not a doji)
+   bool strongBull = (c[1]>o[1]) && (body1/range1 >= 0.55)
+                     && (range1 >= 0.5*atr1) && (range1 <= 3.0*atr1);
+   bool strongBear = (c[1]<o[1]) && (body1/range1 >= 0.55)
+                     && (range1 >= 0.5*atr1) && (range1 <= 3.0*atr1);
+
+   // 3) Real breakout: close beyond the prior bar's extreme
+   bool breakUp = (c[1] > h[2]);
+   bool breakDn = (c[1] < l[2]);
+
+   // 4) Not overextended from EMA9 (don't chase spikes)
+   bool notStretchedUp = (c[1] > ema91) && ((c[1]-ema91) <= 1.5*atr1);
+   bool notStretchedDn = (c[1] < ema91) && ((ema91-c[1]) <= 1.5*atr1);
+
+   // 5) RSI in healthy with-trend zone (not top/bottom picking)
+   bool rsiBuyOK  = (rsi1 > 45.0 && rsi1 < 65.0);
+   bool rsiSellOK = (rsi1 < 55.0 && rsi1 > 35.0);
 
    int signal = 0;
-   if(bull1 && bull2 && rsiBuyOK)  signal =  1;
-   else if(bear1 && bear2 && rsiSellOK) signal = -1;
+   if(upTrend && strongBull && breakUp && notStretchedUp && rsiBuyOK)  signal =  1;
+   else if(dnTrend && strongBear && breakDn && notStretchedDn && rsiSellOK) signal = -1;
 
    long spread   = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    bool spreadOK = (spread <= (long)g_maxSpread);
@@ -410,8 +426,8 @@ void ManagePositions()
         { trade.PositionClose(tk); if(ti>=0) RemoveTrail(tk);
           Print(EA_NAME,": EMERG SL $",DoubleToString(profit,2)," age=",ageSeconds,"s"); continue; }
 
-      // Normal SL: wait 30s first (spread cost recovery), then close at SL_USD
-      if(ageSeconds >= 30 && profit <= -g_slUSD)
+      // Normal SL: wait 120s (M1 gold needs room to breathe through noise)
+      if(ageSeconds >= 120 && profit <= -g_slUSD)
         { trade.PositionClose(tk); if(ti>=0) RemoveTrail(tk);
           Print(EA_NAME,": SL $",DoubleToString(profit,2)," age=",ageSeconds,"s"); continue; }
      }
