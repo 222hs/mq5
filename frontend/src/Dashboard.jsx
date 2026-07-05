@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
-export default function Dashboard() {
+export default function Dashboard({ embedded }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
 
@@ -23,27 +23,17 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  if (error) {
-    return (
-      <div style={styles.page}>
-        <div style={styles.errorBox}>{error}</div>
-      </div>
-    );
-  }
+  const wrap = (content) =>
+    embedded ? <div style={{ padding: "1.5rem 0" }}>{content}</div>
+             : <div style={styles.page}><div style={styles.container}>{content}</div></div>;
 
-  if (!data) {
-    return (
-      <div style={styles.page}>
-        <div style={styles.loading}>جاري التحميل...</div>
-      </div>
-    );
-  }
+  if (error) return wrap(<div style={styles.errorBox}>{error}</div>);
+  if (!data)  return wrap(<div style={styles.loading}>جاري التحميل...</div>);
 
   const { account, positions, history, stats, is_online } = data;
 
-  return (
-    <div style={styles.page}>
-      <div style={styles.container}>
+  const inner = (
+      <div>
         <div style={styles.header}>
           <div style={styles.statusRow}>
             <span
@@ -111,8 +101,8 @@ export default function Dashboard() {
           />
         </div>
       </div>
-    </div>
   );
+  return embedded ? inner : <div style={styles.page}><div style={styles.container}>{inner}</div></div>;
 }
 
 function MetricCard({ label, value, positive }) {

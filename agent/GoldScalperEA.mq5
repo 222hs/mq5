@@ -3,12 +3,13 @@
 //|                        XAUUSD M1 Fast Scalping Expert Advisor    |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
-#property version   "2.00"
+#property version   "3.00"
 #property strict
 
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
 
+// إعدادات افتراضية (تُستبدل تلقائياً من الـ Dashboard)
 input double LotSize      = 0.01;
 input int    TP           = 30;
 input int    SL           = 40;
@@ -16,12 +17,13 @@ input int    MaxSpread    = 500;
 input int    RSI_Period   = 7;
 input int    EMA_Fast     = 8;
 input int    EMA_Slow     = 21;
-input int    MaxPositions = 3;    // أقصى عدد صفقات مفتوحة
-input int    CandleConf   = 2;    // عدد الشمعات المغلقة للتأكيد
+input int    MaxPositions = 3;
+input int    CandleConf   = 2;
 
 #define MAGIC_NUMBER 999111
 #define BOT_NAME     "GoldScalperX M1"
 #define DASH_PREFIX  "GSX_"
+#define GV_PREFIX    "GSX_"   // بادئة Global Variables
 
 CTrade        trade;
 CPositionInfo posInfo;
@@ -34,11 +36,38 @@ double g_rsi     = 0.0;
 double g_emaFast = 0.0;
 double g_emaSlow = 0.0;
 
+// القيم الفعلية (من Global Variables أو الـ input)
+double g_LotSize      = 0.01;
+int    g_TP           = 30;
+int    g_SL           = 40;
+int    g_MaxSpread    = 500;
+int    g_MaxPositions = 3;
+int    g_CandleConf   = 2;
+
 string   g_lastSignal     = "NONE";
 datetime g_lastSignalTime = 0;
 int      g_totalTrades    = 0;
 bool     g_running        = false;
 datetime g_lastBarTime    = 0;
+
+//+------------------------------------------------------------------+
+double GV(string key, double fallback)
+  {
+   string name = GV_PREFIX + key;
+   if(GlobalVariableCheck(name))
+      return GlobalVariableGet(name);
+   return fallback;
+  }
+
+void LoadSettings()
+  {
+   g_LotSize      = GV("LotSize",      LotSize);
+   g_TP           = (int)GV("TP",           TP);
+   g_SL           = (int)GV("SL",           SL);
+   g_MaxSpread    = (int)GV("MaxSpread",    MaxSpread);
+   g_MaxPositions = (int)GV("MaxPositions", MaxPositions);
+   g_CandleConf   = (int)GV("CandleConf",  CandleConf);
+  }
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -57,11 +86,13 @@ int OnInit()
       return(INIT_FAILED);
      }
 
+   LoadSettings();
    g_running = true;
    CreateDashboard();
-   Print(BOT_NAME, ": INITIALIZED v2 | Symbol=", _Symbol, " | Magic=", MAGIC_NUMBER,
-         " | Lot=", DoubleToString(LotSize, 2), " | TP=", TP, " SL=", SL,
-         " | CandleConf=", CandleConf);
+   Print(BOT_NAME, ": INITIALIZED v3 | Symbol=", _Symbol,
+         " | Lot=", DoubleToString(g_LotSize, 2),
+         " | TP=", g_TP, " SL=", g_SL,
+         " | CandleConf=", g_CandleConf);
    return(INIT_SUCCEEDED);
   }
 
@@ -80,19 +111,21 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
   {
-   // تحقق فقط عند بداية شمعة جديدة
    datetime currentBar = iTime(_Symbol, PERIOD_M1, 0);
    if(currentBar == g_lastBarTime) { UpdateDashboard(); return; }
    g_lastBarTime = currentBar;
 
+   // تحديث الإعدادات من Global Variables عند كل شمعة جديدة
+   LoadSettings();
+
    if(!UpdateIndicators()) { UpdateDashboard(); return; }
 
    long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
-   if(spread > MaxSpread) { UpdateDashboard(); return; }
+   if(spread > g_MaxSpread) { UpdateDashboard(); return; }
 
-   // قراءة الشمعات المغلقة (1، 2، 3) وليس الشمعة الحالية
+   // قراءة شمعات مغلقة فقط
    int bullCount = 0, bearCount = 0;
-   for(int i = 1; i <= CandleConf; i++)
+   for(int i = 1; i <= g_CandleConf; i++)
      {
       double o = iOpen(_Symbol, PERIOD_M1, i);
       double c = iClose(_Symbol, PERIOD_M1, i);
@@ -100,11 +133,8 @@ void OnTick()
       else if(c < o) bearCount++;
      }
 
-   bool bullSignal = (bullCount == CandleConf);
-   bool bearSignal = (bearCount == CandleConf);
-
-   bool buySignal  = (bullSignal && g_emaFast > g_emaSlow && g_rsi >= 40.0 && g_rsi <= 70.0);
-   bool sellSignal = (bearSignal && g_emaFast < g_emaSlow && g_rsi >= 30.0 && g_rsi <= 60.0);
+   bool buySignal  = (bullCount == g_CandleConf && g_emaFast > g_emaSlow && g_rsi >= 40.0 && g_rsi <= 70.0);
+   bool sellSignal = (bearCount == g_CandleConf && g_emaFast < g_emaSlow && g_rsi >= 30.0 && g_rsi <= 60.0);
 
    bool hasBuy = false, hasSell = false;
    for(int i = PositionsTotal() - 1; i >= 0; i--)
@@ -122,21 +152,19 @@ void OnTick()
      {
       if(hasSell)
         {
-         Print(BOT_NAME, ": REVERSAL -> Closing SELL to open BUY | RSI=", DoubleToString(g_rsi, 2),
-               " | BullCandles=", bullCount);
+         Print(BOT_NAME, ": REVERSAL -> Closing SELL | RSI=", DoubleToString(g_rsi, 2));
          CloseAllPositions(POSITION_TYPE_SELL);
         }
-      if(totalOpen < MaxPositions) OpenPosition(ORDER_TYPE_BUY);
+      if(totalOpen < g_MaxPositions) OpenPosition(ORDER_TYPE_BUY);
      }
    else if(sellSignal)
      {
       if(hasBuy)
         {
-         Print(BOT_NAME, ": REVERSAL -> Closing BUY to open SELL | RSI=", DoubleToString(g_rsi, 2),
-               " | BearCandles=", bearCount);
+         Print(BOT_NAME, ": REVERSAL -> Closing BUY | RSI=", DoubleToString(g_rsi, 2));
          CloseAllPositions(POSITION_TYPE_BUY);
         }
-      if(totalOpen < MaxPositions) OpenPosition(ORDER_TYPE_SELL);
+      if(totalOpen < g_MaxPositions) OpenPosition(ORDER_TYPE_SELL);
      }
 
    UpdateDashboard();
@@ -164,34 +192,34 @@ void OpenPosition(ENUM_ORDER_TYPE type)
    if(type == ORDER_TYPE_BUY)
      {
       price = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-      sl = NormalizeDouble(price - SL * point, _Digits);
-      tp = NormalizeDouble(price + TP * point, _Digits);
-      if(trade.Buy(LotSize, _Symbol, price, sl, tp, BOT_NAME))
+      sl = NormalizeDouble(price - g_SL * point, _Digits);
+      tp = NormalizeDouble(price + g_TP * point, _Digits);
+      if(trade.Buy(g_LotSize, _Symbol, price, sl, tp, BOT_NAME))
         {
          g_totalTrades++;
          g_lastSignal = "BUY"; g_lastSignalTime = TimeCurrent();
-         Print(BOT_NAME, ": BUY OPENED | Price=", DoubleToString(price,_Digits),
+         Print(BOT_NAME, ": BUY | Price=", DoubleToString(price,_Digits),
                " SL=", DoubleToString(sl,_Digits), " TP=", DoubleToString(tp,_Digits),
-               " | RSI=", DoubleToString(g_rsi,2), " Ticket=", trade.ResultOrder());
+               " Lot=", DoubleToString(g_LotSize,2));
         }
       else
-         Print(BOT_NAME, ": BUY FAILED | ", trade.ResultRetcode(), " ", trade.ResultRetcodeDescription());
+         Print(BOT_NAME, ": BUY FAILED | ", trade.ResultRetcodeDescription());
      }
    else
      {
       price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-      sl = NormalizeDouble(price + SL * point, _Digits);
-      tp = NormalizeDouble(price - TP * point, _Digits);
-      if(trade.Sell(LotSize, _Symbol, price, sl, tp, BOT_NAME))
+      sl = NormalizeDouble(price + g_SL * point, _Digits);
+      tp = NormalizeDouble(price - g_TP * point, _Digits);
+      if(trade.Sell(g_LotSize, _Symbol, price, sl, tp, BOT_NAME))
         {
          g_totalTrades++;
          g_lastSignal = "SELL"; g_lastSignalTime = TimeCurrent();
-         Print(BOT_NAME, ": SELL OPENED | Price=", DoubleToString(price,_Digits),
+         Print(BOT_NAME, ": SELL | Price=", DoubleToString(price,_Digits),
                " SL=", DoubleToString(sl,_Digits), " TP=", DoubleToString(tp,_Digits),
-               " | RSI=", DoubleToString(g_rsi,2), " Ticket=", trade.ResultOrder());
+               " Lot=", DoubleToString(g_LotSize,2));
         }
       else
-         Print(BOT_NAME, ": SELL FAILED | ", trade.ResultRetcode(), " ", trade.ResultRetcodeDescription());
+         Print(BOT_NAME, ": SELL FAILED | ", trade.ResultRetcodeDescription());
      }
   }
 
@@ -206,11 +234,10 @@ void CloseAllPositions(ENUM_POSITION_TYPE type)
          ulong  ticket = posInfo.Ticket();
          double profit = posInfo.Profit();
          if(trade.PositionClose(ticket))
-            Print(BOT_NAME, ": CLOSED | Ticket=", ticket,
-                  " Type=", (type==POSITION_TYPE_BUY?"BUY":"SELL"),
+            Print(BOT_NAME, ": CLOSED Ticket=", ticket,
                   " Profit=", DoubleToString(profit,2), " USD");
          else
-            Print(BOT_NAME, ": CLOSE FAILED | Ticket=", ticket, " ", trade.ResultRetcodeDescription());
+            Print(BOT_NAME, ": CLOSE FAILED Ticket=", ticket, " ", trade.ResultRetcodeDescription());
         }
      }
   }
@@ -273,9 +300,9 @@ void SetLabel(int idx, string text, color clr)
 
 void CreateDashboard()
   {
-   CreatePanel(DASH_PREFIX + "BG", 10, 20, 280, 275);
-   for(int i = 0; i < 12; i++)
-      CreateLabel(DASH_PREFIX + "L" + IntegerToString(i), 20, 30 + i * 22);
+   CreatePanel(DASH_PREFIX + "BG", 10, 20, 290, 310);
+   for(int i = 0; i < 14; i++)
+      CreateLabel(DASH_PREFIX + "L" + IntegerToString(i), 20, 30 + i * 21);
    UpdateDashboard();
   }
 
@@ -294,24 +321,28 @@ void UpdateDashboard()
 
    double profit = FloatingProfit();
    color profitClr = (profit > 0.0 ? clrLime : (profit < 0.0 ? clrRed : clrWhite));
-   color spreadClr = (spread > MaxSpread ? clrRed : clrLime);
+   color spreadClr = (spread > g_MaxSpread ? clrRed : clrLime);
 
    string lastSig = g_lastSignal;
    if(g_lastSignalTime > 0)
       lastSig += " @ " + TimeToString(g_lastSignalTime, TIME_MINUTES|TIME_SECONDS);
 
-   SetLabel(0,  "★ " + BOT_NAME + " v2 ★",                                         clrGold);
+   bool usingGV = GlobalVariableCheck(GV_PREFIX + "LotSize");
+
+   SetLabel(0,  "★ " + BOT_NAME + " v3 ★",                                        clrGold);
    SetLabel(1,  "Status  : " + (g_running ? "RUNNING" : "STOPPED"),              g_running ? clrLime : clrRed);
-   SetLabel(2,  "EMA8    : " + DoubleToString(g_emaFast, 2),                     clrDeepSkyBlue);
-   SetLabel(3,  "EMA21   : " + DoubleToString(g_emaSlow, 2),                     clrOrange);
-   SetLabel(4,  "RSI(" + IntegerToString(RSI_Period) + ")  : " + DoubleToString(g_rsi, 2), rsiClr);
-   SetLabel(5,  "Trend   : " + trend,                                             trendClr);
-   SetLabel(6,  "Confirm : " + IntegerToString(CandleConf) + " closed candles",  clrSilver);
-   SetLabel(7,  "Signal  : " + lastSig,                                           g_lastSignal=="BUY"?clrLime:g_lastSignal=="SELL"?clrRed:clrWhite);
-   SetLabel(8,  "Open    : " + IntegerToString(OpenPositionsCount()) + " trades", clrWhite);
-   SetLabel(9,  "P/L     : " + DoubleToString(profit, 2) + " USD",               profitClr);
-   SetLabel(10, "Total   : " + IntegerToString(g_totalTrades) + " trades",       clrWhite);
-   SetLabel(11, "Spread  : " + IntegerToString((int)spread) + " pts",            spreadClr);
+   SetLabel(2,  "Settings: " + (usingGV ? "Dashboard ✓" : "Default"),            usingGV ? clrLime : clrYellow);
+   SetLabel(3,  "EMA8    : " + DoubleToString(g_emaFast, 2),                     clrDeepSkyBlue);
+   SetLabel(4,  "EMA21   : " + DoubleToString(g_emaSlow, 2),                     clrOrange);
+   SetLabel(5,  "RSI(" + IntegerToString(RSI_Period) + ")  : " + DoubleToString(g_rsi, 2), rsiClr);
+   SetLabel(6,  "Trend   : " + trend,                                             trendClr);
+   SetLabel(7,  "Confirm : " + IntegerToString(g_CandleConf) + " candles",       clrSilver);
+   SetLabel(8,  "Lot/TP/SL: " + DoubleToString(g_LotSize,2) + " / " + IntegerToString(g_TP) + " / " + IntegerToString(g_SL), clrSilver);
+   SetLabel(9,  "Signal  : " + lastSig,                                           g_lastSignal=="BUY"?clrLime:g_lastSignal=="SELL"?clrRed:clrWhite);
+   SetLabel(10, "Open    : " + IntegerToString(OpenPositionsCount()) + " / " + IntegerToString(g_MaxPositions), clrWhite);
+   SetLabel(11, "P/L     : " + DoubleToString(profit, 2) + " USD",               profitClr);
+   SetLabel(12, "Total   : " + IntegerToString(g_totalTrades) + " trades",       clrWhite);
+   SetLabel(13, "Spread  : " + IntegerToString((int)spread) + " pts",            spreadClr);
    ChartRedraw();
   }
 //+------------------------------------------------------------------+
