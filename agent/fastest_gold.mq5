@@ -53,16 +53,16 @@ datetime g_lastEntryTime = 0;
 datetime g_lastBar       = 0;
 int      g_totalTrades   = 0;
 
-double   g_lot;
-int      g_maxPositions;
-int      g_cooldownSecs;
-double   g_maxSpread;
-double   g_tpUSD;
-double   g_slUSD;
-double   g_maxLossPerDay;
-double   g_maxProfitPerDay;
-int      g_tradeHoursStart;
-int      g_tradeHoursEnd;
+double   g_lot          = 0.5;
+int      g_maxPositions = 10;
+int      g_cooldownSecs = 0;
+double   g_maxSpread    = 350.0;
+double   g_tpUSD        = 3.0;
+double   g_slUSD        = 2.0;
+double   g_maxLossPerDay   = 50.0;
+double   g_maxProfitPerDay = 200.0;
+int      g_tradeHoursStart = 0;
+int      g_tradeHoursEnd   = 23;
 
 // Day P&L tracking
 double   g_dayPL   = 0.0;
