@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.11';
+const DASH_VERSION = 'v3.12';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -339,6 +339,19 @@ export default function Dashboard() {
     } catch(e) { setSaveMsg('ERROR'); }
     setBusy(false);
     setTimeout(() => setSaveMsg(''), 3000);
+  };
+
+  const [histLoading, setHistLoading] = useState(false);
+  const fetchHistory = async () => {
+    setHistLoading(true);
+    try {
+      const r = await fetch(`${API_URL}/api/history?limit=200`, { headers: {'X-API-Key': API_KEY} });
+      if (r.ok) {
+        const hist = await r.json();
+        setData(d => ({ ...d, history: hist }));
+      }
+    } catch(e) {}
+    setHistLoading(false);
   };
 
   const exportSettings = (isBtc=false) => {
@@ -1558,8 +1571,14 @@ export default function Dashboard() {
 
         {/* ═══ TRADE HISTORY (full width) ═════════════════════ */}
         <div className="bcard" style={bCard()}>
-          <div style={{fontSize:12, fontWeight:'bold', letterSpacing:'2px', marginBottom:12, color:C.ink}}>
-            &gt; TRADE HISTORY · LAST {Math.min(history.length,20)}
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
+            <span style={{fontSize:12, fontWeight:'bold', letterSpacing:'2px', color:C.ink}}>
+              &gt; TRADE HISTORY · LAST {Math.min(history.length,20)}
+            </span>
+            <button className="bbtn" onClick={fetchHistory} disabled={histLoading}
+              style={{fontSize:9,padding:'3px 12px',letterSpacing:'1px',border:`1px solid ${C.neon}`,color:C.neon,background:'transparent',fontFamily:'monospace',cursor:'pointer'}}>
+              {histLoading ? 'LOADING...' : '↻ PULL'}
+            </button>
           </div>
           {history.length===0 ? (
             <div style={bLabel({padding:'12px 0', color:C.yellow})}>NO CLOSED TRADES YET_</div>
