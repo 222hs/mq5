@@ -423,9 +423,9 @@ void OnTick()
    bool bearBar = (c[1] < o[1]) && ((o[1]-c[1])/(h[1]-l[1]+1e-10) >= 0.25)
                && (h[1]-l[1]) <= 5.0*atr1;
 
-   // RSI FILTER
-   bool rsiBuyOK  = !g_useRSIFilter || (rsi1 <= g_rsiBuyMax);
-   bool rsiSellOK = !g_useRSIFilter || (rsi1 >= g_rsiSellMin);
+   // RSI FILTER (bypass in HFT mode)
+   bool rsiBuyOK  = hftMode || !g_useRSIFilter || (rsi1 <= g_rsiBuyMax);
+   bool rsiSellOK = hftMode || !g_useRSIFilter || (rsi1 >= g_rsiSellMin);
 
    // SIGNAL: H1 + M1
    int signal = 0;
