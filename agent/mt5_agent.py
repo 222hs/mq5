@@ -31,6 +31,7 @@ HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
 
 # Session واحدة مع keep-alive — تجنب فتح TCP جديد كل مرة
 _session = requests.Session()
+_session.headers.update({"X-API-Key": API_KEY, "Content-Type": "application/json"})
 _session.headers.update(HEADERS)
 adapter = requests.adapters.HTTPAdapter(
     max_retries=0,
