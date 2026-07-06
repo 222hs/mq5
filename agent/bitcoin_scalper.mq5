@@ -431,7 +431,7 @@ void OnTick()
         }
      }
 
-   if((g_strategyMode & 4) && g_botRunning && !DayLimitHit())
+   if((g_strategyMode & 4) != 0 && g_botRunning && !DayLimitHit())
       CheckScale();
 
    if(bullBar && signal==0)

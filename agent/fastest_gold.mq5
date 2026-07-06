@@ -480,7 +480,7 @@ void OnTick()
      }
 
    // SCALE — يعمل كل شمعة بغض النظر عن الإشارة
-   if((g_strategyMode & 4) && g_botRunning && !DayLimitHit())
+   if((g_strategyMode & 4) != 0 && g_botRunning && !DayLimitHit())
       CheckScale();
 
    int cdLeft = (int)MathMax(0, g_cooldownSecs-(TimeCurrent()-g_lastEntryTime));
@@ -1128,9 +1128,9 @@ void UpdateDashboard(const int trend,const double rsi,
    if(g_strategyMode > 0)
      {
       stratTxt = "STRAT:";
-      if(g_strategyMode & 1) stratTxt += " GRID";
-      if(g_strategyMode & 2) stratTxt += " HEDGE";
-      if(g_strategyMode & 4) stratTxt += " SCALE";
+      if((g_strategyMode & 1) != 0) stratTxt += " GRID";
+      if((g_strategyMode & 2) != 0) stratTxt += " HEDGE";
+      if((g_strategyMode & 4) != 0) stratTxt += " SCALE";
       stratClr = clrGold;
      }
    DLabel("V_STRAT",stratTxt,xV,y,stratClr);
