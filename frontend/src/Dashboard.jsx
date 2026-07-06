@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.8';
+const DASH_VERSION = 'v3.9';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -314,6 +314,31 @@ export default function Dashboard() {
     } catch (e) { setSaveMsg('ERROR'); }
     setBusy(false);
     setTimeout(() => setSaveMsg(''), 2500);
+  };
+
+  // ── presets ────────────────────────────────────────────────────
+  const HFT_PRESET  = { TP_USD:2, SL_USD:5, CooldownSecs:10, MaxPositions:10, UseH1Filter:0 };
+  const NORM_PRESET = { TP_USD:4, SL_USD:10, CooldownSecs:60, MaxPositions:5, UseH1Filter:1 };
+
+  const applyPreset = async (preset, isBtc=false) => {
+    setBusy(true);
+    const url = isBtc ? `${API_URL}/api/settings/btc` : `${API_URL}/api/settings`;
+    const label = isBtc ? 'BTC' : 'GOLD';
+    setSaveMsg(`APPLYING ${label} PRESET...`);
+    try {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+        body: JSON.stringify(preset),
+      });
+      if (r.ok) {
+        if (isBtc) setBtcSettingsDraft(d => ({ ...d, ...preset }));
+        else setSettingsDraft(d => ({ ...d, ...preset }));
+        setSaveMsg(`✓ ${label} PRESET APPLIED`);
+      } else { setSaveMsg('ERROR'); }
+    } catch(e) { setSaveMsg('ERROR'); }
+    setBusy(false);
+    setTimeout(() => setSaveMsg(''), 3000);
   };
 
   // ── symbol branding ────────────────────────────────────────────
@@ -1199,7 +1224,19 @@ export default function Dashboard() {
               {/* ── GOLD SETTINGS PANEL ── */}
               {settingsDraft && (
                 <div style={{flex:'1 1 340px', minWidth:300, background:C.bg, border:'1px solid rgba(255,204,0,0.4)', padding:'1rem'}}>
-                  <div style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#ffd700', marginBottom:12}}>⚙ GOLD SETTINGS</div>
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
+                  <div style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#ffd700'}}>⚙ GOLD SETTINGS</div>
+                  <div style={{display:'flex', gap:6}}>
+                    <button className="bbtn" disabled={busy} onClick={()=>applyPreset(HFT_PRESET,false)}
+                      style={{fontSize:9,padding:'3px 10px',letterSpacing:'1px',border:'1px solid #ff6b35',color:'#ff6b35',background:'transparent',fontFamily:'monospace',cursor:'pointer'}}>
+                      ⚡ HFT
+                    </button>
+                    <button className="bbtn" disabled={busy} onClick={()=>applyPreset(NORM_PRESET,false)}
+                      style={{fontSize:9,padding:'3px 10px',letterSpacing:'1px',border:'1px solid #ffd700',color:'#ffd700',background:'transparent',fontFamily:'monospace',cursor:'pointer'}}>
+                      🔄 NORMAL
+                    </button>
+                  </div>
+                </div>
                   <div style={{display:'flex', gap:10, flexWrap:'wrap', alignItems:'flex-end'}}>
                     {settingKeys.map(k=>(
                       <div key={k} style={{display:'flex', flexDirection:'column', gap:4}}>
@@ -1335,7 +1372,19 @@ export default function Dashboard() {
 
               {/* ── BTC SETTINGS PANEL ── */}
               <div style={{flex:'1 1 340px', minWidth:300, background:C.bg, border:'1px solid rgba(0,170,255,0.4)', padding:'1rem'}}>
-                <div style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#00aaff', marginBottom:12}}>₿ BTC SETTINGS</div>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
+                  <div style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#00aaff'}}>₿ BTC SETTINGS</div>
+                  <div style={{display:'flex', gap:6}}>
+                    <button className="bbtn" disabled={busy} onClick={()=>applyPreset(HFT_PRESET,true)}
+                      style={{fontSize:9,padding:'3px 10px',letterSpacing:'1px',border:'1px solid #ff6b35',color:'#ff6b35',background:'transparent',fontFamily:'monospace',cursor:'pointer'}}>
+                      ⚡ HFT
+                    </button>
+                    <button className="bbtn" disabled={busy} onClick={()=>applyPreset(NORM_PRESET,true)}
+                      style={{fontSize:9,padding:'3px 10px',letterSpacing:'1px',border:'1px solid #00aaff',color:'#00aaff',background:'transparent',fontFamily:'monospace',cursor:'pointer'}}>
+                      🔄 NORMAL
+                    </button>
+                  </div>
+                </div>
                 <div style={{display:'flex', gap:10, flexWrap:'wrap', alignItems:'flex-end'}}>
                   {['LotSize','TP_USD','SL_USD','MaxSpread','MaxPositions','CooldownSecs','MaxLossPerDay','MaxProfitPerDay','TradeHoursStart','TradeHoursEnd','RSIBuyMax','RSISellMin'].map(k=>(
                     <div key={k} style={{display:'flex', flexDirection:'column', gap:4}}>
