@@ -93,6 +93,13 @@ DEFAULT_SETTINGS = {
     "RSIBuyMax":      65.0,
     "RSISellMin":     35.0,
     "UseH1Filter":    1,
+    "StrategyMode":   0,
+    "GridLevels":     3,
+    "GridStep":       50,
+    "HedgeLotMult":   0.5,
+    "ScaleStep":      30,
+    "ScaleMult":      1.5,
+    "MaxScales":      3,
 }
 
 BTC_DEFAULT_SETTINGS = {
@@ -113,6 +120,13 @@ BTC_DEFAULT_SETTINGS = {
     "RSIBuyMax":      65.0,
     "RSISellMin":     35.0,
     "UseH1Filter":    1,
+    "StrategyMode":   0,
+    "GridLevels":     3,
+    "GridStep":       50,
+    "HedgeLotMult":   0.5,
+    "ScaleStep":      30,
+    "ScaleMult":      1.5,
+    "MaxScales":      3,
 }
 
 

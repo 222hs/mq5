@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.6';
+const DASH_VERSION = 'v3.7';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -1242,6 +1242,93 @@ export default function Dashboard() {
                       </button>
                       <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>H1 EMA21</div>
                     </div>
+                  </div>
+
+                  {/* ── STRATEGY SECTION ── */}
+                  <div style={{borderTop:'1px solid rgba(255,153,0,0.3)', paddingTop:12, marginTop:4}}>
+                    <div style={{fontSize:10, fontWeight:'bold', letterSpacing:'2px', color:'#ff9900', marginBottom:10}}>⚡ STRATEGY</div>
+                    <div style={{display:'flex', gap:6, marginBottom:10}}>
+                      {[
+                        {bit:1, label:'GRID',  sub:'مستويات'},
+                        {bit:2, label:'HEDGE', sub:'تحوط'},
+                        {bit:4, label:'SCALE', sub:'تضاعف'},
+                      ].map(s => {
+                        const active = ((settingsDraft.StrategyMode??0) & s.bit) !== 0;
+                        return (
+                          <button key={s.bit} className="bbtn"
+                            onClick={()=>{
+                              const v=(settingsDraft.StrategyMode??0)^s.bit;
+                              setSettingsDraft(d=>({...d,StrategyMode:v}));
+                              saveSingle('StrategyMode',v);
+                            }}
+                            style={{...bBtn(active,{flex:1,padding:'8px 4px',borderColor:'#ff9900',color:active?'#000':'#ff9900'})}}>
+                            <div style={{fontSize:10,fontWeight:'bold'}}>{s.label}</div>
+                            <div style={{fontSize:8,opacity:0.8}}>{s.sub}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {/* Grid params */}
+                    {((settingsDraft.StrategyMode??0) & 1) ? (
+                      <div style={{padding:'8px',background:C.faint,marginBottom:6}}>
+                        <div style={{fontSize:9,color:'#ff9900',letterSpacing:'2px',marginBottom:6}}>GRID — مستويات الدخول</div>
+                        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                          {[{k:'GridLevels',label:'LEVELS',step:'1'},{k:'GridStep',label:'STEP (pts)',step:'10'}].map(f=>(
+                            <div key={f.k} style={{display:'flex',flexDirection:'column',gap:3}}>
+                              <div style={bLabel({fontSize:8})}>{f.label}</div>
+                              <input type="number" step={f.step} value={settingsDraft[f.k]??''} onChange={e=>{settingsDirty.current=true;setSettingsDraft(d=>({...d,[f.k]:Number(e.target.value)}));}}
+                                style={{fontFamily:C.mono,fontSize:12,width:72,padding:'4px 6px',background:'#0d1117',border:'1px solid rgba(255,153,0,0.4)',color:'#ff9900'}}
+                              />
+                              <button className="bbtn" onClick={()=>saveSingle(f.k,settingsDraft[f.k])} disabled={busy}
+                                style={bBtn(false,{fontSize:8,padding:'3px 6px',borderColor:'rgba(255,153,0,0.5)',color:'#ff9900'})}>SAVE</button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {/* Hedge params */}
+                    {((settingsDraft.StrategyMode??0) & 2) ? (
+                      <div style={{padding:'8px',background:C.faint,marginBottom:6}}>
+                        <div style={{fontSize:9,color:'#ff9900',letterSpacing:'2px',marginBottom:6}}>HEDGE — صفقة معاكسة</div>
+                        <div style={{display:'flex',gap:8}}>
+                          <div style={{display:'flex',flexDirection:'column',gap:3}}>
+                            <div style={bLabel({fontSize:8})}>HEDGE LOT ×</div>
+                            <input type="number" step="0.1" min="0.1" max="2" value={settingsDraft.HedgeLotMult??0.5} onChange={e=>{settingsDirty.current=true;setSettingsDraft(d=>({...d,HedgeLotMult:Number(e.target.value)}));}}
+                              style={{fontFamily:C.mono,fontSize:12,width:72,padding:'4px 6px',background:'#0d1117',border:'1px solid rgba(255,153,0,0.4)',color:'#ff9900'}}
+                            />
+                            <button className="bbtn" onClick={()=>saveSingle('HedgeLotMult',settingsDraft.HedgeLotMult)} disabled={busy}
+                              style={bBtn(false,{fontSize:8,padding:'3px 6px',borderColor:'rgba(255,153,0,0.5)',color:'#ff9900'})}>SAVE</button>
+                          </div>
+                          <div style={{fontSize:9,color:C.muted,alignSelf:'center',lineHeight:1.5}}>
+                            مثال: 0.5 = نص اللوت<br/>في الاتجاه الثاني
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                    {/* Scale params */}
+                    {((settingsDraft.StrategyMode??0) & 4) ? (
+                      <div style={{padding:'8px',background:C.faint,marginBottom:6}}>
+                        <div style={{fontSize:9,color:'#ff9900',letterSpacing:'2px',marginBottom:6}}>SCALE — تضاعف عند الخسارة</div>
+                        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                          {[{k:'ScaleStep',label:'STEP (pts)',step:'10'},{k:'ScaleMult',label:'LOT ×',step:'0.1'},{k:'MaxScales',label:'MAX',step:'1'}].map(f=>(
+                            <div key={f.k} style={{display:'flex',flexDirection:'column',gap:3}}>
+                              <div style={bLabel({fontSize:8})}>{f.label}</div>
+                              <input type="number" step={f.step} value={settingsDraft[f.k]??''} onChange={e=>{settingsDirty.current=true;setSettingsDraft(d=>({...d,[f.k]:Number(e.target.value)}));}}
+                                style={{fontFamily:C.mono,fontSize:12,width:72,padding:'4px 6px',background:'#0d1117',border:'1px solid rgba(255,153,0,0.4)',color:'#ff9900'}}
+                              />
+                              <button className="bbtn" onClick={()=>saveSingle(f.k,settingsDraft[f.k])} disabled={busy}
+                                style={bBtn(false,{fontSize:8,padding:'3px 6px',borderColor:'rgba(255,153,0,0.5)',color:'#ff9900'})}>SAVE</button>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{fontSize:8,color:C.red,marginTop:6,letterSpacing:'1px'}}>⚠ SCALE يزيد المخاطرة — استخدم بحذر</div>
+                      </div>
+                    ) : null}
+                    {(settingsDraft.StrategyMode??0)===0 && (
+                      <div style={{fontSize:9,color:C.muted,textAlign:'center',padding:'4px 0'}}>
+                        NORMAL MODE — اضغط استراتيجية لتفعيلها
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

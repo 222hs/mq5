@@ -79,6 +79,18 @@ double   g_rsiSellMin      = 35.0;
 bool     g_useH1Filter     = true;  // فلتر اتجاه H1 EMA21
 bool     g_botRunning      = true;
 
+// Strategy mode — bitmask: 1=Grid  2=Hedge  4=Scale
+int    g_strategyMode  = 0;
+int    g_gridLevels    = 3;
+int    g_gridStep      = 50;
+double g_hedgeLotMult  = 0.5;
+int    g_scaleStep     = 30;
+double g_scaleMult     = 1.5;
+int    g_maxScales     = 3;
+
+ulong  g_scaledFrom[200];
+int    g_scaledCount = 0;
+
 // Day P&L tracking
 double   g_dayPL   = 0.0;
 datetime g_today   = 0;
@@ -125,7 +137,14 @@ void WriteCurrentSettings()
    j += "  \"TradeHoursEnd\": "  + IntegerToString(g_tradeHoursEnd)   + ",\n";
    j += "  \"BotRunning\": "     + (g_botRunning ? "1" : "0")         + ",\n";
    j += "  \"UseH1Filter\": "   + (g_useH1Filter ? "1" : "0")        + ",\n";
-   j += "  \"OrderType\": "      + IntegerToString(g_orderType)       + "\n";
+   j += "  \"StrategyMode\": " + IntegerToString(g_strategyMode)     + ",\n";
+   j += "  \"GridLevels\": "   + IntegerToString(g_gridLevels)       + ",\n";
+   j += "  \"GridStep\": "     + IntegerToString(g_gridStep)         + ",\n";
+   j += "  \"HedgeLotMult\": " + DoubleToString(g_hedgeLotMult,2)   + ",\n";
+   j += "  \"ScaleStep\": "    + IntegerToString(g_scaleStep)        + ",\n";
+   j += "  \"ScaleMult\": "    + DoubleToString(g_scaleMult,2)       + ",\n";
+   j += "  \"MaxScales\": "    + IntegerToString(g_maxScales)        + ",\n";
+   j += "  \"OrderType\": "    + IntegerToString(g_orderType)        + "\n";
    j += "}";
    FileWriteString(fh, j);
    FileClose(fh);
@@ -183,6 +202,13 @@ void LoadSettings()
    double rsiBM  = ReadSetting("RSIBuyMax",      65.0);
    double rsiSM  = ReadSetting("RSISellMin",     35.0);
    bool   useH1  = (ReadSetting("UseH1Filter",   1.0) > 0.5);
+   int    sMode  = (int)ReadSetting("StrategyMode", 0.0);
+   int    gLev   = (int)ReadSetting("GridLevels",   3.0);
+   int    gStep  = (int)ReadSetting("GridStep",    50.0);
+   double hMult  = ReadSetting("HedgeLotMult",      0.5);
+   int    scStep = (int)ReadSetting("ScaleStep",   30.0);
+   double scMult = ReadSetting("ScaleMult",          1.5);
+   int    scMax  = (int)ReadSetting("MaxScales",    3.0);
 
    string hash = DoubleToString(lot,2)+DoubleToString(tp,2)+DoubleToString(sl,2)
                + IntegerToString(maxPos)+DoubleToString(spread,0)
@@ -192,7 +218,10 @@ void LoadSettings()
                + IntegerToString(ordTyp)+(botOn?"1":"0")
                + IntegerToString(rMode)+DoubleToString(rPct,1)
                + DoubleToString(rsiBM,1)+DoubleToString(rsiSM,1)
-               + (useH1?"1":"0");
+               + (useH1?"1":"0")
+               + IntegerToString(sMode)+IntegerToString(gLev)+IntegerToString(gStep)
+               + DoubleToString(hMult,2)+IntegerToString(scStep)
+               + DoubleToString(scMult,2)+IntegerToString(scMax);
    bool changed = (hash != g_lastSettingsHash);
    g_lastSettingsHash = hash;
 
@@ -202,6 +231,10 @@ void LoadSettings()
    g_orderType=ordTyp; g_riskMode=rMode; g_riskPct=rPct;
    g_rsiBuyMax=rsiBM; g_rsiSellMin=rsiSM;
    g_useH1Filter=useH1;
+   g_strategyMode=sMode;
+   g_gridLevels=MathMax(1,gLev);  g_gridStep=MathMax(10,gStep);
+   g_hedgeLotMult=MathMax(0.1,MathMin(2.0,hMult));
+   g_scaleStep=MathMax(10,scStep); g_scaleMult=MathMax(1.0,scMult); g_maxScales=MathMax(1,scMax);
    LoadNewsBlock();
 
    if(changed)
@@ -381,13 +414,25 @@ void OnTick()
       int slots = g_maxPositions - CountMyPositions();
       if(slots > 0)
         {
-         ENUM_ORDER_TYPE dir = (signal==1) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
-         if(g_orderType == 3)
-            OpenBasket(dir, atr1, c[1], h[1], l[1], slots);
+         bool useGrid  = (g_strategyMode & 1) != 0;
+         bool useHedge = (g_strategyMode & 2) != 0;
+         if(useGrid)
+            OpenGrid(signal, atr1);
+         else if(useHedge)
+            OpenHedge(signal, atr1);
          else
-            OpenTrade(dir, atr1, c[1], h[1], l[1]);
+           {
+            ENUM_ORDER_TYPE dir = (signal==1) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+            if(g_orderType == 3)
+               OpenBasket(dir, atr1, c[1], h[1], l[1], slots);
+            else
+               OpenTrade(dir, atr1, c[1], h[1], l[1]);
+           }
         }
      }
+
+   if((g_strategyMode & 4) && g_botRunning && !DayLimitHit())
+      CheckScale();
 
    if(bullBar && signal==0)
       Print(EA_NAME,": BUY skipped H1=",h1BullBias?"↑":"↓"," RSI=",DoubleToString(rsi1,0));
@@ -416,6 +461,127 @@ double NormalizeLot(double lot)
    double st=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
    if(st>0.0) lot=MathFloor(lot/st)*st;
    return MathMax(mn,MathMin(mx,lot));
+  }
+
+//+------------------------------------------------------------------+
+bool ScaledAlready(ulong ticket)
+  {
+   for(int i=0;i<g_scaledCount;i++) if(g_scaledFrom[i]==ticket) return true;
+   return false;
+  }
+
+void OpenGrid(int signal, double atrVal)
+  {
+   double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+   double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+   double tickSz=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+   double tickVal=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
+   int    digs=(int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS);
+   long   sl0=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL);
+   long   frz=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_FREEZE_LEVEL);
+   double minD=MathMax((double)(sl0+frz+5),10.0)*tickSz;
+   double lot=CalcLot();
+   double ptV=(tickSz>0&&lot>0)?(tickVal/tickSz)*lot:1.0;
+   double safeMin=MathMax(minD,atrVal*1.5);
+   double slD=MathMax(g_slUSD/ptV,safeMin);
+   double tpD=MathMax(g_tpUSD/ptV,safeMin);
+   double stepD=g_gridStep*tickSz;
+   datetime expiry=TimeCurrent()+PeriodSeconds(PERIOD_M1)*g_gridLevels*4;
+   bool isBuy=(signal==1);
+   int fired=0;
+   for(int i=0;i<g_gridLevels;i++)
+     {
+      if(CountMyPositions()>=g_maxPositions) break;
+      bool ok=false;
+      if(i==0)
+        {
+         if(isBuy){double sl=NormalizeDouble(ask-slD,digs);double tp=NormalizeDouble(ask+tpD,digs);ok=trade.Buy(lot,_Symbol,ask,sl,tp,"GRID[0]");}
+         else     {double sl=NormalizeDouble(bid+slD,digs);double tp=NormalizeDouble(bid-tpD,digs);ok=trade.Sell(lot,_Symbol,bid,sl,tp,"GRID[0]");}
+        }
+      else
+        {
+         double off=i*stepD;
+         if(isBuy){double e=NormalizeDouble(bid-off,digs);double sl=NormalizeDouble(e-slD,digs);double tp=NormalizeDouble(e+tpD,digs);ok=trade.BuyLimit(lot,e,_Symbol,sl,tp,ORDER_TIME_SPECIFIED,expiry,"GRID["+IntegerToString(i)+"]");}
+         else     {double e=NormalizeDouble(ask+off,digs);double sl=NormalizeDouble(e+slD,digs);double tp=NormalizeDouble(e-tpD,digs);ok=trade.SellLimit(lot,e,_Symbol,sl,tp,ORDER_TIME_SPECIFIED,expiry,"GRID["+IntegerToString(i)+"]");}
+        }
+      if(ok){fired++;g_totalTrades++;}
+     }
+   if(fired>0){g_lastEntryTime=TimeCurrent();
+     Print(BSX_NAME,": GRID fired=",fired,"/",g_gridLevels," ",isBuy?"BUY":"SELL"," step=",g_gridStep,"pts");}
+  }
+
+void OpenHedge(int signal, double atrVal)
+  {
+   double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+   double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+   double tickSz=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+   double tickVal=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
+   int    digs=(int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS);
+   long   sl0=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL);
+   long   frz=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_FREEZE_LEVEL);
+   double minD=MathMax((double)(sl0+frz+5),10.0)*tickSz;
+   double mainLot=CalcLot();
+   double hedgeLot=NormalizeLot(mainLot*g_hedgeLotMult);
+   double safeMin=MathMax(minD,atrVal*1.5);
+   bool isBuy=(signal==1);
+   int fired=0;
+   double ptM=(tickSz>0&&mainLot>0)?(tickVal/tickSz)*mainLot:1.0;
+   double slDM=MathMax(g_slUSD/ptM,safeMin); double tpDM=MathMax(g_tpUSD/ptM,safeMin);
+   bool ok=false;
+   if(isBuy){double sl=NormalizeDouble(ask-slDM,digs);double tp=NormalizeDouble(ask+tpDM,digs);ok=trade.Buy(mainLot,_Symbol,ask,sl,tp,"HEDGE_MAIN");}
+   else     {double sl=NormalizeDouble(bid+slDM,digs);double tp=NormalizeDouble(bid-tpDM,digs);ok=trade.Sell(mainLot,_Symbol,bid,sl,tp,"HEDGE_MAIN");}
+   if(ok){fired++;g_totalTrades++;}
+   if(CountMyPositions()<g_maxPositions)
+     {
+      double ptH=(tickSz>0&&hedgeLot>0)?(tickVal/tickSz)*hedgeLot:1.0;
+      double slDH=MathMax(g_slUSD/ptH,safeMin); double tpDH=MathMax(g_tpUSD/ptH,safeMin);
+      ok=false;
+      if(!isBuy){double sl=NormalizeDouble(ask-slDH,digs);double tp=NormalizeDouble(ask+tpDH,digs);ok=trade.Buy(hedgeLot,_Symbol,ask,sl,tp,"HEDGE_OPP");}
+      else      {double sl=NormalizeDouble(bid+slDH,digs);double tp=NormalizeDouble(bid-tpDH,digs);ok=trade.Sell(hedgeLot,_Symbol,bid,sl,tp,"HEDGE_OPP");}
+      if(ok){fired++;g_totalTrades++;}
+     }
+   if(fired>0){g_lastEntryTime=TimeCurrent();
+     Print(BSX_NAME,": HEDGE fired=",fired," main=",mainLot," opp=",hedgeLot);}
+  }
+
+void CheckScale()
+  {
+   double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+   double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+   double tickSz=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+   double tickVal=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
+   int    digs=(int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS);
+   long   sl0=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL);
+   long   frz=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_FREEZE_LEVEL);
+   double minD=MathMax((double)(sl0+frz+5),10.0)*tickSz;
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      if(!posInfo.SelectByIndex(i)) continue;
+      if(posInfo.Symbol()!=_Symbol||posInfo.Magic()!=g_magic) continue;
+      if(CountMyPositions()>=g_maxPositions) break;
+      ulong tk=posInfo.Ticket();
+      if(ScaledAlready(tk)) continue;
+      double openP=posInfo.PriceOpen();
+      double curP=(posInfo.PositionType()==POSITION_TYPE_BUY)?bid:ask;
+      double lossPts=(posInfo.PositionType()==POSITION_TYPE_BUY)
+                     ?(openP-curP)/tickSz:(curP-openP)/tickSz;
+      if(lossPts<g_scaleStep) continue;
+      double newLot=NormalizeLot(posInfo.Volume()*g_scaleMult);
+      double ptN=(tickSz>0&&newLot>0)?(tickVal/tickSz)*newLot:1.0;
+      double slD=MathMax(g_slUSD/ptN,MathMax(minD,10.0*tickSz));
+      double tpD=MathMax(g_tpUSD/ptN,MathMax(minD,10.0*tickSz));
+      bool ok=false;
+      if(posInfo.PositionType()==POSITION_TYPE_BUY)
+        {double sl=NormalizeDouble(ask-slD,digs);double tp=NormalizeDouble(ask+tpD,digs);ok=trade.Buy(newLot,_Symbol,ask,sl,tp,"SCALE");}
+      else
+        {double sl=NormalizeDouble(bid+slD,digs);double tp=NormalizeDouble(bid-tpD,digs);ok=trade.Sell(newLot,_Symbol,bid,sl,tp,"SCALE");}
+      if(ok)
+        {
+         if(g_scaledCount<200) g_scaledFrom[g_scaledCount++]=tk;
+         g_totalTrades++; g_lastEntryTime=TimeCurrent();
+         Print(BSX_NAME,": SCALE #",tk," lot=",newLot," loss=",DoubleToString(lossPts,0),"pts");
+        }
+     }
   }
 
 //+------------------------------------------------------------------+

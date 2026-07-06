@@ -557,6 +557,8 @@ def sync_btc_settings():
                 "TradeHoursStart", "TradeHoursEnd", "BotRunning",
                 "OrderType", "RiskMode", "RiskPercent",
                 "RSIBuyMax", "RSISellMin", "UseH1Filter",
+                "StrategyMode", "GridLevels", "GridStep",
+                "HedgeLotMult", "ScaleStep", "ScaleMult", "MaxScales",
             ]
             for k in btc_keys:
                 if k in settings:
@@ -631,6 +633,8 @@ def sync_settings():
                 "TradeHoursStart", "TradeHoursEnd", "BotRunning",
                 "OrderType", "RiskMode", "RiskPercent",
                 "RSIBuyMax", "RSISellMin", "UseH1Filter",
+                "StrategyMode", "GridLevels", "GridStep",
+                "HedgeLotMult", "ScaleStep", "ScaleMult", "MaxScales",
             ]
             for k in gold_keys:
                 if k in settings:
@@ -647,6 +651,8 @@ def sync_settings():
                 "BotRunning", "OrderType", "TradeHoursStart", "TradeHoursEnd",
                 "RiskMode", "RiskPercent",
                 "RSIBuyMax", "RSISellMin", "UseH1Filter",
+                "StrategyMode", "GridLevels", "GridStep",
+                "HedgeLotMult", "ScaleStep", "ScaleMult", "MaxScales",
             ]
             for k in btc_shared_keys:
                 if k in settings:
