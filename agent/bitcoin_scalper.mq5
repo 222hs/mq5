@@ -171,7 +171,7 @@ void LoadNewsBlock()
 #define LOG_FILE "BSX_Log.txt"
 void EALog(string msg)
   {
-   Print(BSX_NAME, ": ", msg);
+   Print(EA_NAME, ": ", msg);
    int fh = FileOpen(LOG_FILE, FILE_WRITE|FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ);
    if(fh != INVALID_HANDLE)
      {
@@ -542,7 +542,7 @@ void OpenGrid(int signal, double atrVal)
       if(ok){fired++;g_totalTrades++;}
      }
    if(fired>0){g_lastEntryTime=TimeCurrent();
-     Print(BSX_NAME,": GRID fired=",fired,"/",g_gridLevels," ",isBuy?"BUY":"SELL"," step=",g_gridStep,"pts");}
+     Print(EA_NAME,": GRID fired=",fired,"/",g_gridLevels," ",isBuy?"BUY":"SELL"," step=",g_gridStep,"pts");}
   }
 
 void OpenHedge(int signal, double atrVal)
@@ -576,7 +576,7 @@ void OpenHedge(int signal, double atrVal)
       if(ok){fired++;g_totalTrades++;}
      }
    if(fired>0){g_lastEntryTime=TimeCurrent();
-     Print(BSX_NAME,": HEDGE fired=",fired," main=",mainLot," opp=",hedgeLot);}
+     Print(EA_NAME,": HEDGE fired=",fired," main=",mainLot," opp=",hedgeLot);}
   }
 
 void CheckScale()
@@ -614,7 +614,7 @@ void CheckScale()
         {
          if(g_scaledCount<200) g_scaledFrom[g_scaledCount++]=tk;
          g_totalTrades++; g_lastEntryTime=TimeCurrent();
-         Print(BSX_NAME,": SCALE #",tk," lot=",newLot," loss=",DoubleToString(lossPts,0),"pts");
+         Print(EA_NAME,": SCALE #",tk," lot=",newLot," loss=",DoubleToString(lossPts,0),"pts");
         }
      }
   }
@@ -727,8 +727,8 @@ void OpenBasket(const ENUM_ORDER_TYPE dir, const double atrVal,
    double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    double pointVal = (tickSize>0.0&&lot>0.0) ? (tickVal/tickSize)*lot : 1.0;
    double safeMin  = MathMax(minD, atrVal*1.5);
-   double slD = MathMax(EffectiveSL(lot)/pointVal, safeMin);
-   double tpD = MathMax(EffectiveTP(lot)/pointVal, safeMin);
+   double slD = MathMax(g_slUSD/pointVal, safeMin);
+   double tpD = MathMax(g_tpUSD/pointVal, safeMin);
 
    MqlDateTime dt; TimeToStruct(TimeGMT(), dt);
    int hr=dt.hour;
