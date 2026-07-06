@@ -226,7 +226,7 @@ void CloseBasket(string reason)
       if(ticket == 0) continue;
       if(PositionGetString(POSITION_SYMBOL) != _Symbol)  continue;
       if(PositionGetInteger(POSITION_MAGIC) != g_magic)  continue;
-      trade.PositionClose(ticket, g_maxSpread*2);
+      trade.PositionClose(ticket, (ulong)(g_maxSpread*2));
       Sleep(100);
      }
   }
@@ -445,14 +445,14 @@ void TryEntry(int currentBasket)
    if(bullBar || (currentBasket > 0 && BasketDirection() == 1))
      {
       if(trade.Buy(lot, _Symbol, ask, 0, 0, tag))
-         EALog("BUY_"+tag+" #"+(currentBasket+1)+" lot="+DoubleToString(lot,2));
+         EALog("BUY_"+tag+" #"+IntegerToString(currentBasket+1)+" lot="+DoubleToString(lot,2));
       else
          EALog("FAIL BUY_"+tag+" "+IntegerToString(trade.ResultRetcode())+" "+trade.ResultComment());
      }
    else
      {
       if(trade.Sell(lot, _Symbol, bid, 0, 0, tag))
-         EALog("SELL_"+tag+" #"+(currentBasket+1)+" lot="+DoubleToString(lot,2));
+         EALog("SELL_"+tag+" #"+IntegerToString(currentBasket+1)+" lot="+DoubleToString(lot,2));
       else
          EALog("FAIL SELL_"+tag+" "+IntegerToString(trade.ResultRetcode())+" "+trade.ResultComment());
      }
