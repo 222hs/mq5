@@ -24,15 +24,31 @@ socketio = SocketIO(
 )
 
 # ============== Live Log ==============
-_log_buffer = []          # آخر 100 رسالة
-_log_lock   = Lock()
+_log_buffer   = []          # آخر 200 رسالة
+_log_lock     = Lock()
+_log_seen     = set()       # dedup: منع تكرار نفس الرسالة خلال 30 ثانية
+_log_seen_ts  = {}          # msg -> timestamp
 
 def push_log(level, msg):
-    """يبث رسالة للداشبورد ويحفظها في buffer"""
+    """يبث رسالة للداشبورد — مع dedup لمنع التكرار"""
+    import time as _time
+    now_ts = _time.time()
+    # أنظف القديم كل مرة
+    expired = [k for k, t in _log_seen_ts.items() if now_ts - t > 30]
+    for k in expired:
+        _log_seen.discard(k)
+        del _log_seen_ts[k]
+    # تجاهل لو نفس الرسالة ظهرت خلال 30 ثانية
+    key = f"{level}:{msg}"
+    if key in _log_seen:
+        return
+    _log_seen.add(key)
+    _log_seen_ts[key] = now_ts
+
     entry = {"t": datetime.now().strftime("%H:%M:%S"), "l": level, "m": msg}
     with _log_lock:
         _log_buffer.append(entry)
-        if len(_log_buffer) > 100:
+        if len(_log_buffer) > 200:
             _log_buffer.pop(0)
     try:
         socketio.emit("log", entry)
@@ -791,10 +807,7 @@ def update_data():
                 emoji  = "🟢" if profit > 0 else "🔴"
                 push_log("trade", f"{emoji} TRADE #{t.get('ticket','')} {tp} {sym} P&L: ${profit:.2f}")
 
-        # لوج المراكز المفتوحة
         pos = payload.get("positions", [])
-        if pos:
-            push_log("info", f"📊 {len(pos)} مركز مفتوح | Balance: ${(payload.get('account') or {}).get('balance', 0):.2f}")
 
         upsert_history(history_payload)
 
