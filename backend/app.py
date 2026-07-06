@@ -145,6 +145,17 @@ BTC_DEFAULT_SETTINGS = {
     "MaxScales":      3,
 }
 
+HEDGE_DEFAULT_SETTINGS = {
+    "BaseLot":       0.01,
+    "LotMultiplier": 1.5,
+    "HedgeDistUSD":  3.0,
+    "BasketTP":      2.0,
+    "MaxDrawdown":   50.0,
+    "MaxLevels":     4,
+    "MaxSpread":     350,
+    "BotRunning":    1,
+}
+
 
 # ---------- SQLite ----------
 def get_db():
@@ -198,6 +209,12 @@ def init_db():
                 value TEXT
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS hedge_settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
         # استعادة إعدادات BTC من الـ backup
         _btc_backup = os.path.join(_db_dir if _db_dir else ".", "btc_settings_backup.json")
         saved_btc = {}
@@ -220,6 +237,11 @@ def init_db():
         for k, v in BTC_DEFAULT_SETTINGS.items():
             conn.execute(
                 "INSERT OR IGNORE INTO btc_settings (key, value) VALUES (?, ?)",
+                (k, str(v))
+            )
+        for k, v in HEDGE_DEFAULT_SETTINGS.items():
+            conn.execute(
+                "INSERT OR IGNORE INTO hedge_settings (key, value) VALUES (?, ?)",
                 (k, str(v))
             )
         # استعادة الإعدادات من الـ backup أولاً (يتجاوز الافتراضية)
@@ -430,6 +452,31 @@ def save_btc_settings(new_settings, mark_user_saved=True):
             )
         conn.commit()
     _write_btc_settings_backup()
+
+
+def get_hedge_settings():
+    result = dict(HEDGE_DEFAULT_SETTINGS)
+    with get_db() as conn:
+        rows = conn.execute("SELECT key, value FROM hedge_settings").fetchall()
+        for row in rows:
+            k, v = row["key"], row["value"]
+            if k in HEDGE_DEFAULT_SETTINGS:
+                try:
+                    result[k] = type(HEDGE_DEFAULT_SETTINGS[k])(v)
+                except Exception:
+                    result[k] = v
+    return result
+
+
+def save_hedge_settings(new_settings):
+    with get_db() as conn:
+        for k, v in new_settings.items():
+            if k in HEDGE_DEFAULT_SETTINGS:
+                conn.execute(
+                    "INSERT INTO hedge_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (k, str(v))
+                )
+        conn.commit()
 
 
 def is_btc_user_saved():
@@ -983,6 +1030,28 @@ def api_seed_btc_settings():
     except Exception:
         pass
     return jsonify({"status": "ok", "applied": True, "settings": get_btc_settings()})
+
+
+@app.route("/api/settings/hedge", methods=["GET"])
+def api_get_hedge_settings():
+    if not check_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify(get_hedge_settings()), 200
+
+
+@app.route("/api/settings/hedge", methods=["POST"])
+def api_save_hedge_settings():
+    if not check_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True)
+    if not body:
+        return jsonify({"error": "No data"}), 400
+    save_hedge_settings(body)
+    try:
+        socketio.emit("hedge_settings", get_hedge_settings())
+    except Exception:
+        pass
+    return jsonify({"status": "ok", "settings": get_hedge_settings()})
 
 
 @app.route("/api/trade_snapshot", methods=["POST"])

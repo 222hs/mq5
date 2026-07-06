@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.14';
+const DASH_VERSION = 'v3.15';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -94,6 +94,8 @@ export default function Dashboard() {
   const [btcSettings, setBtcSettings] = useState({});
   const [btcSettingsDraft, setBtcSettingsDraft] = useState({});
   const btcSettingsDirty = useRef(false);
+  const [hedgeSettingsDraft, setHedgeSettingsDraft] = useState({});
+  const hedgeSettingsDirty = useRef(false);
   const [saveMsg, setSaveMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const [candleData, setCandleData] = useState({ candles: [], sessions: {} });
@@ -207,6 +209,10 @@ export default function Dashboard() {
       setBtcSettings({ ...s });
       setBtcSettingsDraft({ ...s });
     });
+    socket.on('hedge_settings', (s) => {
+      hedgeSettingsDirty.current = false;
+      setHedgeSettingsDraft({ ...s });
+    });
     socket.on('log', (entry) => {
       setLogs(prev => {
         const next = [...prev, entry];
@@ -222,6 +228,7 @@ export default function Dashboard() {
       socket.off('candles');
       socket.off('settings');
       socket.off('btc_settings');
+      socket.off('hedge_settings');
       socket.off('log');
       socket.off('log_history');
       socket.off('connect');
@@ -317,6 +324,22 @@ export default function Dashboard() {
     setTimeout(() => setSaveMsg(''), 2500);
   };
 
+  const saveHedgeSingle = async (key, value) => {
+    setBusy(true);
+    setSaveMsg(`SAVING HEDGE ${key}...`);
+    try {
+      const r = await fetch(`${API_URL}/api/settings/hedge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+        body: JSON.stringify({ [key]: value }),
+      });
+      if (r.ok) hedgeSettingsDirty.current = false;
+      setSaveMsg(r.ok ? `✓ HEDGE ${key} SAVED` : 'ERROR');
+    } catch (e) { setSaveMsg('ERROR'); }
+    setBusy(false);
+    setTimeout(() => setSaveMsg(''), 2500);
+  };
+
   // ── presets ────────────────────────────────────────────────────
   const HFT_PRESET  = { TP_USD:2, SL_USD:5, CooldownSecs:10, MaxPositions:10, UseH1Filter:0, MaxSpread:80  };
   const NORM_PRESET = { TP_USD:4, SL_USD:10, CooldownSecs:60, MaxPositions:5,  UseH1Filter:1, MaxSpread:350 };
@@ -357,6 +380,14 @@ export default function Dashboard() {
 
   // Pull history on mount
   useEffect(() => { fetchHistory(); }, []);
+
+  // Pull hedge settings on mount
+  useEffect(() => {
+    fetch(`${API_URL}/api/settings/hedge`, { headers: {'X-API-Key': API_KEY} })
+      .then(r => r.ok ? r.json() : null)
+      .then(s => { if(s) setHedgeSettingsDraft(s); })
+      .catch(()=>{});
+  }, []);
 
   const exportSettings = (isBtc=false) => {
     const data = isBtc ? btcSettingsDraft : settingsDraft;
@@ -1563,6 +1594,51 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+        </div>
+
+        {/* ═══ HEDGE BOT SETTINGS ════════════════════════════ */}
+        <div className="bcard" style={bCard()}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
+            <div style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#ff4444'}}>⚔ GOLD HEDGE SCALPER</div>
+            <div style={{fontSize:9, color:C.muted}}>GSX_Hedge.json</div>
+          </div>
+          {/* BOT ON/OFF */}
+          <div style={{display:'flex', gap:10, alignItems:'center', marginBottom:12}}>
+            <div style={{fontSize:9, color:C.muted, letterSpacing:'1px'}}>BOT</div>
+            <button className="bbtn"
+              onClick={()=>{ const v=(hedgeSettingsDraft.BotRunning??1)===1?0:1; setHedgeSettingsDraft(d=>({...d,BotRunning:v})); saveHedgeSingle('BotRunning',v); }}
+              style={bBtn((hedgeSettingsDraft.BotRunning??1)===1,{padding:'5px 18px', borderColor:'#ff4444', color:(hedgeSettingsDraft.BotRunning??1)===1?'#000':'#ff4444'})}>
+              {(hedgeSettingsDraft.BotRunning??1)===1?'ON':'OFF'}
+            </button>
+          </div>
+          {/* fields */}
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))', gap:8}}>
+            {[
+              {k:'BaseLot',       label:'BASE LOT',         step:0.01, min:0.01},
+              {k:'LotMultiplier', label:'LOT MULTIPLIER',   step:0.1,  min:1.1},
+              {k:'HedgeDistUSD',  label:'HEDGE DIST $',     step:0.5,  min:0.5},
+              {k:'BasketTP',      label:'BASKET TP $',      step:0.5,  min:0.1},
+              {k:'MaxDrawdown',   label:'MAX DRAWDOWN $',   step:5,    min:5},
+              {k:'MaxLevels',     label:'MAX LEVELS',       step:1,    min:1},
+              {k:'MaxSpread',     label:'MAX SPREAD',       step:10,   min:10},
+            ].map(({k,label,step,min}) => (
+              <div key={k} style={{display:'flex',flexDirection:'column',gap:3}}>
+                <div style={bLabel({fontSize:9,color:'#ff8888'})}>{label}</div>
+                <div style={{display:'flex',gap:4}}>
+                  <input type="number" step={step} min={min}
+                    value={hedgeSettingsDraft[k]??''}
+                    onChange={e=>{hedgeSettingsDirty.current=true; setHedgeSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}));}}
+                    style={{width:80,background:C.bg,border:`1px solid #ff4444`,color:C.ink,fontFamily:C.mono,fontSize:10,padding:'4px 6px',borderRadius:3}}
+                  />
+                  <button className="bbtn" onClick={()=>saveHedgeSingle(k,hedgeSettingsDraft[k])} disabled={busy}
+                    style={{fontSize:9,padding:'4px 8px',border:`1px solid #ff4444`,color:'#ff4444',background:'transparent',fontFamily:C.mono,cursor:'pointer'}}>✓</button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{marginTop:10, fontSize:9, color:C.muted, lineHeight:1.6}}>
+            ⚡ منطق: دخول بزخم شمعة → إذا خسرت صفقة &gt; HEDGE DIST$ تفتح معاكسة بـ LOT×MULT → إغلاق الكل لما الربح الإجمالي &ge; BASKET TP$
+          </div>
         </div>
 
         {/* ═══ LIVE LOG (full width) ══════════════════════════ */}

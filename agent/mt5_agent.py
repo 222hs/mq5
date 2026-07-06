@@ -362,6 +362,19 @@ def push_local_settings():
         pass  # غير حرج — سيُعاد في الدورة القادمة
 
 
+def push_hedge_settings():
+    """يقرأ GSX_Hedge.json من MT5 Common ويرسله للـ backend."""
+    hedge_file = os.path.join(_MT5_COMMON, "GSX_Hedge.json")
+    if not os.path.exists(hedge_file):
+        return
+    try:
+        with open(hedge_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        _session.post(f"{BACKEND_URL}/api/settings/hedge", json=data, timeout=(5, 10))
+    except Exception:
+        pass
+
+
 _last_settings_hash     = None  # نتتبع التغييرات
 _last_btc_settings_hash = None
 _known_positions    = {}    # ticket -> position — لكشف الصفقات الجديدة
@@ -582,8 +595,9 @@ _log_positions = {}  # {filepath: byte_offset}
 def tail_ea_logs():
     """يقرأ السطور الجديدة من ملفات لوق الـ EA ويرسلها للـ backend."""
     log_files = {
-        os.path.join(_MT5_COMMON, "GSX_Log.txt"): "gold",
-        os.path.join(_MT5_COMMON, "BSX_Log.txt"): "btc",
+        os.path.join(_MT5_COMMON, "GSX_Log.txt"):       "gold",
+        os.path.join(_MT5_COMMON, "BSX_Log.txt"):       "btc",
+        os.path.join(_MT5_COMMON, "GSX_Hedge_Log.txt"): "hedge",
     }
     lines_to_send = []
     for fpath, source in log_files.items():
@@ -832,6 +846,7 @@ def main():
 
     # عند الـ startup فقط: ارفع الإعدادات المحلية للـ backend (Railway redeploy recovery)
     push_local_settings()
+    push_hedge_settings()
 
     # بناء snapshots من MT5 history مباشرة ثم رفعها
     threading.Thread(target=bootstrap_snapshots, daemon=True).start()
