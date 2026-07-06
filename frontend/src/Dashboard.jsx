@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.10';
+const DASH_VERSION = 'v3.11';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -279,7 +279,7 @@ export default function Dashboard() {
     setTradeSnapshot(null);
     if (!trade?.ticket) return;
     try {
-      const r = await fetch(`${API_URL}/api/trade_snapshot/${trade.ticket}`);
+      const r = await fetch(`${API_URL}/api/trade_snapshot/${trade.ticket}`, { headers: {'X-API-Key': API_KEY} });
       if (r.ok) setTradeSnapshot(await r.json());
     } catch (e) {}
   };
@@ -339,6 +339,31 @@ export default function Dashboard() {
     } catch(e) { setSaveMsg('ERROR'); }
     setBusy(false);
     setTimeout(() => setSaveMsg(''), 3000);
+  };
+
+  const exportSettings = (isBtc=false) => {
+    const data = isBtc ? btcSettingsDraft : settingsDraft;
+    const name = isBtc ? 'btc_settings' : 'gold_settings';
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `${name}_${new Date().toISOString().slice(0,10)}.json`; a.click();
+  };
+
+  const importSettings = (isBtc=false) => {
+    const input = document.createElement('input'); input.type='file'; input.accept='.json';
+    input.onchange = async e => {
+      const file = e.target.files[0]; if(!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        const url = isBtc ? `${API_URL}/api/settings/btc` : `${API_URL}/api/settings`;
+        const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json','X-API-Key':API_KEY}, body: JSON.stringify(data) });
+        if(r.ok) { if(isBtc) setBtcSettingsDraft(d=>({...d,...data})); else setSettingsDraft(d=>({...d,...data})); setSaveMsg('✓ IMPORTED'); }
+        else setSaveMsg('IMPORT ERROR');
+      } catch(err) { setSaveMsg('IMPORT ERROR'); }
+      setTimeout(()=>setSaveMsg(''),3000);
+    };
+    input.click();
   };
 
   // ── symbol branding ────────────────────────────────────────────
@@ -1235,6 +1260,12 @@ export default function Dashboard() {
                       style={{fontSize:9,padding:'3px 10px',letterSpacing:'1px',border:'1px solid #ffd700',color:'#ffd700',background:'transparent',fontFamily:'monospace',cursor:'pointer'}}>
                       🔄 NORMAL
                     </button>
+                    <button className="bbtn" onClick={()=>exportSettings(false)}
+                      style={{fontSize:9,padding:'3px 8px',letterSpacing:'1px',border:'1px solid #555',color:'#aaa',background:'transparent',fontFamily:'monospace',cursor:'pointer'}}
+                      title="تحميل الإعدادات كملف JSON">💾</button>
+                    <button className="bbtn" onClick={()=>importSettings(false)}
+                      style={{fontSize:9,padding:'3px 8px',letterSpacing:'1px',border:'1px solid #555',color:'#aaa',background:'transparent',fontFamily:'monospace',cursor:'pointer'}}
+                      title="تحميل إعدادات من ملف JSON">📂</button>
                   </div>
                 </div>
                   <div style={{display:'flex', gap:10, flexWrap:'wrap', alignItems:'flex-end'}}>
@@ -1383,6 +1414,12 @@ export default function Dashboard() {
                       style={{fontSize:9,padding:'3px 10px',letterSpacing:'1px',border:'1px solid #00aaff',color:'#00aaff',background:'transparent',fontFamily:'monospace',cursor:'pointer'}}>
                       🔄 NORMAL
                     </button>
+                    <button className="bbtn" onClick={()=>exportSettings(true)}
+                      style={{fontSize:9,padding:'3px 8px',letterSpacing:'1px',border:'1px solid #555',color:'#aaa',background:'transparent',fontFamily:'monospace',cursor:'pointer'}}
+                      title="تحميل الإعدادات كملف JSON">💾</button>
+                    <button className="bbtn" onClick={()=>importSettings(true)}
+                      style={{fontSize:9,padding:'3px 8px',letterSpacing:'1px',border:'1px solid #555',color:'#aaa',background:'transparent',fontFamily:'monospace',cursor:'pointer'}}
+                      title="تحميل إعدادات من ملف JSON">📂</button>
                   </div>
                 </div>
                 <div style={{display:'flex', gap:10, flexWrap:'wrap', alignItems:'flex-end'}}>

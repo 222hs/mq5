@@ -423,14 +423,12 @@ void OnTick()
    bool rsiBuyOK  = (rsi1 <= g_rsiBuyMax);
    bool rsiSellOK = (rsi1 >= g_rsiSellMin);
 
-   // SIGNAL: H1 + M5 + M1 يجب تتوافق
+   // SIGNAL: H1 + M1
    int signal = 0;
    bool h1BuyOK  = !g_useH1Filter ||  h1BullBias;
    bool h1SellOK = !g_useH1Filter || !h1BullBias;
-   bool m5BuyOK  = m5BullBias;
-   bool m5SellOK = !m5BullBias;
-   if(bullBar && rsiBuyOK  && h1BuyOK  && m5BuyOK)  signal =  1;
-   else if(bearBar && rsiSellOK && h1SellOK && m5SellOK) signal = -1;
+   if(bullBar && rsiBuyOK  && h1BuyOK)  signal =  1;
+   else if(bearBar && rsiSellOK && h1SellOK) signal = -1;
 
    long spread   = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    bool spreadOK = (spread <= (long)g_maxSpread);
@@ -474,7 +472,6 @@ void OnTick()
       string why="";
       if(!rsiBuyOK)  why="RSI="+DoubleToString(rsi1,0)+" >"+DoubleToString(g_rsiBuyMax,0);
       else if(!h1BuyOK)  why="H1=↓ (filter ON)";
-      else if(!m5BuyOK)  why="M5=↓";
       else               why="unknown";
       Print(EA_NAME,": BUY skipped ",why);
      }
@@ -483,7 +480,6 @@ void OnTick()
       string why="";
       if(!rsiSellOK) why="RSI="+DoubleToString(rsi1,0)+" <"+DoubleToString(g_rsiSellMin,0);
       else if(!h1SellOK) why="H1=↑ (filter ON)";
-      else if(!m5SellOK) why="M5=↑";
       else               why="unknown";
       Print(EA_NAME,": SELL skipped ",why);
      }
