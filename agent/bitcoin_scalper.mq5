@@ -178,7 +178,7 @@ double CalcLot()
    double minL    = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
    double maxL    = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
    lot = MathFloor(lot / step) * step;
-   lot = MathMax(minL, MathMin(maxL, lot));
+   lot = MathMax(minL, MathMin(MathMin(maxL, 1.0), lot));  // hard cap 1 lot for BTC safety
    return NormalizeLot(lot);
   }
 
