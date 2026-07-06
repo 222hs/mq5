@@ -470,9 +470,23 @@ void OnTick()
       CheckScale();
 
    if(bullBar && signal==0)
-      Print(EA_NAME,": BUY skipped H1=",h1BullBias?"↑":"↓"," RSI=",DoubleToString(rsi1,0));
+     {
+      string why="";
+      if(!rsiBuyOK)  why="RSI="+DoubleToString(rsi1,0)+" >"+DoubleToString(g_rsiBuyMax,0);
+      else if(!h1BuyOK)  why="H1=↓ (filter ON)";
+      else if(!m5BuyOK)  why="M5=↓";
+      else               why="unknown";
+      Print(EA_NAME,": BUY skipped ",why);
+     }
    if(bearBar && signal==0)
-      Print(EA_NAME,": SELL skipped H1=",h1BullBias?"↑":"↓"," RSI=",DoubleToString(rsi1,0));
+     {
+      string why="";
+      if(!rsiSellOK) why="RSI="+DoubleToString(rsi1,0)+" <"+DoubleToString(g_rsiSellMin,0);
+      else if(!h1SellOK) why="H1=↑ (filter ON)";
+      else if(!m5SellOK) why="M5=↑";
+      else               why="unknown";
+      Print(EA_NAME,": SELL skipped ",why);
+     }
 
    int cdLeft = (int)MathMax(0, g_cooldownSecs-(TimeCurrent()-g_lastEntryTime));
    bool blocked = !(spreadOK && slotsOK && sessOK && dayOK);
