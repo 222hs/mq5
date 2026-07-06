@@ -576,6 +576,56 @@ def sync_btc_settings():
             return
 
 
+_log_positions = {}  # {filepath: byte_offset}
+
+def tail_ea_logs():
+    """يقرأ السطور الجديدة من ملفات لوق الـ EA ويرسلها للـ backend."""
+    log_files = {
+        os.path.join(_MT5_COMMON, "GSX_Log.txt"): "gold",
+        os.path.join(_MT5_COMMON, "BSX_Log.txt"): "btc",
+    }
+    lines_to_send = []
+    for fpath, source in log_files.items():
+        if not os.path.exists(fpath):
+            continue
+        pos = _log_positions.get(fpath, 0)
+        try:
+            with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+                f.seek(0, 2)
+                size = f.tell()
+                if size < pos:
+                    pos = 0  # ملف جديد أو تم مسحه
+                f.seek(pos)
+                new_lines = f.readlines()
+                _log_positions[fpath] = f.tell()
+            for line in new_lines:
+                line = line.strip()
+                if not line:
+                    continue
+                # الشكل: "2026.07.06 12:34:56|message"
+                if "|" in line:
+                    _, msg = line.split("|", 1)
+                else:
+                    msg = line
+                level = "err" if "FAIL" in msg or "No money" in msg else \
+                        "trade" if any(x in msg for x in ["BUY_MKT","SELL_MKT","BUY_LMT","SELL_LMT","GRID","HEDGE","SCALE"]) else \
+                        "info"
+                lines_to_send.append({"level": level, "msg": f"[{source.upper()}] {msg}"})
+        except Exception:
+            pass
+
+    if lines_to_send:
+        try:
+            _session.post(
+                f"{BACKEND_URL}/api/ea_log",
+                json={"lines": lines_to_send},
+                headers={"X-API-KEY": API_KEY},
+                timeout=(3, 5),
+            )
+        except Exception:
+            pass
+
+
 def sync_settings():
     """يسحب الإعدادات من الصفحة ويكتبها للبوت — مع retry تلقائي"""
     global _last_settings_hash
@@ -805,6 +855,8 @@ def main():
                 if btc_active:
                     sync_btc_settings()
                 last_settings_sync = now
+
+            tail_ea_logs()  # إرسال لوق EA الجديدة للداشبورد
 
             # فلتر الأخبار كل دقيقة
             if now - last_news_sync >= 60:

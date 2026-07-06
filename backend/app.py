@@ -854,6 +854,19 @@ def update_data():
     return jsonify({"status": "ok"})
 
 
+@app.route("/api/ea_log", methods=["POST"])
+def ea_log():
+    """Receive log lines from mt5_agent and push to dashboard."""
+    data = request.get_json(silent=True) or {}
+    lines = data.get("lines", [])
+    for item in lines:
+        level = item.get("level", "info")
+        msg   = item.get("msg", "")
+        if msg:
+            push_log(level, msg)
+    return jsonify({"ok": True, "count": len(lines)})
+
+
 @app.route("/api/ping", methods=["GET"])
 def ping():
     return jsonify({"ok": True})

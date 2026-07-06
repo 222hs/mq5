@@ -174,6 +174,22 @@ void LoadNewsBlock()
   }
 
 //+------------------------------------------------------------------+
+// كتابة لوق في ملف + Experts tab
+//+------------------------------------------------------------------+
+#define LOG_FILE "GSX_Log.txt"
+void EALog(string msg)
+  {
+   Print(EA_NAME, ": ", msg);
+   int fh = FileOpen(LOG_FILE, FILE_WRITE|FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ);
+   if(fh != INVALID_HANDLE)
+     {
+      FileSeek(fh, 0, SEEK_END);
+      FileWriteString(fh, TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS) + "|" + msg + "\n");
+      FileClose(fh);
+     }
+  }
+
+//+------------------------------------------------------------------+
 // يحسب اللوت — ثابت أو ديناميكي حسب الإعداد
 //+------------------------------------------------------------------+
 double CalcLot()
@@ -843,15 +859,15 @@ void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal,
 
    if(ok)
      { g_lastEntryTime = TimeCurrent(); g_totalTrades++;
-       Print(EA_NAME,": ",modeTxt," lot=",lot," TP$=",g_tpUSD," SL$=",g_slUSD); }
+       EALog(modeTxt+" lot="+DoubleToString(lot,2)+" TP$="+DoubleToString(g_tpUSD,1)+" SL$="+DoubleToString(g_slUSD,1)); }
    else
      {
       uint rc = trade.ResultRetcode();
-      Print(EA_NAME,": FAIL [",modeTxt,"] ",rc," ",trade.ResultComment());
+      EALog("FAIL ["+modeTxt+"] "+IntegerToString(rc)+" "+trade.ResultComment());
       // fallback للـ MARKET إذا رفض الـ broker الـ pending order
       if(g_orderType != 0 && (rc==10044||rc==10018||rc==10019||rc==10034))
         {
-         Print(EA_NAME,": fallback → MARKET");
+         EALog("fallback → MARKET");
          if(type==ORDER_TYPE_BUY)
            { double sl2=NormalizeDouble(ask-slD,digs); double tp2=NormalizeDouble(ask+tpD,digs);
              ok=trade.Buy(lot,_Symbol,ask,sl2,tp2,snap); }
@@ -859,8 +875,8 @@ void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal,
            { double sl2=NormalizeDouble(bid+slD,digs); double tp2=NormalizeDouble(bid-tpD,digs);
              ok=trade.Sell(lot,_Symbol,bid,sl2,tp2,snap); }
          if(ok) { g_lastEntryTime=TimeCurrent(); g_totalTrades++;
-                  Print(EA_NAME,": MARKET fallback OK"); }
-         else    Print(EA_NAME,": MARKET fallback FAIL ",trade.ResultRetcode());
+                  EALog("MARKET fallback OK"); }
+         else    EALog("MARKET fallback FAIL "+IntegerToString(trade.ResultRetcode()));
         }
      }
   }
