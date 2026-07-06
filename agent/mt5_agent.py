@@ -747,6 +747,39 @@ def sync_settings():
             return
 
 
+_last_hedge_settings_hash = None
+
+def sync_hedge_settings():
+    """يسحب إعدادات Hedge من الـ backend ويكتبها لـ GSX_Hedge.json في MT5 Common."""
+    global _last_hedge_settings_hash
+    try:
+        r = _session.get(f"{BACKEND_URL}/api/settings/hedge", timeout=(5, 10))
+        if r.status_code != 200:
+            return
+        settings = r.json()
+        new_hash = str(sorted(settings.items()))
+        if new_hash == _last_hedge_settings_hash:
+            return
+        _last_hedge_settings_hash = new_hash
+
+        # اكتب الإعدادات كـ JSON لـ GSX_Hedge.json
+        hedge_file = os.path.join(_MT5_COMMON, "GSX_Hedge.json")
+        tmp = hedge_file + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2)
+        os.replace(tmp, hedge_file)
+
+        t = datetime.now().strftime('%H:%M:%S')
+        print(f"\n{'='*55}")
+        print(f"⚔  [{t}] إعدادات Hedge جديدة:")
+        print(f"   BaseLot={settings.get('BaseLot')}  Mult={settings.get('LotMultiplier')}  HedgeDist=${settings.get('HedgeDistUSD')}")
+        print(f"   BasketTP=${settings.get('BasketTP')}  MaxDD=${settings.get('MaxDrawdown')}  MaxLvl={settings.get('MaxLevels')}")
+        print(f"   📝 GSX_Hedge.json ✓")
+        print(f"{'='*55}\n")
+    except Exception as e:
+        print(f"⚠️ hedge sync: {type(e).__name__}")
+
+
 def bootstrap_snapshots():
     """
     عند startup: يبني snapshots من MT5 history مباشرة ويرفعها للبكند.
@@ -870,6 +903,7 @@ def main():
                 _, btc_active = detect_active_bots()
                 if btc_active:
                     sync_btc_settings()
+                sync_hedge_settings()    # Hedge settings — دائماً
                 last_settings_sync = now
 
             tail_ea_logs()  # إرسال لوق EA الجديدة للداشبورد
