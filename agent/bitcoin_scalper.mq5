@@ -172,7 +172,7 @@ void LoadNewsBlock()
 void EALog(string msg)
   {
    Print(EA_NAME, ": ", msg);
-   int fh = FileOpen(LOG_FILE, FILE_WRITE|FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ);
+   int fh = FileOpen(LOG_FILE, FILE_WRITE|FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ|FILE_COMMON);
    if(fh != INVALID_HANDLE)
      {
       FileSeek(fh, 0, SEEK_END);
