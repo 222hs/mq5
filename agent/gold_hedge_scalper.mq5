@@ -231,6 +231,29 @@ void CloseBasket(string reason)
      }
   }
 
+//--- total lots of entire basket
+double TotalBasketLots()
+  {
+   double total = 0;
+   for(int i = PositionsTotal()-1; i >= 0; i--)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol)  continue;
+      if(PositionGetInteger(POSITION_MAGIC) != g_magic)  continue;
+      total += PositionGetDouble(POSITION_VOLUME);
+     }
+   return total;
+  }
+
+//--- dynamic basket TP: g_basketTP per g_baseLot of total lots
+double DynamicBasketTP()
+  {
+   double totalLots = TotalBasketLots();
+   if(totalLots <= 0) return g_basketTP;
+   return g_basketTP * (totalLots / g_baseLot);
+  }
+
 //--- normalize lot
 double NormLot(double lot)
   {
@@ -263,7 +286,7 @@ void DLabel(string id, string txt, int x, int y, color clr, int sz=9)
    ObjectSetInteger(0, n, OBJPROP_FONTSIZE, sz);
   }
 
-void UpdateDashboard(int basketSize, double netProfit, int level)
+void UpdateDashboard(int basketSize, double netProfit, int level, double dynTP=0)
   {
    int xK = PANEL_X, xV = PANEL_X + 90;
    int y  = PANEL_Y;
@@ -283,7 +306,8 @@ void UpdateDashboard(int basketSize, double netProfit, int level)
    DLabel("V_NET",    "$"+DoubleToString(netProfit, 2), xV, y, nc); y += ROW_H;
 
    DLabel("K_TP",     "BASKET TP", xK, y, CLR_KEY);
-   DLabel("V_TP",     "$"+DoubleToString(g_basketTP, 2), xV, y, clrCyan); y += ROW_H;
+   string tpStr = dynTP > 0 ? "$"+DoubleToString(dynTP,2)+" (x"+DoubleToString(dynTP/g_basketTP,1)+")" : "$"+DoubleToString(g_basketTP,2);
+   DLabel("V_TP",     tpStr, xV, y, clrCyan); y += ROW_H;
 
    DLabel("K_HD",     "HEDGE DIST", xK, y, CLR_KEY);
    DLabel("V_HD",     "$"+DoubleToString(g_hedgeDistUSD, 2), xV, y, clrCyan); y += ROW_H;
@@ -330,11 +354,12 @@ void OnTick()
 
    int basket = CountBasket();
    double net = BasketProfit();
+   double dynTP = DynamicBasketTP();
 
-   // ── BASKET TP ────────────────────────────────────────────────
-   if(basket > 0 && net >= g_basketTP)
+   // ── BASKET TP (dynamic) ───────────────────────────────────────
+   if(basket > 0 && net >= dynTP)
      {
-      CloseBasket("TP $"+DoubleToString(net,2));
+      CloseBasket("TP $"+DoubleToString(net,2)+" (target $"+DoubleToString(dynTP,2)+")");
       UpdateDashboard(0, 0, 0);
       return;
      }
@@ -348,7 +373,7 @@ void OnTick()
       return;
      }
 
-   UpdateDashboard(basket, net, basket);
+   UpdateDashboard(basket, net, basket, dynTP);
 
    if(!g_botRunning) return;
 
@@ -356,73 +381,80 @@ void OnTick()
    long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    if(spread > g_maxSpread) return;
 
-   // ── HEDGE LOGIC (runs every tick) ────────────────────────────
-   if(basket > 0 && basket < g_maxLevels)
-     {
-      CheckHedge();
-      return;
-     }
-
    // ── MAX LEVELS REACHED — wait for TP or emergency only ───────
    if(basket >= g_maxLevels) return;
 
-   // ── ENTRY (bar-gated) ────────────────────────────────────────
+   // ── BAR GATE ─────────────────────────────────────────────────
    datetime barTime = iTime(_Symbol, TF, 0);
    if(barTime == g_lastBar) return;
    g_lastBar = barTime;
 
-   TryEntry();
+   // ── HEDGE CHECK (new bar, basket open) ───────────────────────
+   if(basket > 0)
+      CheckHedge();
+
+   // ── ENTRY: add to basket in same direction OR open new basket ─
+   TryEntry(basket);
   }
 
 //===================================================================
 //  ENTRY SIGNAL — momentum candle
 //===================================================================
 
-void TryEntry()
+void TryEntry(int currentBasket)
   {
-   // need ATR for momentum threshold
-   double atr[];
-   ArraySetAsSeries(atr, true);
    int hATR = iATR(_Symbol, TF, 14);
    if(hATR == INVALID_HANDLE) return;
+   double atr[];
+   ArraySetAsSeries(atr, true);
    if(CopyBuffer(hATR, 0, 0, 3, atr) < 3) { IndicatorRelease(hATR); return; }
    IndicatorRelease(hATR);
 
    double o[], h[], l[], c[];
    ArraySetAsSeries(o,true); ArraySetAsSeries(h,true);
    ArraySetAsSeries(l,true); ArraySetAsSeries(c,true);
-   if(CopyOpen(_Symbol,TF,0,3,o)<3)   return;
-   if(CopyHigh(_Symbol,TF,0,3,h)<3)   return;
-   if(CopyLow(_Symbol,TF,0,3,l)<3)    return;
-   if(CopyClose(_Symbol,TF,0,3,c)<3)  return;
+   if(CopyOpen(_Symbol,TF,0,3,o)<3)  return;
+   if(CopyHigh(_Symbol,TF,0,3,h)<3)  return;
+   if(CopyLow(_Symbol,TF,0,3,l)<3)   return;
+   if(CopyClose(_Symbol,TF,0,3,c)<3) return;
 
-   double body = MathAbs(c[1] - o[1]);
+   double body  = MathAbs(c[1] - o[1]);
    double range = h[1] - l[1] + 1e-10;
    double atr1  = atr[1];
 
-   // momentum: body > 35% of ATR and candle body > 30% of its range
    bool bullBar = (c[1] > o[1]) && (body >= 0.35*atr1) && (body/range >= 0.30);
    bool bearBar = (c[1] < o[1]) && (body >= 0.35*atr1) && (body/range >= 0.30);
 
-   if(!bullBar && !bearBar) return;
+   // if basket is open, only add in SAME direction as basket
+   if(currentBasket > 0)
+     {
+      int dir = BasketDirection(); // 1=buy basket, -1=sell basket
+      if(dir == 1  && !bullBar) return; // basket is buy, wait for bull candle
+      if(dir == -1 && !bearBar) return; // basket is sell, wait for bear candle
+     }
+   else
+     {
+      if(!bullBar && !bearBar) return; // no basket — need signal to open
+     }
 
    double lot = NormLot(g_baseLot);
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   string tag = currentBasket > 0 ? "GHX_ADD" : "GHX_ENTRY";
 
-   if(bullBar)
+   if(bullBar || (currentBasket > 0 && BasketDirection() == 1))
      {
-      if(trade.Buy(lot, _Symbol, ask, 0, 0, "GHX_ENTRY"))
-         EALog("BUY_ENTRY lot="+DoubleToString(lot,2)+" ask="+DoubleToString(ask,5));
+      if(trade.Buy(lot, _Symbol, ask, 0, 0, tag))
+         EALog("BUY_"+tag+" #"+(currentBasket+1)+" lot="+DoubleToString(lot,2));
       else
-         EALog("FAIL BUY_ENTRY "+IntegerToString(trade.ResultRetcode())+" "+trade.ResultComment());
+         EALog("FAIL BUY_"+tag+" "+IntegerToString(trade.ResultRetcode())+" "+trade.ResultComment());
      }
    else
      {
-      if(trade.Sell(lot, _Symbol, bid, 0, 0, "GHX_ENTRY"))
-         EALog("SELL_ENTRY lot="+DoubleToString(lot,2)+" bid="+DoubleToString(bid,5));
+      if(trade.Sell(lot, _Symbol, bid, 0, 0, tag))
+         EALog("SELL_"+tag+" #"+(currentBasket+1)+" lot="+DoubleToString(lot,2));
       else
-         EALog("FAIL SELL_ENTRY "+IntegerToString(trade.ResultRetcode())+" "+trade.ResultComment());
+         EALog("FAIL SELL_"+tag+" "+IntegerToString(trade.ResultRetcode())+" "+trade.ResultComment());
      }
   }
 
