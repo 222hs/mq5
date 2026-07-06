@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.7';
+const DASH_VERSION = 'v3.8';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -1337,7 +1337,7 @@ export default function Dashboard() {
               <div style={{flex:'1 1 340px', minWidth:300, background:C.bg, border:'1px solid rgba(0,170,255,0.4)', padding:'1rem'}}>
                 <div style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#00aaff', marginBottom:12}}>₿ BTC SETTINGS</div>
                 <div style={{display:'flex', gap:10, flexWrap:'wrap', alignItems:'flex-end'}}>
-                  {['LotSize','TP_USD','SL_USD','MaxSpread','MaxPositions','CooldownSecs','MaxLossPerDay','MaxProfitPerDay','TradeHoursStart','TradeHoursEnd','RSIBuyMax','RSISellMin','BaseLot'].map(k=>(
+                  {['LotSize','TP_USD','SL_USD','MaxSpread','MaxPositions','CooldownSecs','MaxLossPerDay','MaxProfitPerDay','TradeHoursStart','TradeHoursEnd','RSIBuyMax','RSISellMin'].map(k=>(
                     <div key={k} style={{display:'flex', flexDirection:'column', gap:4}}>
                       <div style={bLabel({fontSize:9, color:'#00aaff'})}>{k}</div>
                       <input
@@ -1369,6 +1369,73 @@ export default function Dashboard() {
                     </button>
                     <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>H1 EMA21</div>
                   </div>
+                </div>
+                {/* BTC LOT SIZE MODE */}
+                <div style={{borderTop:'1px solid rgba(0,170,255,0.3)', marginTop:12, paddingTop:12}}>
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
+                    <div style={bLabel({color:'#00aaff'})}>&gt; LOT SIZE MODE</div>
+                    <div style={{
+                      fontSize:9, fontWeight:'bold', letterSpacing:'1px',
+                      padding:'2px 8px',
+                      border:`1px solid ${(btcSettingsDraft?.RiskMode??0)===1?C.yellow:'#00aaff'}`,
+                      color: (btcSettingsDraft?.RiskMode??0)===1?C.yellow:'#00aaff',
+                    }}>
+                      {(btcSettingsDraft?.RiskMode??0)===1?'DYNAMIC':'FIXED'}
+                    </div>
+                  </div>
+                  <div style={{display:'flex', gap:8, marginBottom:8}}>
+                    {[{v:0,label:'🔒 FIXED'},{v:1,label:'📈 DYNAMIC'}].map(opt=>(
+                      <button key={opt.v} className="bbtn"
+                        onClick={()=>{btcSettingsDirty.current=true; setBtcSettingsDraft(d=>({...d,RiskMode:opt.v}));}}
+                        style={{...bBtn((btcSettingsDraft?.RiskMode??0)===opt.v,{flex:1,fontSize:10,padding:'6px 4px',borderColor:'#00aaff',color:(btcSettingsDraft?.RiskMode??0)===opt.v?'#000':'#00aaff'})}}>
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  {(btcSettingsDraft?.RiskMode??0)===0 && (
+                    <div style={{display:'flex', flexDirection:'column', gap:4, marginBottom:8}}>
+                      <div style={bLabel({fontSize:9, color:'#00aaff'})}>BASE LOT</div>
+                      <input
+                        type="number" step="0.01" min="0.01"
+                        value={btcSettingsDraft.BaseLot??0.01}
+                        onChange={e=>{btcSettingsDirty.current=true; setBtcSettingsDraft(d=>({...d,BaseLot:e.target.value===''?'':Number(e.target.value)}));}}
+                        style={{fontFamily:C.mono, fontSize:12, width:88, padding:'6px 8px', background:'#0d1117', border:'1px solid rgba(0,170,255,0.4)', color:'#00aaff'}}
+                      />
+                    </div>
+                  )}
+                  {(btcSettingsDraft?.RiskMode??0)===1 && (
+                    <div style={{display:'flex', flexDirection:'column', gap:6, marginBottom:8}}>
+                      <div style={{display:'flex', alignItems:'center', gap:8}}>
+                        <div style={bLabel({color:C.muted})}>RISK PER TRADE</div>
+                        <div style={{fontSize:13, fontWeight:'bold', color:C.yellow, fontFamily:C.mono}}>
+                          {(btcSettingsDraft?.RiskPercent??1).toFixed(1)}%
+                        </div>
+                      </div>
+                      <input type="range" min="0.1" max="5" step="0.1"
+                        value={btcSettingsDraft?.RiskPercent??1}
+                        onChange={e=>{btcSettingsDirty.current=true; setBtcSettingsDraft(d=>({...d,RiskPercent:Number(e.target.value)}));}}
+                        style={{width:'100%', accentColor:C.yellow}}
+                      />
+                      <div style={{display:'flex', justifyContent:'space-between', fontSize:9, color:C.muted}}>
+                        <span>0.1% آمن</span><span>1% متوازن</span><span>5% خطر</span>
+                      </div>
+                      <div style={{fontSize:10, color:C.muted, lineHeight:1.5}}>
+                        لوت = (رصيدك × {(btcSettingsDraft?.RiskPercent??1).toFixed(1)}%) ÷ SL$
+                      </div>
+                    </div>
+                  )}
+                  <button className="bbtn"
+                    onClick={()=>{
+                      saveBtcSingle('RiskMode', btcSettingsDraft?.RiskMode??0);
+                      if((btcSettingsDraft?.RiskMode??0)===0)
+                        saveBtcSingle('BaseLot', btcSettingsDraft?.BaseLot??0.01);
+                      if((btcSettingsDraft?.RiskMode??0)===1)
+                        saveBtcSingle('RiskPercent', btcSettingsDraft?.RiskPercent??1);
+                    }}
+                    disabled={busy}
+                    style={bBtn(false,{marginTop:4,width:'100%',borderColor:'#00aaff',color:'#00aaff'})}>
+                    {busy?'SAVING...':'SAVE LOT MODE'}
+                  </button>
                 </div>
               </div>
             </div>
