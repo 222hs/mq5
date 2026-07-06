@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.13';
+const DASH_VERSION = 'v3.14';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -187,7 +187,8 @@ export default function Dashboard() {
         }
       }
       prevPositions.current = curPos;
-      setData(d);
+      // history is pull-only — don't let socket overwrite it
+      setData(prev => ({ ...d, history: prev?.history || d.history || [] }));
       if (d.settings && !settingsDirty.current) setSettingsDraft({ ...d.settings });
       // الشمعات تأتي داخل dashboard snapshot عند الاتصال الأول
       if (Array.isArray(d.candles) && d.candles.length > 0) {
@@ -353,6 +354,9 @@ export default function Dashboard() {
     } catch(e) {}
     setHistLoading(false);
   };
+
+  // Pull history on mount
+  useEffect(() => { fetchHistory(); }, []);
 
   const exportSettings = (isBtc=false) => {
     const data = isBtc ? btcSettingsDraft : settingsDraft;
