@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.5';
+const DASH_VERSION = 'v3.6';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -1232,16 +1232,6 @@ export default function Dashboard() {
                         {(settingsDraft.BotRunning??1)===1?'ON':'OFF'}
                       </button>
                     </div>
-                    {/* Gold Dynamic Risk toggle */}
-                    <div style={{display:'flex', flexDirection:'column', gap:4}}>
-                      <div style={bLabel({fontSize:9, color:'#00aaff'})}>SL/TP DYNAMIC</div>
-                      <button className="bbtn"
-                        onClick={()=>{ const v=(settingsDraft.DynamicRisk??0)===1?0:1; setSettingsDraft(d=>({...d,DynamicRisk:v})); saveSingle('DynamicRisk',v); }}
-                        style={bBtn((settingsDraft.DynamicRisk??0)===1,{padding:'6px 14px', borderColor:(settingsDraft.DynamicRisk??0)===1?'#00aaff':'undefined'})}>
-                        {(settingsDraft.DynamicRisk??0)===1?'ON':'OFF'}
-                      </button>
-                      <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>BaseLot={settingsDraft.BaseLot??0.5}</div>
-                    </div>
                     {/* Gold H1 Filter toggle */}
                     <div style={{display:'flex', flexDirection:'column', gap:4}}>
                       <div style={bLabel({fontSize:9, color:'#f0a500'})}>H1 BIAS FILTER</div>
@@ -1281,16 +1271,6 @@ export default function Dashboard() {
                       style={bBtn((btcSettingsDraft.BotRunning??1)===1,{padding:'6px 14px', borderColor:'#00aaff', color:(btcSettingsDraft.BotRunning??1)===1?'#000':'#00aaff'})}>
                       {(btcSettingsDraft.BotRunning??1)===1?'ON':'OFF'}
                     </button>
-                  </div>
-                  {/* BTC Dynamic Risk toggle */}
-                  <div style={{display:'flex', flexDirection:'column', gap:4}}>
-                    <div style={bLabel({fontSize:9, color:'#00aaff'})}>SL/TP DYNAMIC</div>
-                    <button className="bbtn"
-                      onClick={()=>{ const v=(btcSettingsDraft.DynamicRisk??0)===1?0:1; setBtcSettingsDraft(d=>({...d,DynamicRisk:v})); saveBtcSingle('DynamicRisk',v); }}
-                      style={bBtn((btcSettingsDraft.DynamicRisk??0)===1,{padding:'6px 14px', borderColor:'#00aaff', color:(btcSettingsDraft.DynamicRisk??0)===1?'#000':'#00aaff'})}>
-                      {(btcSettingsDraft.DynamicRisk??0)===1?'ON':'OFF'}
-                    </button>
-                    <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>BaseLot={btcSettingsDraft.BaseLot??0.01}</div>
                   </div>
                   {/* BTC H1 Filter toggle */}
                   <div style={{display:'flex', flexDirection:'column', gap:4}}>

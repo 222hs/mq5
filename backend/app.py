@@ -92,8 +92,6 @@ DEFAULT_SETTINGS = {
     "RiskPercent":    1.0,
     "RSIBuyMax":      65.0,
     "RSISellMin":     35.0,
-    "DynamicRisk":    0,
-    "BaseLot":        0.5,
     "UseH1Filter":    1,
 }
 
@@ -114,8 +112,6 @@ BTC_DEFAULT_SETTINGS = {
     "RiskPercent":    1.0,
     "RSIBuyMax":      65.0,
     "RSISellMin":     35.0,
-    "DynamicRisk":    0,
-    "BaseLot":        0.01,
     "UseH1Filter":    1,
 }
 

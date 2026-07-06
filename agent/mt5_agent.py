@@ -546,18 +546,17 @@ def sync_btc_settings():
             _last_btc_settings_hash = new_hash
             t = datetime.now().strftime('%H:%M:%S')
             ot = {0:'MARKET', 1:'LIMIT', 2:'STOP', 3:'BASKET'}.get(int(settings.get('OrderType', 0)), 'MARKET')
-            dr = 'ON' if int(settings.get('DynamicRisk', 0)) == 1 else 'OFF'
             print(f"\n{'='*55}")
             print(f"₿  [{t}] إعدادات بتكوين جديدة:")
             print(f"   Lot={settings.get('LotSize')}  TP$={settings.get('TP_USD')}  SL$={settings.get('SL_USD')}")
             print(f"   MaxSpread={settings.get('MaxSpread')}  MaxPos={settings.get('MaxPositions')}  CD={settings.get('CooldownSecs')}s")
-            print(f"   OrderType={ot}  Bot={'ON' if settings.get('BotRunning') else 'OFF'}  SL/TP Dynamic={dr}")
+            print(f"   OrderType={ot}  Bot={'ON' if settings.get('BotRunning') else 'OFF'}")
             btc_keys = [
                 "LotSize", "TP_USD", "SL_USD", "MaxSpread", "MaxPositions",
                 "CooldownSecs", "MaxLossPerDay", "MaxProfitPerDay",
                 "TradeHoursStart", "TradeHoursEnd", "BotRunning",
                 "OrderType", "RiskMode", "RiskPercent",
-                "RSIBuyMax", "RSISellMin", "DynamicRisk", "BaseLot", "UseH1Filter",
+                "RSIBuyMax", "RSISellMin", "UseH1Filter",
             ]
             for k in btc_keys:
                 if k in settings:
@@ -603,9 +602,8 @@ def sync_settings():
             print(f"   MaxPos={settings.get('MaxPositions')}  Spread={settings.get('MaxSpread')}  CD={settings.get('CooldownSecs')}s")
             ot  = {0:'MARKET', 1:'LIMIT', 2:'STOP', 3:'BASKET'}.get(int(settings.get('OrderType', 0)), 'MARKET')
             rm  = {0:'FIXED LOT', 1:'DYNAMIC %'}.get(int(settings.get('RiskMode', 0)), 'FIXED LOT')
-            dr  = 'ON' if int(settings.get('DynamicRisk', 0)) == 1 else 'OFF'
             print(f"   Hours={settings.get('TradeHoursStart')}-{settings.get('TradeHoursEnd')}  Bot={'ON' if settings.get('BotRunning') else 'OFF'}  OrderType={ot}")
-            print(f"   LotMode={rm}  RiskPct={settings.get('RiskPercent','?')}%  SL/TP Dynamic={dr}  BaseLot={settings.get('BaseLot','?')}")
+            print(f"   LotMode={rm}  RiskPct={settings.get('RiskPercent','?')}%")
             print(f"   RSI BuyMax={settings.get('RSIBuyMax','?')}  RSI SellMin={settings.get('RSISellMin','?')}  Claude={'ON' if settings.get('ClaudeEnabled',1) else 'OFF'}")
             print(f"   🔄 تغييرات مكتشفة — يُكتب الملف")
 
@@ -632,7 +630,7 @@ def sync_settings():
                 "CooldownSecs", "MaxLossPerDay", "MaxProfitPerDay",
                 "TradeHoursStart", "TradeHoursEnd", "BotRunning",
                 "OrderType", "RiskMode", "RiskPercent",
-                "RSIBuyMax", "RSISellMin", "DynamicRisk", "BaseLot", "UseH1Filter",
+                "RSIBuyMax", "RSISellMin", "UseH1Filter",
             ]
             for k in gold_keys:
                 if k in settings:
@@ -647,7 +645,7 @@ def sync_settings():
             # TP/SL/Lot/MaxSpread مختلفة لكل بوت — لا تُكتب من هنا
             btc_shared_keys = [
                 "BotRunning", "OrderType", "TradeHoursStart", "TradeHoursEnd",
-                "RiskMode", "RiskPercent", "DynamicRisk",
+                "RiskMode", "RiskPercent",
                 "RSIBuyMax", "RSISellMin", "UseH1Filter",
             ]
             for k in btc_shared_keys:
@@ -765,7 +763,7 @@ def main():
 
     # حذف ملفات BSX_ المتلوثة (TP/SL/Lot مختلفة لكل بوت — لا تُشارَك)
     _btc_exclusive = ["LotSize","TP_USD","SL_USD","MaxSpread","MaxPositions",
-                      "CooldownSecs","MaxLossPerDay","MaxProfitPerDay","BaseLot"]
+                      "CooldownSecs","MaxLossPerDay","MaxProfitPerDay"]
     for k in _btc_exclusive:
         fpath = os.path.join(_MT5_COMMON, f"BSX_{k}.txt")
         try:
