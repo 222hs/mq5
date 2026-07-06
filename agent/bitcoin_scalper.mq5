@@ -470,7 +470,7 @@ void OnTick()
    if(bullBar && signal==0)
      {
       string why="";
-      if(!rsiBuyOK)  why="RSI="+DoubleToString(rsi1,0)+" >"+DoubleToString(g_rsiBuyMax,0);
+      if(!rsiBuyOK)  why="RSI="+DoubleToString(rsi1,1)+" >"+DoubleToString(g_rsiBuyMax,1);
       else if(!h1BuyOK)  why="H1=↓ (filter ON)";
       else               why="unknown";
       Print(EA_NAME,": BUY skipped ",why);
@@ -478,7 +478,7 @@ void OnTick()
    if(bearBar && signal==0)
      {
       string why="";
-      if(!rsiSellOK) why="RSI="+DoubleToString(rsi1,0)+" <"+DoubleToString(g_rsiSellMin,0);
+      if(!rsiSellOK) why="RSI="+DoubleToString(rsi1,1)+" <"+DoubleToString(g_rsiSellMin,1);
       else if(!h1SellOK) why="H1=↑ (filter ON)";
       else               why="unknown";
       Print(EA_NAME,": SELL skipped ",why);
