@@ -364,14 +364,18 @@ void OnTick()
   {
    ManagePositions();
 
-   datetime barTime = iTime(_Symbol, TF, 0);
-   if(barTime == g_lastBar)
+   bool hftMode = (g_cooldownSecs < 30);
+   if(!hftMode)
      {
-      long sp = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
-      UpdateDashboard(0, 50, InTradingHours(), 0, false, 0, CountMyPositions(), 0, sp);
-      return;
+      datetime barTime = iTime(_Symbol, TF, 0);
+      if(barTime == g_lastBar)
+        {
+         long sp = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+         UpdateDashboard(0, 50, InTradingHours(), 0, false, 0, CountMyPositions(), 0, sp);
+         return;
+        }
+      g_lastBar = barTime;
      }
-   g_lastBar = barTime;
    LoadSettings();
 
    double rsi[], ema9[], ema21[], atr[];

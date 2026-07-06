@@ -408,17 +408,20 @@ void OnTick()
    // ── ManagePositions runs EVERY TICK (TP/SL by P&L must be instant) ──
    ManagePositions();
 
-   // ── BAR GATE: entry signals only once per completed bar ──
-   datetime barTime = iTime(_Symbol, TF, 0);
-   if(barTime == g_lastBar)
+   // ── BAR GATE: في HFT (cooldown < 30s) نشتغل بالـ tick بدل الـ bar ──
+   bool hftMode = (g_cooldownSecs < 30);
+   if(!hftMode)
      {
-      // still update dashboard every tick so values stay fresh
-      long sp = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
-      UpdateDashboard(0, 50, InTradingSession(), 0, false, 0,
-                      CountMyPositions(), 0, sp);
-      return;
+      datetime barTime = iTime(_Symbol, TF, 0);
+      if(barTime == g_lastBar)
+        {
+         long sp = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+         UpdateDashboard(0, 50, InTradingSession(), 0, false, 0,
+                         CountMyPositions(), 0, sp);
+         return;
+        }
+      g_lastBar = barTime;
      }
-   g_lastBar = barTime;
    LoadSettings();
 
    double rsi[], ema9[], ema21[], atr[];
