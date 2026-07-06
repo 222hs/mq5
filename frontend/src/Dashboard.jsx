@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.9';
+const DASH_VERSION = 'v3.10';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -317,8 +317,8 @@ export default function Dashboard() {
   };
 
   // ── presets ────────────────────────────────────────────────────
-  const HFT_PRESET  = { TP_USD:2, SL_USD:5, CooldownSecs:10, MaxPositions:10, UseH1Filter:0 };
-  const NORM_PRESET = { TP_USD:4, SL_USD:10, CooldownSecs:60, MaxPositions:5, UseH1Filter:1 };
+  const HFT_PRESET  = { TP_USD:2, SL_USD:5, CooldownSecs:10, MaxPositions:10, UseH1Filter:0, MaxSpread:80  };
+  const NORM_PRESET = { TP_USD:4, SL_USD:10, CooldownSecs:60, MaxPositions:5,  UseH1Filter:1, MaxSpread:350 };
 
   const applyPreset = async (preset, isBtc=false) => {
     setBusy(true);
