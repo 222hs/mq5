@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.12';
+const DASH_VERSION = 'v3.13';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -1323,6 +1323,16 @@ export default function Dashboard() {
                       </button>
                       <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>H1 EMA21</div>
                     </div>
+                    {/* Gold RSI Filter toggle */}
+                    <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                      <div style={bLabel({fontSize:9, color:'#f0a500'})}>RSI FILTER</div>
+                      <button className="bbtn"
+                        onClick={()=>{ const v=(settingsDraft.UseRSIFilter??1)===1?0:1; setSettingsDraft(d=>({...d,UseRSIFilter:v})); saveSingle('UseRSIFilter',v); }}
+                        style={bBtn((settingsDraft.UseRSIFilter??1)===1,{padding:'6px 14px', borderColor:'#f0a500', color:(settingsDraft.UseRSIFilter??1)===1?'#000':'#f0a500'})}>
+                        {(settingsDraft.UseRSIFilter??1)===1?'ON':'OFF'}
+                      </button>
+                      <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>RSI BUY/SELL</div>
+                    </div>
                   </div>
 
                   {/* ── STRATEGY SECTION ── */}
@@ -1467,6 +1477,16 @@ export default function Dashboard() {
                       {(btcSettingsDraft.UseH1Filter??1)===1?'ON':'OFF'}
                     </button>
                     <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>H1 EMA21</div>
+                  </div>
+                  {/* BTC RSI Filter toggle */}
+                  <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                    <div style={bLabel({fontSize:9, color:'#f0a500'})}>RSI FILTER</div>
+                    <button className="bbtn"
+                      onClick={()=>{ const v=(btcSettingsDraft.UseRSIFilter??1)===1?0:1; setBtcSettingsDraft(d=>({...d,UseRSIFilter:v})); saveBtcSingle('UseRSIFilter',v); }}
+                      style={bBtn((btcSettingsDraft.UseRSIFilter??1)===1,{padding:'6px 14px', borderColor:'#f0a500', color:(btcSettingsDraft.UseRSIFilter??1)===1?'#000':'#f0a500'})}>
+                      {(btcSettingsDraft.UseRSIFilter??1)===1?'ON':'OFF'}
+                    </button>
+                    <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>RSI BUY/SELL</div>
                   </div>
                 </div>
                 {/* BTC LOT SIZE MODE */}

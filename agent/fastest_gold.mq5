@@ -77,6 +77,7 @@ double   g_riskPct         = 1.0;  // نسبة الخطر % (لما riskMode=1)
 double   g_rsiBuyMax       = 65.0; // Claude auto-adjust: حد RSI لـ BUY
 double   g_rsiSellMin      = 35.0; // Claude auto-adjust: حد RSI لـ SELL
 bool     g_useH1Filter     = true;  // فلتر اتجاه H1 EMA21
+bool     g_useRSIFilter    = true;  // فلتر RSI
 
 // Strategy mode — bitmask: 1=Grid  2=Hedge  4=Scale
 int    g_strategyMode  = 0;
@@ -140,6 +141,7 @@ void WriteCurrentSettings()
    j += "  \"TradeHoursEnd\": "  + IntegerToString(g_tradeHoursEnd)  + ",\n";
    j += "  \"BotRunning\": "     + (g_botRunning ? "1" : "0")        + ",\n";
    j += "  \"UseH1Filter\": "   + (g_useH1Filter ? "1" : "0")        + ",\n";
+   j += "  \"UseRSIFilter\": "  + (g_useRSIFilter ? "1" : "0")       + ",\n";
    j += "  \"StrategyMode\": " + IntegerToString(g_strategyMode)     + ",\n";
    j += "  \"GridLevels\": "   + IntegerToString(g_gridLevels)       + ",\n";
    j += "  \"GridStep\": "     + IntegerToString(g_gridStep)         + ",\n";
@@ -227,6 +229,7 @@ void LoadSettings()
    double rsiBM  = ReadSetting("RSIBuyMax",      65.0);
    double rsiSM  = ReadSetting("RSISellMin",     35.0);
    bool   useH1  = (ReadSetting("UseH1Filter",   1.0) > 0.5);
+   bool   useRSI = (ReadSetting("UseRSIFilter",  1.0) > 0.5);
    int    sMode  = (int)ReadSetting("StrategyMode", 0.0);
    int    gLev   = (int)ReadSetting("GridLevels",   3.0);
    int    gStep  = (int)ReadSetting("GridStep",    50.0);
@@ -243,7 +246,7 @@ void LoadSettings()
                + IntegerToString(ordTyp)+(botOn ? "1" : "0")
                + IntegerToString(rMode)+DoubleToString(rPct,1)
                + DoubleToString(rsiBM,1)+DoubleToString(rsiSM,1)
-               + (useH1?"1":"0")
+               + (useH1?"1":"0")+(useRSI?"1":"0")
                + IntegerToString(sMode)+IntegerToString(gLev)+IntegerToString(gStep)
                + DoubleToString(hMult,2)+IntegerToString(scStep)
                + DoubleToString(scMult,2)+IntegerToString(scMax);
@@ -256,6 +259,7 @@ void LoadSettings()
    g_orderType=ordTyp; g_riskMode=rMode; g_riskPct=rPct;
    g_rsiBuyMax=rsiBM; g_rsiSellMin=rsiSM;
    g_useH1Filter=useH1;
+   g_useRSIFilter=useRSI;
    g_strategyMode=sMode;
    g_gridLevels=MathMax(1,gLev);  g_gridStep=MathMax(10,gStep);
    g_hedgeLotMult=MathMax(0.1,MathMin(2.0,hMult));
@@ -466,8 +470,8 @@ void OnTick()
                && (h[1]-l[1]) <= 5.0*atr1;
 
    // ── RSI FILTER ────────────────────────────────────────────────────
-   bool rsiBuyOK  = (rsi1 <= g_rsiBuyMax);
-   bool rsiSellOK = (rsi1 >= g_rsiSellMin);
+   bool rsiBuyOK  = !g_useRSIFilter || (rsi1 <= g_rsiBuyMax);
+   bool rsiSellOK = !g_useRSIFilter || (rsi1 >= g_rsiSellMin);
 
    // ── SIGNAL: H1 + M1 ──────────────────────────────────────────────
    int signal = 0;
