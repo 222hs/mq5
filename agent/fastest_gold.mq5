@@ -50,7 +50,8 @@ CPositionInfo  posInfo;
 long     g_magic         = 0;
 int      hRSI = INVALID_HANDLE, hEMA9 = INVALID_HANDLE,
          hEMA21 = INVALID_HANDLE, hATR = INVALID_HANDLE,
-         hH1EMA = INVALID_HANDLE;   // H1 EMA21 — bias filter
+         hH1EMA = INVALID_HANDLE,   // H1 EMA21 — bias filter
+         hM5EMA9 = INVALID_HANDLE, hM5EMA21 = INVALID_HANDLE; // M5 mid-trend filter
 datetime g_lastEntryTime = 0;
 datetime g_lastBar       = 0;
 double   g_snapRSI       = 50.0;
@@ -315,14 +316,17 @@ int OnInit()
    trade.SetDeviationInPoints(50);
    trade.SetTypeFillingBySymbol(_Symbol);
 
-   hRSI   = iRSI(_Symbol, TF,         14, PRICE_CLOSE);
-   hEMA9  = iMA (_Symbol, TF,         9,  0, MODE_EMA, PRICE_CLOSE);
-   hEMA21 = iMA (_Symbol, TF,         21, 0, MODE_EMA, PRICE_CLOSE);
-   hATR   = iATR(_Symbol, TF,         14);
-   hH1EMA = iMA (_Symbol, PERIOD_H1,  21, 0, MODE_EMA, PRICE_CLOSE); // H1 bias
+   hRSI    = iRSI(_Symbol, TF,         14, PRICE_CLOSE);
+   hEMA9   = iMA (_Symbol, TF,         9,  0, MODE_EMA, PRICE_CLOSE);
+   hEMA21  = iMA (_Symbol, TF,         21, 0, MODE_EMA, PRICE_CLOSE);
+   hATR    = iATR(_Symbol, TF,         14);
+   hH1EMA  = iMA (_Symbol, PERIOD_H1,  21, 0, MODE_EMA, PRICE_CLOSE); // H1 bias
+   hM5EMA9 = iMA (_Symbol, PERIOD_M5,  9,  0, MODE_EMA, PRICE_CLOSE); // M5 mid filter
+   hM5EMA21= iMA (_Symbol, PERIOD_M5,  21, 0, MODE_EMA, PRICE_CLOSE); // M5 mid filter
 
    if(hRSI==INVALID_HANDLE||hEMA9==INVALID_HANDLE||
-      hEMA21==INVALID_HANDLE||hATR==INVALID_HANDLE||hH1EMA==INVALID_HANDLE)
+      hEMA21==INVALID_HANDLE||hATR==INVALID_HANDLE||hH1EMA==INVALID_HANDLE||
+      hM5EMA9==INVALID_HANDLE||hM5EMA21==INVALID_HANDLE)
      { Print(EA_NAME,": indicator init failed"); return(INIT_FAILED); }
 
    LoadSettings();
@@ -342,10 +346,12 @@ void OnTimer()
 void OnDeinit(const int reason)
   {
    EventKillTimer();
-   if(hRSI  !=INVALID_HANDLE) IndicatorRelease(hRSI);
-   if(hEMA9 !=INVALID_HANDLE) IndicatorRelease(hEMA9);
-   if(hEMA21!=INVALID_HANDLE) IndicatorRelease(hEMA21);
-   if(hATR  !=INVALID_HANDLE) IndicatorRelease(hATR);
+   if(hRSI   !=INVALID_HANDLE) IndicatorRelease(hRSI);
+   if(hEMA9  !=INVALID_HANDLE) IndicatorRelease(hEMA9);
+   if(hEMA21 !=INVALID_HANDLE) IndicatorRelease(hEMA21);
+   if(hATR   !=INVALID_HANDLE) IndicatorRelease(hATR);
+   if(hM5EMA9 !=INVALID_HANDLE) IndicatorRelease(hM5EMA9);
+   if(hM5EMA21!=INVALID_HANDLE) IndicatorRelease(hM5EMA21);
    ObjectsDeleteAll(0, DASH_PREFIX);
    ChartRedraw();
   }
@@ -435,31 +441,39 @@ void OnTick()
    double ema91= ema9[1], ema211= ema21[1];
    double atr1 = atr[1];
 
-   // ── H1 BIAS: يحدد الاتجاه الرئيسي ───────────────────────────────
-   // نأخذ H1 EMA21[1] و[2] لنعرف هل الـ EMA صاعد أو هابط
+   // ── H1 BIAS: اتجاه رئيسي ─────────────────────────────────────────
    double h1ema[];
    ArraySetAsSeries(h1ema, true);
-   bool h1BullBias = true; // fallback: لو فشل القراءة نتداول بحرية
+   bool h1BullBias = true;
    if(CopyBuffer(hH1EMA, 0, 0, 3, h1ema) >= 3)
-      h1BullBias = (h1ema[1] >= h1ema[2]); // H1 EMA صاعد = BUY bias
+      h1BullBias = (h1ema[1] >= h1ema[2]);
 
-   // ── CANDLE MOMENTUM: follow the last closed candle direction ──
+   // ── M5 MID-TREND: اتجاه قريب (فلتر وسط) ─────────────────────────
+   double m5e9[], m5e21[];
+   ArraySetAsSeries(m5e9, true); ArraySetAsSeries(m5e21, true);
+   bool m5BullBias = true; // fallback
+   if(CopyBuffer(hM5EMA9,  0, 0, 3, m5e9)  >= 3 &&
+      CopyBuffer(hM5EMA21, 0, 0, 3, m5e21) >= 3)
+      m5BullBias = (m5e9[1] > m5e21[1]); // M5 EMA9 فوق EMA21 = اتجاه صعودي
+
+   // ── CANDLE MOMENTUM M1: إشارة دخول دقيقة ────────────────────────
    bool bullBar = (c[1] > o[1]) && ((c[1]-o[1])/(h[1]-l[1]+1e-10) >= 0.25)
                && (h[1]-l[1]) <= 5.0*atr1;
    bool bearBar = (c[1] < o[1]) && ((o[1]-c[1])/(h[1]-l[1]+1e-10) >= 0.25)
                && (h[1]-l[1]) <= 5.0*atr1;
 
-   // ── RSI FILTER: تجنب الدخول في مناطق متطرفة ─────────────────────
-   // قيم ديناميكية — Claude يعدّلها تلقائياً بعد الخسائر
+   // ── RSI FILTER ────────────────────────────────────────────────────
    bool rsiBuyOK  = (rsi1 <= g_rsiBuyMax);
    bool rsiSellOK = (rsi1 >= g_rsiSellMin);
 
-   // ── H1 BIAS FILTER: فقط مع الاتجاه الرئيسي ──────────────────────
+   // ── SIGNAL: الثلاثة يجب تتوافق (H1 + M5 + M1) ───────────────────
    int signal = 0;
    bool h1BuyOK  = !g_useH1Filter ||  h1BullBias;
    bool h1SellOK = !g_useH1Filter || !h1BullBias;
-   if(bullBar && rsiBuyOK  && h1BuyOK)  signal =  1;
-   else if(bearBar && rsiSellOK && h1SellOK) signal = -1;
+   bool m5BuyOK  = m5BullBias;   // M5 صاعد
+   bool m5SellOK = !m5BullBias;  // M5 هابط
+   if(bullBar && rsiBuyOK  && h1BuyOK  && m5BuyOK)  signal =  1;
+   else if(bearBar && rsiSellOK && h1SellOK && m5SellOK) signal = -1;
 
    long spread   = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    bool spreadOK = (spread <= (long)g_maxSpread);
