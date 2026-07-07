@@ -44,11 +44,12 @@ int    g_magic        = MagicNumber;
 string g_lastHash     = "";
 
 //--- state
-datetime g_lastBar       = 0;
-int      g_lastSignalDir = 0;
-int      g_cooldownLeft  = 0;
-string   g_lastDir       = "--";
-bool     g_inEntry       = false;
+datetime g_lastBar          = 0;
+int      g_lastSignalDir    = 0;
+int      g_cooldownLeft     = 0;
+string   g_lastDir          = "--";
+bool     g_inEntry          = false;
+int      g_consecutiveLosses = 0;  // خسائر متتالية → يشدد معايير الدخول
 
 //===================================================================
 //  SETTINGS FILE
@@ -190,7 +191,18 @@ double BasketProfit()
 
 void CloseBasket(string reason)
   {
-   EALog("CLOSE ["+reason+"] net=$"+DoubleToString(BasketProfit(),2));
+   double net = BasketProfit();
+   if(net >= 0)
+     {
+      g_consecutiveLosses = 0;
+      EALog("CLOSE ["+reason+"] net=$"+DoubleToString(net,2)+" ✅ خسائر متتالية → صفر");
+     }
+   else
+     {
+      g_consecutiveLosses++;
+      EALog("CLOSE ["+reason+"] net=$"+DoubleToString(net,2)
+            +" ❌ خسائر متتالية="+IntegerToString(g_consecutiveLosses));
+     }
    g_cooldownLeft = g_cooldownBars;
    for(int i = PositionsTotal()-1; i >= 0; i--)
      {
@@ -287,10 +299,18 @@ int GetCandleSignal()
    double range = h[1] - l[1] + 1e-10;
    double atr1  = atr[1];
 
-   if(body < 0.35*atr1 || body/range < 0.30)
+   // كلما زادت الخسائر المتتالية، كلما اشترطنا شمعة أقوى
+   double minRatio = 0.30;
+   if(g_consecutiveLosses == 1) minRatio = 0.55;
+   else if(g_consecutiveLosses == 2) minRatio = 0.65;
+   else if(g_consecutiveLosses >= 3) minRatio = 0.75;
+
+   if(body < 0.35*atr1 || body/range < minRatio)
      {
       EALog("DIAG skip: candle weak body="+DoubleToString(body,2)
-            +" (need>="+DoubleToString(0.35*atr1,2)+") ratio="+DoubleToString(body/range,2));
+            +" ratio="+DoubleToString(body/range,2)
+            +" (need>="+DoubleToString(minRatio,2)
+            +" losses="+IntegerToString(g_consecutiveLosses)+")");
       return 0;
      }
 
