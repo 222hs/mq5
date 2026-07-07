@@ -35,14 +35,20 @@ double g_maxSpread    = 350.0;
 double g_lotBoost     = 2.0;
 int    g_cooldownBars = 3;
 double g_adxMax       = 25.0;
+double g_probeLot     = 0.01;   // لوت الصفقة التجريبية
+int    g_probeBars    = 3;      // شمعات الانتظار قبل القرار
 bool   g_botRunning   = true;
 int    g_magic        = MagicNumber;
 string g_lastHash     = "";
 
 //--- state
 datetime g_lastBar      = 0;
-int      g_lastCloseDir = 0;    // 1=BUY 0=none -1=SELL
-int      g_cooldownLeft = 0;    // شمعات متبقية قبل إعادة نفس الاتجاه
+int      g_lastSignalDir = 0;
+int      g_cooldownLeft = 0;
+ulong    g_probeTicket  = 0;    // ticket الصفقة التجريبية (0=لا يوجد)
+int      g_probeDir     = 0;    // اتجاه الـ probe (1=BUY -1=SELL)
+double   g_probeLotUsed = 0.01;
+int      g_probeBarsLeft = 0;   // شمعات متبقية للانتظار
 
 //===================================================================
 //===================================================================
@@ -70,7 +76,7 @@ void WriteDefaultSettings()
    if(fh != INVALID_HANDLE) { FileClose(fh); return; }
    fh = FileOpen(SETTINGS_FILE, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
    if(fh == INVALID_HANDLE) return;
-   string j = "{\"BaseLot\": 0.11, \"BasketCount\": 5, \"BasketTP\": 15.0, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"CooldownBars\": 3, \"ADXMax\": 25.0, \"BotRunning\": 1}";
+   string j = "{\"BaseLot\": 0.11, \"BasketCount\": 5, \"BasketTP\": 15.0, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"CooldownBars\": 3, \"ADXMax\": 25.0, \"ProbeLot\": 0.01, \"ProbeBars\": 3, \"BotRunning\": 1}";
    FileWriteString(fh, j);
    FileClose(fh);
   }
@@ -84,13 +90,16 @@ void LoadSettings()
    double mSprd = ReadSetting("MaxSpread",   350.0);
    double lBst  = ReadSetting("LotBoost",     2.0);
    int    cool  = (int)ReadSetting("CooldownBars", 3.0);
-   double adxMx = ReadSetting("ADXMax", 25.0);
+   double adxMx = ReadSetting("ADXMax",      25.0);
+   double pLot  = ReadSetting("ProbeLot",    0.01);
+   int    pBars = (int)ReadSetting("ProbeBars", 3.0);
    bool   botOn = (ReadSetting("BotRunning",  1.0) > 0.5);
 
    string hash = DoubleToString(bLot,3)+IntegerToString(bCnt)
                + DoubleToString(bTP,2)+DoubleToString(mDD,1)
                + DoubleToString(mSprd,0)+DoubleToString(lBst,1)
-               + IntegerToString(cool)+DoubleToString(adxMx,0)+(botOn?"1":"0");
+               + IntegerToString(cool)+DoubleToString(adxMx,0)
+               + DoubleToString(pLot,2)+IntegerToString(pBars)+(botOn?"1":"0");
    if(hash == g_lastHash) return;
    g_lastHash = hash;
 
@@ -102,6 +111,8 @@ void LoadSettings()
    g_lotBoost     = MathMax(1.0,  lBst);
    g_cooldownBars = MathMax(0,    cool);
    g_adxMax       = MathMax(10.0, adxMx);
+   g_probeLot     = MathMax(0.01, pLot);
+   g_probeBars    = MathMax(1,    pBars);
    g_botRunning   = botOn;
 
    EALog("Settings — BaseLot="+DoubleToString(g_baseLot,2)
@@ -181,6 +192,8 @@ void CloseBasket(string reason)
   {
    EALog("CLOSE ["+reason+"] net=$"+DoubleToString(BasketProfit(),2));
    g_cooldownLeft = g_cooldownBars;
+   g_probeTicket  = 0;
+   g_probeDir     = 0;
    for(int i = PositionsTotal()-1; i >= 0; i--)
      {
       ulong t = PositionGetTicket(i);
@@ -282,14 +295,76 @@ void UpdateDashboard(int basket, double net, string lastDir)
 //  ENTRY LOGIC
 //===================================================================
 
-string g_lastDir      = "--";
-int    g_lastSignal   = 0;
-bool   g_inEntry      = false; // منع دخول مزدوج
+string g_lastDir  = "--";
+bool   g_inEntry  = false;
 
+// ── فتح السلة الكاملة بعد تأكيد الـ probe ──────────────────────
+void OpenBasket(int signal, double lot)
+  {
+   if(g_inEntry) return;
+   g_inEntry = true;
+   string dir = (signal == 1) ? "BUY" : "SELL";
+   int opened = 0;
+   for(int i = 0; i < g_basketCount; i++)
+     {
+      bool ok = false;
+      if(signal == 1)
+         ok = trade.Buy (lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_ASK), 0, 0, "GRX_BUY");
+      else
+         ok = trade.Sell(lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_BID), 0, 0, "GRX_SELL");
+      if(ok) opened++;
+      else { EALog("FAIL "+dir+" #"+IntegerToString(i+1)); break; }
+      Sleep(50);
+     }
+   EALog("BASKET OPENED "+IntegerToString(opened)+"/"+IntegerToString(g_basketCount)+" "+dir);
+   g_inEntry = false;
+  }
+
+// ── تحقق من الـ probe وقرر ─────────────────────────────────────
+void CheckProbe()
+  {
+   if(g_probeTicket == 0) return;
+
+   // تأكد أن الصفقة لا تزال مفتوحة
+   if(!PositionSelectByTicket(g_probeTicket))
+     {
+      // أُغلقت من الخارج — أعد الضبط
+      g_probeTicket = 0;
+      g_probeDir    = 0;
+      return;
+     }
+
+   double probeProfit = PositionGetDouble(POSITION_PROFIT);
+
+   // انتظر ProbeBars شمعات
+   if(g_probeBarsLeft > 0) return;
+
+   if(probeProfit > 0)
+     {
+      // الـ probe رابح — افتح السلة الكاملة
+      EALog("PROBE OK profit=$"+DoubleToString(probeProfit,2)+" — فتح السلة");
+      double lot = g_baseLot;
+      GetCandleSignal(lot); // لحساب اللوت فقط
+      OpenBasket(g_probeDir, lot);
+     }
+   else
+     {
+      // الـ probe خاسر — أغلقه وتجاهل
+      EALog("PROBE FAIL loss=$"+DoubleToString(probeProfit,2)+" — إلغاء");
+      trade.PositionClose(g_probeTicket, (ulong)(g_maxSpread*2));
+      g_cooldownLeft = g_cooldownBars;
+     }
+
+   g_probeTicket = 0;
+   g_probeDir    = 0;
+  }
+
+// ── دخول جديد (probe فقط) ──────────────────────────────────────
 void TryEntry()
   {
    if(!g_botRunning) return;
    if(g_inEntry) return;
+   if(g_probeTicket != 0) return; // في probe نشط
    if(CountBasket() > 0) return;
 
    long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
@@ -299,32 +374,27 @@ void TryEntry()
    int signal = GetCandleSignal(lot);
    if(signal == 0) return;
 
-   // كولداون: نفس الاتجاه فقط
-   if(g_cooldownLeft > 0 && signal == g_lastSignal) return;
-
-   g_inEntry = true;
+   if(g_cooldownLeft > 0 && signal == g_lastSignalDir) return;
 
    string dir = (signal == 1) ? "BUY" : "SELL";
-   g_lastDir    = dir;
-   g_lastSignal = signal;
+   g_lastDir       = dir;
+   g_lastSignalDir = signal;
 
-   EALog("SIGNAL "+dir+" lot="+DoubleToString(lot,2)+" x"+IntegerToString(g_basketCount));
+   // افتح صفقة تجريبية صغيرة
+   double pLot = NormLot(g_probeLot);
+   bool ok = false;
+   if(signal == 1)
+      ok = trade.Buy (pLot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_ASK), 0, 0, "GRX_PROBE");
+   else
+      ok = trade.Sell(pLot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_BID), 0, 0, "GRX_PROBE");
 
-   int opened = 0;
-   for(int i = 0; i < g_basketCount; i++)
+   if(ok)
      {
-      bool ok = false;
-      if(signal == 1)
-         ok = trade.Buy (lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_ASK), 0, 0, "GRX_BUY");
-      else
-         ok = trade.Sell(lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_BID), 0, 0, "GRX_SELL");
-
-      if(ok) opened++;
-      else { EALog("FAIL "+dir+" #"+IntegerToString(i+1)+" "+IntegerToString(trade.ResultRetcode())); break; }
-      Sleep(50);
+      g_probeTicket   = trade.ResultDeal();
+      g_probeDir      = signal;
+      g_probeBarsLeft = g_probeBars;
+      EALog("PROBE "+dir+" lot="+DoubleToString(pLot,2)+" — انتظار "+IntegerToString(g_probeBars)+" شمعات");
      }
-   EALog("OPENED "+IntegerToString(opened)+"/"+IntegerToString(g_basketCount)+" "+dir);
-   g_inEntry = false;
   }
 
 //===================================================================
@@ -377,10 +447,15 @@ void OnTick()
    if(barTime == g_lastBar) return;
    g_lastBar = barTime;
 
-   // ── COOLDOWN COUNTER ─────────────────────────────────────────
-   if(g_cooldownLeft > 0) g_cooldownLeft--;
+   // ── COOLDOWN & PROBE COUNTERS ────────────────────────────────
+   if(g_cooldownLeft  > 0) g_cooldownLeft--;
+   if(g_probeBarsLeft > 0) g_probeBarsLeft--;
 
-   // ── ENTRY ────────────────────────────────────────────────────
-   TryEntry();
+   // ── CHECK PROBE ──────────────────────────────────────────────
+   CheckProbe();
+
+   // ── ENTRY (probe جديد) ───────────────────────────────────────
+   if(g_probeTicket == 0 && CountBasket() == 0)
+      TryEntry();
   }
 //+------------------------------------------------------------------+
