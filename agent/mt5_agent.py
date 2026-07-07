@@ -304,20 +304,26 @@ def get_recent_history(days=3, limit=150):
         err = mt5.last_error()
         print(f"⚠️ history_deals_get فشل: {err}")
         return []
+    # بناء map: position_id -> سعر الافتتاح من صفقات الفتح (entry==0)
+    open_price_map = {}
+    for deal in deals:
+        if deal.entry == 0 and deal.position_id:
+            open_price_map[deal.position_id] = deal.price
     result = []
     for deal in deals:
         if deal.entry == 1:
             result.append({
-                "ticket":     deal.ticket,
-                "symbol":     deal.symbol,
-                "type":       "BUY" if deal.type == mt5.DEAL_TYPE_BUY else "SELL",
-                "volume":     deal.volume,
-                "price":      deal.price,
-                "profit":     deal.profit,
-                "swap":       deal.swap,
-                "commission": deal.commission,
-                "time":       datetime.fromtimestamp(deal.time).isoformat(),
-                "comment":    deal.comment,
+                "ticket":      deal.ticket,
+                "symbol":      deal.symbol,
+                "type":        "BUY" if deal.type == mt5.DEAL_TYPE_BUY else "SELL",
+                "volume":      deal.volume,
+                "price_open":  open_price_map.get(deal.position_id, None),
+                "price_close": deal.price,
+                "profit":      deal.profit,
+                "swap":        deal.swap,
+                "commission":  deal.commission,
+                "time":        datetime.fromtimestamp(deal.time).isoformat(),
+                "comment":     deal.comment,
             })
     # آخر N صفقة فقط — تجنب timeout من payload ضخم
     result = result[-limit:]

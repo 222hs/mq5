@@ -191,6 +191,8 @@ def init_db():
                 type        TEXT,
                 volume      REAL,
                 price       REAL,
+                price_open  REAL,
+                price_close REAL,
                 profit      REAL,
                 swap        REAL,
                 commission  REAL,
@@ -354,13 +356,23 @@ def save_account(account, last_update):
 def upsert_history(trades):
     if not trades:
         return
+    # إضافة أعمدة price_open/price_close لو مش موجودة (migration)
     with get_db() as conn:
+        try:
+            conn.execute("ALTER TABLE trade_history ADD COLUMN price_open REAL")
+            conn.execute("ALTER TABLE trade_history ADD COLUMN price_close REAL")
+            conn.commit()
+        except Exception:
+            pass
         conn.executemany("""
             INSERT OR REPLACE INTO trade_history
-                (ticket, symbol, type, volume, price, profit, swap, commission, time, comment)
+                (ticket, symbol, type, volume, price, price_open, price_close, profit, swap, commission, time, comment)
             VALUES
-                (:ticket, :symbol, :type, :volume, :price, :profit, :swap, :commission, :time, :comment)
-        """, trades)
+                (:ticket, :symbol, :type, :volume,
+                 COALESCE(:price_close, :price),
+                 :price_open, :price_close,
+                 :profit, :swap, :commission, :time, :comment)
+        """, [{**t, 'price': t.get('price_close') or t.get('price'), 'price_open': t.get('price_open'), 'price_close': t.get('price_close')} for t in trades])
         conn.commit()
 
 
