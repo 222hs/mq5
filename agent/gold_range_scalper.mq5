@@ -29,14 +29,15 @@ CTrade trade;
 //--- settings (loaded from file every bar)
 double g_baseLot      = 0.11;
 int    g_basketCount  = 5;
-double g_basketTP     = 15.0;
 double g_maxDrawdown  = 80.0;
 double g_maxSpread    = 350.0;
 double g_lotBoost     = 2.0;
 int    g_cooldownBars = 3;
 double g_adxMax       = 25.0;
-double g_probeLot     = 0.01;   // لوت الصفقة التجريبية
-int    g_probeBars    = 3;      // شمعات الانتظار قبل القرار
+double g_probeLot     = 0.01;
+int    g_probeBars    = 3;
+double g_tpMult       = 1.5;   // TP = ATR × tpMult × lots
+double g_slMult       = 1.0;   // SL = ATR × slMult × lots
 bool   g_botRunning   = true;
 int    g_magic        = MagicNumber;
 string g_lastHash     = "";
@@ -76,7 +77,7 @@ void WriteDefaultSettings()
    if(fh != INVALID_HANDLE) { FileClose(fh); return; }
    fh = FileOpen(SETTINGS_FILE, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
    if(fh == INVALID_HANDLE) return;
-   string j = "{\"BaseLot\": 0.11, \"BasketCount\": 5, \"BasketTP\": 15.0, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"CooldownBars\": 3, \"ADXMax\": 25.0, \"ProbeLot\": 0.01, \"ProbeBars\": 3, \"BotRunning\": 1}";
+   string j = "{\"BaseLot\": 0.11, \"BasketCount\": 5, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"CooldownBars\": 3, \"ADXMax\": 25.0, \"ProbeLot\": 0.01, \"ProbeBars\": 3, \"TPMult\": 1.5, \"SLMult\": 1.0, \"BotRunning\": 1}";
    FileWriteString(fh, j);
    FileClose(fh);
   }
@@ -91,15 +92,18 @@ void LoadSettings()
    double lBst  = ReadSetting("LotBoost",     2.0);
    int    cool  = (int)ReadSetting("CooldownBars", 3.0);
    double adxMx = ReadSetting("ADXMax",      25.0);
-   double pLot  = ReadSetting("ProbeLot",    0.01);
+   double pLot  = ReadSetting("ProbeLot",   0.01);
    int    pBars = (int)ReadSetting("ProbeBars", 3.0);
-   bool   botOn = (ReadSetting("BotRunning",  1.0) > 0.5);
+   double tpM   = ReadSetting("TPMult",     1.5);
+   double slM   = ReadSetting("SLMult",     1.0);
+   bool   botOn = (ReadSetting("BotRunning", 1.0) > 0.5);
 
    string hash = DoubleToString(bLot,3)+IntegerToString(bCnt)
                + DoubleToString(bTP,2)+DoubleToString(mDD,1)
                + DoubleToString(mSprd,0)+DoubleToString(lBst,1)
                + IntegerToString(cool)+DoubleToString(adxMx,0)
-               + DoubleToString(pLot,2)+IntegerToString(pBars)+(botOn?"1":"0");
+               + DoubleToString(pLot,2)+IntegerToString(pBars)
+               + DoubleToString(tpM,1)+DoubleToString(slM,1)+(botOn?"1":"0");
    if(hash == g_lastHash) return;
    g_lastHash = hash;
 
@@ -113,6 +117,8 @@ void LoadSettings()
    g_adxMax       = MathMax(10.0, adxMx);
    g_probeLot     = MathMax(0.01, pLot);
    g_probeBars    = MathMax(1,    pBars);
+   g_tpMult       = MathMax(0.5,  tpM);
+   g_slMult       = MathMax(0.1,  slM);
    g_botRunning   = botOn;
 
    EALog("Settings — BaseLot="+DoubleToString(g_baseLot,2)
@@ -298,20 +304,56 @@ void UpdateDashboard(int basket, double net, string lastDir)
 string g_lastDir  = "--";
 bool   g_inEntry  = false;
 
+// ── احسب TP/SL بناءً على ATR واللوت ─────────────────────────────
+void CalcTPSL(int signal, double lot, double &tp, double &sl)
+  {
+   int hATR = iATR(_Symbol, PERIOD_M1, 14);
+   double atr[];
+   ArraySetAsSeries(atr, true);
+   double atrVal = 5.0; // fallback
+   if(hATR != INVALID_HANDLE && CopyBuffer(hATR, 0, 1, 1, atr) == 1)
+      atrVal = atr[0];
+   IndicatorRelease(hATR);
+
+   double pip   = SymbolInfoDouble(_Symbol, SYMBOL_POINT) * 10;
+   double tpPts = (g_tpMult * atrVal) / pip; // نقاط
+   double slPts = (g_slMult * atrVal) / pip;
+
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+
+   if(signal == 1) // BUY
+     {
+      tp = NormalizeDouble(ask + tpPts * pip, _Digits);
+      sl = NormalizeDouble(bid - slPts * pip, _Digits);
+     }
+   else // SELL
+     {
+      tp = NormalizeDouble(bid - tpPts * pip, _Digits);
+      sl = NormalizeDouble(ask + slPts * pip, _Digits);
+     }
+
+   EALog("ATR="+DoubleToString(atrVal,2)+" TP="+DoubleToString(tp,2)+" SL="+DoubleToString(sl,2));
+  }
+
 // ── فتح السلة الكاملة بعد تأكيد الـ probe ──────────────────────
 void OpenBasket(int signal, double lot)
   {
    if(g_inEntry) return;
    g_inEntry = true;
+
+   double tp = 0, sl = 0;
+   CalcTPSL(signal, lot, tp, sl);
+
    string dir = (signal == 1) ? "BUY" : "SELL";
    int opened = 0;
    for(int i = 0; i < g_basketCount; i++)
      {
       bool ok = false;
       if(signal == 1)
-         ok = trade.Buy (lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_ASK), 0, 0, "GRX_BUY");
+         ok = trade.Buy (lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_ASK), sl, tp, "GRX_BUY");
       else
-         ok = trade.Sell(lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_BID), 0, 0, "GRX_SELL");
+         ok = trade.Sell(lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_BID), sl, tp, "GRX_SELL");
       if(ok) opened++;
       else { EALog("FAIL "+dir+" #"+IntegerToString(i+1)); break; }
       Sleep(50);
@@ -380,13 +422,15 @@ void TryEntry()
    g_lastDir       = dir;
    g_lastSignalDir = signal;
 
-   // افتح صفقة تجريبية صغيرة
+   // افتح صفقة تجريبية صغيرة مع TP/SL
    double pLot = NormLot(g_probeLot);
+   double tp = 0, sl = 0;
+   CalcTPSL(signal, pLot, tp, sl);
    bool ok = false;
    if(signal == 1)
-      ok = trade.Buy (pLot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_ASK), 0, 0, "GRX_PROBE");
+      ok = trade.Buy (pLot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_ASK), sl, tp, "GRX_PROBE");
    else
-      ok = trade.Sell(pLot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_BID), 0, 0, "GRX_PROBE");
+      ok = trade.Sell(pLot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_BID), sl, tp, "GRX_PROBE");
 
    if(ok)
      {

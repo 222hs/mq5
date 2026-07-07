@@ -162,7 +162,6 @@ HEDGE_DEFAULT_SETTINGS = {
 GRX_DEFAULT_SETTINGS = {
     "BaseLot":      0.11,
     "BasketCount":  5,
-    "BasketTP":     15.0,
     "MaxDrawdown":  80.0,
     "MaxSpread":    350,
     "LotBoost":     2.0,
@@ -170,6 +169,8 @@ GRX_DEFAULT_SETTINGS = {
     "ADXMax":       25.0,
     "ProbeLot":     0.01,
     "ProbeBars":    3,
+    "TPMult":       1.5,
+    "SLMult":       1.0,
     "BotRunning":   1,
 }
 
