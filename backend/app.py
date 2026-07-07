@@ -955,6 +955,16 @@ def ea_log():
     return jsonify({"ok": True, "count": len(lines)})
 
 
+@app.route("/api/logs", methods=["GET"])
+def api_get_logs():
+    since = int(request.args.get("since", 0))  # index — أرجع فقط ما بعده
+    with _log_lock:
+        buf = list(_log_buffer)
+    if since > 0 and since < len(buf):
+        buf = buf[since:]
+    return jsonify({"logs": buf, "total": len(_log_buffer)})
+
+
 @app.route("/api/ping", methods=["GET"])
 def ping():
     return jsonify({"ok": True})

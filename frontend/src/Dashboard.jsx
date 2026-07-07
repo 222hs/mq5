@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.19';
+const DASH_VERSION = 'v3.20';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -413,8 +413,31 @@ export default function Dashboard() {
     setHistLoading(false);
   };
 
-  // Pull history on mount
-  useEffect(() => { fetchHistory(); }, []);
+  // Pull history on mount + every 5s
+  useEffect(() => {
+    fetchHistory();
+    const t = setInterval(fetchHistory, 5000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Poll live log every 3s via HTTP (backup for WebSocket delays)
+  const logTotalRef = useRef(0);
+  useEffect(() => {
+    const fetchLogs = async () => {
+      try {
+        const r = await fetch(`${API_URL}/api/logs`, { headers: {'X-API-Key': API_KEY} });
+        if (!r.ok) return;
+        const d = await r.json();
+        if (d.logs && d.logs.length > 0) {
+          setLogs(d.logs.slice(-200));
+          logTotalRef.current = d.total;
+        }
+      } catch(e) {}
+    };
+    fetchLogs();
+    const t = setInterval(fetchLogs, 3000);
+    return () => clearInterval(t);
+  }, []);
 
   // Pull hedge settings on mount
   useEffect(() => {
