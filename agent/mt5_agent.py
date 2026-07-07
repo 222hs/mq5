@@ -362,6 +362,32 @@ def push_local_settings():
         pass  # غير حرج — سيُعاد في الدورة القادمة
 
 
+def push_grx_settings():
+    """
+    يدفع إعدادات GRX المحلية (GRX_Settings.json) للـ Backend.
+    تُقبل فقط إذا كان الـ container جديداً (لم يحفظ المستخدم شيئاً بعد) —
+    يمنع فقدان إعدادات GRX بعد كل Railway redeploy، ويمنع sync_grx_settings()
+    من دهس النسخة المحلية الصحيحة بقيم افتراضية مُصفّرة.
+    """
+    grx_file = os.path.join(_MT5_COMMON, "GRX_Settings.json")
+    if not os.path.exists(grx_file):
+        return
+    try:
+        with open(grx_file, "r", encoding="utf-8") as f:
+            local = json.load(f)
+    except Exception:
+        return
+    try:
+        r = _session.post(
+            f"{BACKEND_URL}/api/settings/grx/seed",
+            json=local, timeout=(5, 10),
+        )
+        if r.status_code == 200 and r.json().get("applied"):
+            print(f"📤 {datetime.now().strftime('%H:%M:%S')} - تم رفع إعدادات GRX المحلية للداشبورد")
+    except Exception:
+        pass  # غير حرج — سيُعاد في الدورة القادمة
+
+
 def push_hedge_settings():
     """يقرأ GSX_Hedge.json من MT5 Common ويرسله للـ backend."""
     hedge_file = os.path.join(_MT5_COMMON, "GSX_Hedge.json")
@@ -912,6 +938,7 @@ def main():
     # ارفع الإعدادات المحلية للـ backend فوراً عند الإقلاع (Railway redeploy recovery)
     # — وتتكرر لاحقاً كل SETTINGS_CHECK_INTERVAL داخل الحلقة الرئيسية
     push_local_settings()
+    push_grx_settings()
     # لا نرفع hedge settings من الملف المحلي — الـ backend هو مصدر الحقيقة
 
     # بناء snapshots من MT5 history مباشرة ثم رفعها
@@ -937,6 +964,7 @@ def main():
                 # هذا يمنع تطبيق القيم الافتراضية المُصفّرة على البوت الحي.
                 # لا تأثير له إذا كانت الداشبورد هي مصدر الحقيقة أصلاً (seed no-op).
                 push_local_settings()
+                push_grx_settings()
                 sync_settings()          # الذهب دائماً — لا يُربط بكشف النشاط
                 _, btc_active = detect_active_bots()
                 if btc_active:
