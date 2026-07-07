@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.33';
+const DASH_VERSION = 'v3.34';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -204,6 +204,8 @@ export default function Dashboard() {
         }
       }
       prevPositions.current = curPos;
+      // لو أُغلقت صفقة → اجلب الـ history فوراً
+      if (closed.length > 0) fetchHistory(false);
       // history مصدره WS "history" event + fetchHistory — لا تلمسه هنا
       setData(prev => ({ ...d, history: prev?.history || [] }));
       if (d.settings) setSettingsDraft(prev => mergeKeepDirty(d.settings, settingsDirty, prev));
@@ -424,10 +426,10 @@ export default function Dashboard() {
     if(showSpinner) setHistLoading(false);
   };
 
-  // Pull on mount + every 60s (silent) — WS يبث فوراً عند صفقة جديدة
+  // Pull on mount + every 10s (silent) — WS يبث فوراً عند صفقة جديدة
   useEffect(() => {
     fetchHistory(true);
-    const t = setInterval(() => fetchHistory(false), 60000);
+    const t = setInterval(() => fetchHistory(false), 10000);
     return () => clearInterval(t);
   }, []);
 
