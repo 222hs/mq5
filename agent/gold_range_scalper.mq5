@@ -232,8 +232,9 @@ int GetCandleSignal(double &outLot)
    double strength = MathMin(body / atr1, 2.0) / 2.0; // 0..1
    outLot = NormLot(g_baseLot * (1.0 + (g_lotBoost - 1.0) * strength));
 
-   if(c[1] > o[1]) return  1; // bullish
-   if(c[1] < o[1]) return -1; // bearish
+   // عكس الزخم — شمعة صعود قوية = بيع، شمعة نزول قوية = شراء
+   if(c[1] > o[1]) return -1; // bullish candle → SELL
+   if(c[1] < o[1]) return  1; // bearish candle → BUY
    return 0;
   }
 
