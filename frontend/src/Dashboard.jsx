@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.32';
+const DASH_VERSION = 'v3.33';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -151,8 +151,8 @@ export default function Dashboard() {
         if (!active) return;
         if (r.ok) {
           const d = await r.json();
-          // history is pull-only (fetchHistory) — don't let this 1s poll truncate it back down
-          setData(prev => ({ ...d, history: prev?.history || d.history || [] }));
+          // history مصدره fetchHistory + WS فقط — لا تلمسه هنا
+          setData(prev => ({ ...d, history: prev?.history || [] }));
           if (d.settings) setSettingsDraft(prev => mergeKeepDirty(d.settings, settingsDirty, prev));
           if (d.btc_settings) {
             setBtcSettings({ ...d.btc_settings });
@@ -204,8 +204,8 @@ export default function Dashboard() {
         }
       }
       prevPositions.current = curPos;
-      // history is pull-only — don't let socket overwrite it
-      setData(prev => ({ ...d, history: prev?.history || d.history || [] }));
+      // history مصدره WS "history" event + fetchHistory — لا تلمسه هنا
+      setData(prev => ({ ...d, history: prev?.history || [] }));
       if (d.settings) setSettingsDraft(prev => mergeKeepDirty(d.settings, settingsDirty, prev));
       // الشمعات تأتي داخل dashboard snapshot عند الاتصال الأول
       if (Array.isArray(d.candles) && d.candles.length > 0) {
@@ -237,6 +237,9 @@ export default function Dashboard() {
     socket.on('log_history', (entries) => {
       setLogs(entries || []);
     });
+    socket.on('history', (raw) => {
+      applyHistory(raw);
+    });
 
     return () => {
       socket.off('dashboard', handleDashboard);
@@ -247,6 +250,7 @@ export default function Dashboard() {
       socket.off('grx_settings');
       socket.off('log');
       socket.off('log_history');
+      socket.off('history');
       socket.off('connect');
       socket.off('disconnect');
       socket.off('connect_error');
@@ -406,24 +410,24 @@ export default function Dashboard() {
   };
 
   const [histLoading, setHistLoading] = useState(false);
+  const applyHistory = (raw) => {
+    if (!Array.isArray(raw) || raw.length === 0) return;
+    const sorted = raw.slice().sort((a,b) => new Date(b.time) - new Date(a.time));
+    setData(d => ({ ...(d||{}), history: sorted }));
+  };
   const fetchHistory = async (showSpinner=false) => {
     if(showSpinner) setHistLoading(true);
     try {
       const r = await fetch(`${API_URL}/api/history?limit=200`, { headers: {'X-API-Key': API_KEY} });
-      if (r.ok) {
-        const hist = await r.json();
-        // الأحدث أولاً
-        const sorted = hist.slice().sort((a,b) => new Date(b.time) - new Date(a.time));
-        setData(d => ({ ...d, history: sorted }));
-      }
+      if (r.ok) applyHistory(await r.json());
     } catch(e) {}
     if(showSpinner) setHistLoading(false);
   };
 
-  // Pull history on mount (with spinner), then silently every 30s
+  // Pull on mount + every 60s (silent) — WS يبث فوراً عند صفقة جديدة
   useEffect(() => {
     fetchHistory(true);
-    const t = setInterval(() => fetchHistory(false), 30000);
+    const t = setInterval(() => fetchHistory(false), 60000);
     return () => clearInterval(t);
   }, []);
 
