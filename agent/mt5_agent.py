@@ -598,6 +598,7 @@ def tail_ea_logs():
         os.path.join(_MT5_COMMON, "GSX_Log.txt"):       "gold",
         os.path.join(_MT5_COMMON, "BSX_Log.txt"):       "btc",
         os.path.join(_MT5_COMMON, "GSX_Hedge_Log.txt"): "hedge",
+        os.path.join(_MT5_COMMON, "GRX_Log.txt"):       "grx",
     }
     lines_to_send = []
     for fpath, source in log_files.items():
@@ -785,7 +786,7 @@ def sync_grx_settings():
         grx_file = os.path.join(_MT5_COMMON, "GRX_Settings.json")
         tmp = grx_file + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(settings, f, separators=(',', ': '))
+            json.dump(settings, f, separators=(',', ':'))
         os.replace(tmp, grx_file)
 
         t = datetime.now().strftime('%H:%M:%S')
