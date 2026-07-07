@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.25';
+const DASH_VERSION = 'v3.26';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -90,18 +90,27 @@ export default function Dashboard() {
   const [popup, setPopup] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsDraft, setSettingsDraft] = useState(null);
-  const settingsDirty = useRef(false);
+  const settingsDirty = useRef(new Set());
   const [btcSettings, setBtcSettings] = useState({});
   const [btcSettingsDraft, setBtcSettingsDraft] = useState({});
-  const btcSettingsDirty = useRef(false);
+  const btcSettingsDirty = useRef(new Set());
   const [hedgeSettingsDraft, setHedgeSettingsDraft] = useState({});
-  const hedgeSettingsDirty = useRef(false);
+  const hedgeSettingsDirty = useRef(new Set());
   const [saveMsg, setSaveMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const [hedgeSaveMsg, setHedgeSaveMsg] = useState('');
   const [hedgeBusy, setHedgeBusy] = useState(false);
   const [grxSettingsDraft, setGrxSettingsDraft] = useState({});
-  const grxSettingsDirty = useRef(false);
+  const grxSettingsDirty = useRef(new Set());
+  // دمج إعدادات السيرفر مع أي حقول عُدّلت محلياً ولم تُحفظ بعد —
+  // يمنع أي POST لحقل واحد من دهس تعديلات حقول أخرى لم تُحفظ بعد
+  const mergeKeepDirty = (server, dirtyRef, prevDraft) => {
+    const merged = { ...server };
+    dirtyRef.current.forEach((k) => {
+      if (prevDraft && Object.prototype.hasOwnProperty.call(prevDraft, k)) merged[k] = prevDraft[k];
+    });
+    return merged;
+  };
   const [grxSaveMsg, setGrxSaveMsg] = useState('');
   const [grxBusy, setGrxBusy] = useState(false);
   const [candleData, setCandleData] = useState({ candles: [], sessions: {} });
@@ -143,11 +152,12 @@ export default function Dashboard() {
         if (!active) return;
         if (r.ok) {
           const d = await r.json();
-          setData(d);
-          if (d.settings && !settingsDirty.current) setSettingsDraft({ ...d.settings });
-          if (d.btc_settings && !btcSettingsDirty.current) {
+          // history is pull-only (fetchHistory) — don't let this 1s poll truncate it back down
+          setData(prev => ({ ...d, history: prev?.history || d.history || [] }));
+          if (d.settings) setSettingsDraft(prev => mergeKeepDirty(d.settings, settingsDirty, prev));
+          if (d.btc_settings) {
             setBtcSettings({ ...d.btc_settings });
-            setBtcSettingsDraft({ ...d.btc_settings });
+            setBtcSettingsDraft(prev => mergeKeepDirty(d.btc_settings, btcSettingsDirty, prev));
           }
           if (Array.isArray(d.candles) && d.candles.length > 0)
             setCandleData({ candles: d.candles, sessions: d.sessions || {} });
@@ -197,7 +207,7 @@ export default function Dashboard() {
       prevPositions.current = curPos;
       // history is pull-only — don't let socket overwrite it
       setData(prev => ({ ...d, history: prev?.history || d.history || [] }));
-      if (d.settings && !settingsDirty.current) setSettingsDraft({ ...d.settings });
+      if (d.settings) setSettingsDraft(prev => mergeKeepDirty(d.settings, settingsDirty, prev));
       // الشمعات تأتي داخل dashboard snapshot عند الاتصال الأول
       if (Array.isArray(d.candles) && d.candles.length > 0) {
         setCandleData({ candles: d.candles, sessions: d.sessions || {} });
@@ -207,21 +217,17 @@ export default function Dashboard() {
     socket.on('dashboard', handleDashboard);
     socket.on('candles', (d) => setCandleData(d));
     socket.on('settings', (s) => {
-      settingsDirty.current = false;
-      setSettingsDraft({ ...s });
+      setSettingsDraft(prev => mergeKeepDirty(s, settingsDirty, prev));
     });
     socket.on('btc_settings', (s) => {
-      btcSettingsDirty.current = false;
       setBtcSettings({ ...s });
-      setBtcSettingsDraft({ ...s });
+      setBtcSettingsDraft(prev => mergeKeepDirty(s, btcSettingsDirty, prev));
     });
     socket.on('hedge_settings', (s) => {
-      hedgeSettingsDirty.current = false;
-      setHedgeSettingsDraft({ ...s });
+      setHedgeSettingsDraft(prev => mergeKeepDirty(s, hedgeSettingsDirty, prev));
     });
     socket.on('grx_settings', (s) => {
-      grxSettingsDirty.current = false;
-      setGrxSettingsDraft({ ...s });
+      setGrxSettingsDraft(prev => mergeKeepDirty(s, grxSettingsDirty, prev));
     });
     socket.on('log', (entry) => {
       setLogs(prev => {
@@ -312,7 +318,7 @@ export default function Dashboard() {
         headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
         body: JSON.stringify({ [key]: value }),
       });
-      if (r.ok) settingsDirty.current = false;
+      if (r.ok) settingsDirty.current.delete(key);
       setSaveMsg(r.ok ? `✓ ${key} SAVED` : 'ERROR');
     } catch (e) { setSaveMsg('ERROR'); }
     setBusy(false);
@@ -328,7 +334,7 @@ export default function Dashboard() {
         headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
         body: JSON.stringify({ [key]: value }),
       });
-      if (r.ok) btcSettingsDirty.current = false;
+      if (r.ok) btcSettingsDirty.current.delete(key);
       setSaveMsg(r.ok ? `✓ BTC ${key} SAVED` : 'ERROR');
     } catch (e) { setSaveMsg('ERROR'); }
     setBusy(false);
@@ -345,9 +351,9 @@ export default function Dashboard() {
         body: JSON.stringify({ ...grxSettingsDraft, [key]: value }),
       });
       if (r.ok) {
-        grxSettingsDirty.current = false;
+        grxSettingsDirty.current.delete(key);
         const updated = await r.json();
-        if (updated.settings) setGrxSettingsDraft(updated.settings);
+        if (updated.settings) setGrxSettingsDraft(prev => mergeKeepDirty(updated.settings, grxSettingsDirty, prev));
       }
       setGrxSaveMsg(r.ok ? `✓ ${key} SAVED` : 'ERROR');
     } catch (e) { setGrxSaveMsg('ERROR'); }
@@ -365,9 +371,9 @@ export default function Dashboard() {
         body: JSON.stringify({ [key]: value }),
       });
       if (r.ok) {
-        hedgeSettingsDirty.current = false;
+        hedgeSettingsDirty.current.delete(key);
         const updated = await r.json();
-        if (updated.settings) setHedgeSettingsDraft(updated.settings);
+        if (updated.settings) setHedgeSettingsDraft(prev => mergeKeepDirty(updated.settings, hedgeSettingsDirty, prev));
       }
       setHedgeSaveMsg(r.ok ? `✓ ${key} SAVED` : 'ERROR');
     } catch (e) { setHedgeSaveMsg('ERROR'); }
@@ -1153,7 +1159,7 @@ export default function Dashboard() {
                     <div style={{display:'flex', flexDirection:'column', gap:6}}>
                       <select
                         value={settingsDraft?.OrderType??0}
-                        onChange={e=>{ settingsDirty.current=true; setSettingsDraft(d=>({...d,OrderType:Number(e.target.value)})); }}
+                        onChange={e=>{ settingsDirty.current.add('OrderType'); setSettingsDraft(d=>({...d,OrderType:Number(e.target.value)})); }}
                         style={{fontFamily:C.mono,fontSize:12,fontWeight:'bold',padding:'8px 10px',background:C.bg,border:C.border,color:C.ink,cursor:'pointer',letterSpacing:'1px'}}
                       >
                         <option value={0}>⚡ MARKET — دخول فوري</option>
@@ -1192,7 +1198,7 @@ export default function Dashboard() {
                     <div style={{display:'flex', gap:8, marginBottom:8}}>
                       {[{v:0,label:'🔒 FIXED'},{v:1,label:'📈 DYNAMIC'}].map(opt=>(
                         <button key={opt.v} className="bbtn"
-                          onClick={()=>{settingsDirty.current=true; setSettingsDraft(d=>({...d,RiskMode:opt.v}));}}
+                          onClick={()=>{settingsDirty.current.add('RiskMode'); setSettingsDraft(d=>({...d,RiskMode:opt.v}));}}
                           style={{...bBtn((settingsDraft?.RiskMode??0)===opt.v,{flex:1,fontSize:10,padding:'6px 4px'})}}>
                           {opt.label}
                         </button>
@@ -1208,7 +1214,7 @@ export default function Dashboard() {
                         </div>
                         <input type="range" min="0.1" max="5" step="0.1"
                           value={settingsDraft?.RiskPercent??1}
-                          onChange={e=>{settingsDirty.current=true; setSettingsDraft(d=>({...d,RiskPercent:Number(e.target.value)}));}}
+                          onChange={e=>{settingsDirty.current.add('RiskPercent'); setSettingsDraft(d=>({...d,RiskPercent:Number(e.target.value)}));}}
                           style={{width:'100%', accentColor:C.yellow}}
                         />
                         <div style={{display:'flex', justifyContent:'space-between', fontSize:9, color:C.muted}}>
@@ -1385,7 +1391,7 @@ export default function Dashboard() {
                         <input
                           type="number" step="any"
                           value={settingsDraft[k]??''}
-                          onChange={e=>{settingsDirty.current=true;setSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}));}}
+                          onChange={e=>{settingsDirty.current.add(k);setSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}));}}
                           style={{fontFamily:C.mono, fontSize:12, width:88, padding:'6px 8px', background:'#0d1117', border:'1px solid rgba(255,204,0,0.4)', color:C.neon}}
                         />
                         <button className="bbtn" onClick={()=>saveSingle(k,settingsDraft[k])} disabled={busy}
@@ -1464,7 +1470,7 @@ export default function Dashboard() {
                           {[{k:'GridLevels',label:'LEVELS',step:'1'},{k:'GridStep',label:'STEP (pts)',step:'10'}].map(f=>(
                             <div key={f.k} style={{display:'flex',flexDirection:'column',gap:3}}>
                               <div style={bLabel({fontSize:8})}>{f.label}</div>
-                              <input type="number" step={f.step} value={settingsDraft[f.k]??''} onChange={e=>{settingsDirty.current=true;setSettingsDraft(d=>({...d,[f.k]:Number(e.target.value)}));}}
+                              <input type="number" step={f.step} value={settingsDraft[f.k]??''} onChange={e=>{settingsDirty.current.add(f.k);setSettingsDraft(d=>({...d,[f.k]:Number(e.target.value)}));}}
                                 style={{fontFamily:C.mono,fontSize:12,width:72,padding:'4px 6px',background:'#0d1117',border:'1px solid rgba(255,153,0,0.4)',color:'#ff9900'}}
                               />
                               <button className="bbtn" onClick={()=>saveSingle(f.k,settingsDraft[f.k])} disabled={busy}
@@ -1481,7 +1487,7 @@ export default function Dashboard() {
                         <div style={{display:'flex',gap:8}}>
                           <div style={{display:'flex',flexDirection:'column',gap:3}}>
                             <div style={bLabel({fontSize:8})}>HEDGE LOT ×</div>
-                            <input type="number" step="0.1" min="0.1" max="2" value={settingsDraft.HedgeLotMult??0.5} onChange={e=>{settingsDirty.current=true;setSettingsDraft(d=>({...d,HedgeLotMult:Number(e.target.value)}));}}
+                            <input type="number" step="0.1" min="0.1" max="2" value={settingsDraft.HedgeLotMult??0.5} onChange={e=>{settingsDirty.current.add('HedgeLotMult');setSettingsDraft(d=>({...d,HedgeLotMult:Number(e.target.value)}));}}
                               style={{fontFamily:C.mono,fontSize:12,width:72,padding:'4px 6px',background:'#0d1117',border:'1px solid rgba(255,153,0,0.4)',color:'#ff9900'}}
                             />
                             <button className="bbtn" onClick={()=>saveSingle('HedgeLotMult',settingsDraft.HedgeLotMult)} disabled={busy}
@@ -1501,7 +1507,7 @@ export default function Dashboard() {
                           {[{k:'ScaleStep',label:'STEP (pts)',step:'10'},{k:'ScaleMult',label:'LOT ×',step:'0.1'},{k:'MaxScales',label:'MAX',step:'1'}].map(f=>(
                             <div key={f.k} style={{display:'flex',flexDirection:'column',gap:3}}>
                               <div style={bLabel({fontSize:8})}>{f.label}</div>
-                              <input type="number" step={f.step} value={settingsDraft[f.k]??''} onChange={e=>{settingsDirty.current=true;setSettingsDraft(d=>({...d,[f.k]:Number(e.target.value)}));}}
+                              <input type="number" step={f.step} value={settingsDraft[f.k]??''} onChange={e=>{settingsDirty.current.add(f.k);setSettingsDraft(d=>({...d,[f.k]:Number(e.target.value)}));}}
                                 style={{fontFamily:C.mono,fontSize:12,width:72,padding:'4px 6px',background:'#0d1117',border:'1px solid rgba(255,153,0,0.4)',color:'#ff9900'}}
                               />
                               <button className="bbtn" onClick={()=>saveSingle(f.k,settingsDraft[f.k])} disabled={busy}
@@ -1549,7 +1555,7 @@ export default function Dashboard() {
                       <input
                         type="number" step="any"
                         value={btcSettingsDraft[k]??''}
-                        onChange={e=>{btcSettingsDirty.current=true;setBtcSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}));}}
+                        onChange={e=>{btcSettingsDirty.current.add(k);setBtcSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}));}}
                         style={{fontFamily:C.mono, fontSize:12, width:88, padding:'6px 8px', background:'#0d1117', border:'1px solid rgba(0,170,255,0.4)', color:'#00aaff'}}
                       />
                       <button className="bbtn" onClick={()=>saveBtcSingle(k,btcSettingsDraft[k])} disabled={busy}
@@ -1602,7 +1608,7 @@ export default function Dashboard() {
                   <div style={{display:'flex', gap:8, marginBottom:8}}>
                     {[{v:0,label:'🔒 FIXED'},{v:1,label:'📈 DYNAMIC'}].map(opt=>(
                       <button key={opt.v} className="bbtn"
-                        onClick={()=>{btcSettingsDirty.current=true; setBtcSettingsDraft(d=>({...d,RiskMode:opt.v}));}}
+                        onClick={()=>{btcSettingsDirty.current.add('RiskMode'); setBtcSettingsDraft(d=>({...d,RiskMode:opt.v}));}}
                         style={{...bBtn((btcSettingsDraft?.RiskMode??0)===opt.v,{flex:1,fontSize:10,padding:'6px 4px',borderColor:'#00aaff',color:(btcSettingsDraft?.RiskMode??0)===opt.v?'#000':'#00aaff'})}}>
                         {opt.label}
                       </button>
@@ -1614,7 +1620,7 @@ export default function Dashboard() {
                       <input
                         type="number" step="0.01" min="0.01"
                         value={btcSettingsDraft.BaseLot??0.01}
-                        onChange={e=>{btcSettingsDirty.current=true; setBtcSettingsDraft(d=>({...d,BaseLot:e.target.value===''?'':Number(e.target.value)}));}}
+                        onChange={e=>{btcSettingsDirty.current.add('BaseLot'); setBtcSettingsDraft(d=>({...d,BaseLot:e.target.value===''?'':Number(e.target.value)}));}}
                         style={{fontFamily:C.mono, fontSize:12, width:88, padding:'6px 8px', background:'#0d1117', border:'1px solid rgba(0,170,255,0.4)', color:'#00aaff'}}
                       />
                     </div>
@@ -1629,7 +1635,7 @@ export default function Dashboard() {
                       </div>
                       <input type="range" min="0.1" max="5" step="0.1"
                         value={btcSettingsDraft?.RiskPercent??1}
-                        onChange={e=>{btcSettingsDirty.current=true; setBtcSettingsDraft(d=>({...d,RiskPercent:Number(e.target.value)}));}}
+                        onChange={e=>{btcSettingsDirty.current.add('RiskPercent'); setBtcSettingsDraft(d=>({...d,RiskPercent:Number(e.target.value)}));}}
                         style={{width:'100%', accentColor:C.yellow}}
                       />
                       <div style={{display:'flex', justifyContent:'space-between', fontSize:9, color:C.muted}}>
@@ -1694,7 +1700,7 @@ export default function Dashboard() {
                 <div style={{display:'flex',gap:4}}>
                   <input type="number" step={step} min={min}
                     value={hedgeSettingsDraft[k]??''}
-                    onChange={e=>{hedgeSettingsDirty.current=true; setHedgeSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}));}}
+                    onChange={e=>{hedgeSettingsDirty.current.add(k); setHedgeSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}));}}
                     style={{width:80,background:C.bg,border:`1px solid #ff4444`,color:C.ink,fontFamily:C.mono,fontSize:10,padding:'4px 6px',borderRadius:3}}
                   />
                   <button className="bbtn" onClick={()=>saveHedgeSingle(k,hedgeSettingsDraft[k])} disabled={hedgeBusy}
@@ -1747,7 +1753,7 @@ export default function Dashboard() {
                 <div style={{display:'flex',gap:4}}>
                   <input type="number" step={step} min={min}
                     value={grxSettingsDraft[k]??''}
-                    onChange={e=>{grxSettingsDirty.current=true; setGrxSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}));}}
+                    onChange={e=>{grxSettingsDirty.current.add(k); setGrxSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}));}}
                     style={{width:80,background:C.bg,border:`1px solid #f0b429`,color:C.ink,fontFamily:C.mono,fontSize:10,padding:'4px 6px',borderRadius:3}}
                   />
                   <button className="bbtn" onClick={()=>saveGrxSingle(k,grxSettingsDraft[k])} disabled={grxBusy}
