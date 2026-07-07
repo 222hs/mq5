@@ -8,38 +8,111 @@
 
 #include <Trade\Trade.mqh>
 
-//--- inputs
+//--- inputs (fallbacks only — real values come from settings file)
 input double          BaseLot       = 0.11;
 input int             MagicNumber   = 88888;
-input ENUM_TIMEFRAMES TF_RANGE      = PERIOD_M5;  // timeframe for range detection
-input int             RangePeriod   = 30;          // candles to look back for range
-input double          TouchZonePct  = 20.0;        // % of range width = touch zone
-input int             BasketCount   = 5;           // positions per signal
-input double          BasketTP      = 15.0;        // USD profit to close basket
-input double          MaxDrawdown   = 80.0;        // USD loss emergency close
-input double          MaxSpread     = 350.0;
-input double          LotBoost      = 2.0;         // lot multiplier at strong level
 
 //--- EA identity
-#define EA_NAME       "GoldRangeX"
-#define EA_VERSION    "1.00"
-#define LOG_FILE      "GRX_Log.txt"
-#define DASH_PREFIX   "GRX_D_"
-#define PANEL_X       10
-#define PANEL_Y       230
-#define ROW_H         16
-#define CLR_KEY       clrSilver
-#define CLR_VAL       clrWhite
+#define EA_NAME        "GoldRangeX"
+#define EA_VERSION     "1.00"
+#define SETTINGS_FILE  "GRX_Settings.json"
+#define LOG_FILE       "GRX_Log.txt"
+#define DASH_PREFIX    "GRX_D_"
+#define PANEL_X        10
+#define PANEL_Y        230
+#define ROW_H          16
+#define CLR_KEY        clrSilver
+#define CLR_VAL        clrWhite
 
 CTrade trade;
 
+//--- settings (loaded from file every bar)
+double g_baseLot      = 0.11;
+int    g_rangePeriod  = 30;
+double g_touchZonePct = 20.0;
+int    g_basketCount  = 5;
+double g_basketTP     = 15.0;
+double g_maxDrawdown  = 80.0;
+double g_maxSpread    = 350.0;
+double g_lotBoost     = 2.0;
+bool   g_botRunning   = true;
+int    g_magic        = MagicNumber;
+string g_lastHash     = "";
+
 //--- state
-datetime g_lastBar      = 0;
-double   g_rangeHigh    = 0;
-double   g_rangeLow     = 0;
-double   g_rangeMid     = 0;
-bool     g_botRunning   = true;
-int      g_magic        = MagicNumber;
+datetime g_lastBar   = 0;
+double   g_rangeHigh = 0;
+double   g_rangeLow  = 0;
+double   g_rangeMid  = 0;
+
+//===================================================================
+//===================================================================
+//  SETTINGS FILE
+//===================================================================
+
+double ReadSetting(string key, double def)
+  {
+   int fh = FileOpen(SETTINGS_FILE, FILE_READ|FILE_TXT|FILE_ANSI|FILE_COMMON);
+   if(fh == INVALID_HANDLE) return def;
+   string raw = "";
+   while(!FileIsEnding(fh)) raw += FileReadString(fh);
+   FileClose(fh);
+   string pat = "\"" + key + "\":";
+   int pos = StringFind(raw, pat);
+   if(pos < 0) return def;
+   string rest = StringSubstr(raw, pos + StringLen(pat));
+   StringTrimLeft(rest); StringTrimRight(rest);
+   return StringToDouble(rest);
+  }
+
+void WriteDefaultSettings()
+  {
+   int fh = FileOpen(SETTINGS_FILE, FILE_READ|FILE_TXT|FILE_ANSI|FILE_COMMON);
+   if(fh != INVALID_HANDLE) { FileClose(fh); return; } // already exists
+   fh = FileOpen(SETTINGS_FILE, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
+   if(fh == INVALID_HANDLE) return;
+   string j = "{\"BaseLot\": 0.11, \"RangePeriod\": 30, \"TouchZonePct\": 20.0, \"BasketCount\": 5, \"BasketTP\": 15.0, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"BotRunning\": 1}";
+   FileWriteString(fh, j);
+   FileClose(fh);
+  }
+
+void LoadSettings()
+  {
+   double bLot  = ReadSetting("BaseLot",      0.11);
+   int    rPer  = (int)ReadSetting("RangePeriod", 30.0);
+   double tZone = ReadSetting("TouchZonePct", 20.0);
+   int    bCnt  = (int)ReadSetting("BasketCount",  5.0);
+   double bTP   = ReadSetting("BasketTP",     15.0);
+   double mDD   = ReadSetting("MaxDrawdown",  80.0);
+   double mSprd = ReadSetting("MaxSpread",   350.0);
+   double lBst  = ReadSetting("LotBoost",     2.0);
+   bool   botOn = (ReadSetting("BotRunning",  1.0) > 0.5);
+
+   string hash = DoubleToString(bLot,3)+IntegerToString(rPer)
+               + DoubleToString(tZone,1)+IntegerToString(bCnt)
+               + DoubleToString(bTP,2)+DoubleToString(mDD,1)
+               + DoubleToString(mSprd,0)+DoubleToString(lBst,1)+(botOn?"1":"0");
+   if(hash == g_lastHash) return;
+   g_lastHash = hash;
+
+   g_baseLot      = MathMax(0.01, bLot);
+   g_rangePeriod  = MathMax(5,    rPer);
+   g_touchZonePct = MathMax(1.0,  tZone);
+   g_basketCount  = MathMax(1,    bCnt);
+   g_basketTP     = MathMax(0.5,  bTP);
+   g_maxDrawdown  = MathMax(5.0,  mDD);
+   g_maxSpread    = mSprd;
+   g_lotBoost     = MathMax(1.0,  lBst);
+   g_botRunning   = botOn;
+
+   EALog("Settings — BaseLot="+DoubleToString(g_baseLot,2)
+         +" Range="+IntegerToString(g_rangePeriod)
+         +" TouchZone="+DoubleToString(g_touchZonePct,1)+"%"
+         +" BasketCnt="+IntegerToString(g_basketCount)
+         +" BasketTP=$"+DoubleToString(g_basketTP,2)
+         +" MaxDD=$"+DoubleToString(g_maxDrawdown,1)
+         +" LotBoost="+DoubleToString(g_lotBoost,1)+"x");
+  }
 
 //===================================================================
 void EALog(string msg)
@@ -115,7 +188,7 @@ void CloseBasket(string reason)
       if(t == 0) continue;
       if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
       if(PositionGetInteger(POSITION_MAGIC) != g_magic) continue;
-      trade.PositionClose(t, (ulong)(MaxSpread*2));
+      trade.PositionClose(t, (ulong)(g_maxSpread*2));
       Sleep(80);
      }
   }
@@ -138,11 +211,11 @@ void UpdateRange()
    double hi[], lo[];
    ArraySetAsSeries(hi, true);
    ArraySetAsSeries(lo, true);
-   if(CopyHigh(_Symbol, TF_RANGE, 1, RangePeriod, hi) < RangePeriod) return;
-   if(CopyLow (_Symbol, TF_RANGE, 1, RangePeriod, lo) < RangePeriod) return;
+   if(CopyHigh(_Symbol, PERIOD_M5, 1, g_rangePeriod, hi) < g_rangePeriod) return;
+   if(CopyLow (_Symbol, PERIOD_M5, 1, g_rangePeriod, lo) < g_rangePeriod) return;
 
-   g_rangeHigh = hi[ArrayMaximum(hi, 0, RangePeriod)];
-   g_rangeLow  = lo[ArrayMinimum(lo, 0, RangePeriod)];
+   g_rangeHigh = hi[ArrayMaximum(hi, 0, g_rangePeriod)];
+   g_rangeLow  = lo[ArrayMinimum(lo, 0, g_rangePeriod)];
    g_rangeMid  = (g_rangeHigh + g_rangeLow) / 2.0;
   }
 
@@ -165,7 +238,7 @@ void UpdateDashboard(int basket, double net)
    color nc = net > 0 ? clrLime : (net < 0 ? clrRed : clrGray);
    DLabel("V_NET",  "$"+DoubleToString(net,2),      xV, y, nc); y += ROW_H;
    DLabel("K_TP",   "BASKET TP",x, y, CLR_KEY);
-   DLabel("V_TP",   "$"+DoubleToString(BasketTP,2), xV, y, clrCyan); y += ROW_H;
+   DLabel("V_TP",   "$"+DoubleToString(g_basketTP,2), xV, y, clrCyan); y += ROW_H;
    DLabel("K_BOT",  "BOT",      x, y, CLR_KEY);
    DLabel("V_BOT",  g_botRunning?"ON":"OFF",        xV, y, g_botRunning?clrLime:clrRed); y += ROW_H;
    long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
@@ -184,12 +257,12 @@ void TryEntry()
    if(CountBasket() > 0) return;   // wait for basket to close before new entry
 
    long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
-   if(spread > MaxSpread) return;
+   if(spread > g_maxSpread) return;
 
    double rangeWidth = g_rangeHigh - g_rangeLow;
    if(rangeWidth < 1.0) return; // range too narrow, skip
 
-   double touchZone = rangeWidth * (TouchZonePct / 100.0);
+   double touchZone = rangeWidth * (g_touchZonePct / 100.0);
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
 
@@ -206,7 +279,7 @@ void TryEntry()
    double proximity = sellSignal
                     ? (1.0 - distToHigh / touchZone)
                     : (1.0 - distToLow  / touchZone);
-   double lot = NormLot(BaseLot * (proximity >= 0.5 ? LotBoost : 1.0));
+   double lot = NormLot(g_baseLot * (proximity >= 0.5 ? g_lotBoost : 1.0));
 
    string dir = sellSignal ? "SELL" : "BUY";
    EALog("SIGNAL "+dir+" range="+DoubleToString(g_rangeLow,2)+"-"+DoubleToString(g_rangeHigh,2)
@@ -214,7 +287,7 @@ void TryEntry()
          +" proximity="+DoubleToString(proximity*100,0)+"%");
 
    int opened = 0;
-   for(int i = 0; i < BasketCount; i++)
+   for(int i = 0; i < g_basketCount; i++)
      {
       bool ok = false;
       if(sellSignal)
@@ -242,6 +315,8 @@ int OnInit()
    trade.SetExpertMagicNumber(g_magic);
    trade.SetDeviationInPoints(30);
    trade.SetTypeFilling(ORDER_FILLING_IOC);
+   WriteDefaultSettings();
+   LoadSettings();
    UpdateRange();
    EALog("Init — "+EA_NAME+" v"+EA_VERSION
          +" range="+DoubleToString(g_rangeLow,2)+"-"+DoubleToString(g_rangeHigh,2));
@@ -256,11 +331,12 @@ void OnDeinit(const int reason)
 
 void OnTick()
   {
+   LoadSettings();
    int    basket = CountBasket();
    double net    = BasketProfit();
 
    // ── BASKET TP ────────────────────────────────────────────────
-   if(basket > 0 && net >= BasketTP)
+   if(basket > 0 && net >= g_basketTP)
      {
       CloseBasket("TP $"+DoubleToString(net,2));
       UpdateDashboard(0, 0);
@@ -268,7 +344,7 @@ void OnTick()
      }
 
    // ── EMERGENCY CLOSE ──────────────────────────────────────────
-   if(basket > 0 && net <= -MaxDrawdown)
+   if(basket > 0 && net <= -g_maxDrawdown)
      {
       CloseBasket("MAXDD $"+DoubleToString(net,2));
       UpdateDashboard(0, 0);
