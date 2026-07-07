@@ -1745,7 +1745,7 @@ export default function Dashboard() {
               {k:'RiskPct',      label:'RISK % (تلقائي)',step:0.1,  min:0},
               {k:'BasketCount',  label:'BASKET COUNT',   step:1,    min:1},
               {k:'LotBoost',     label:'LOT BOOST',      step:0.5,  min:1},
-              {k:'SLMult',       label:'SL أمان × ATR',   step:0.5,  min:0.1},
+              {k:'SLMult',       label:'SL × ATR (أمان)',step:0.5,  min:0.1},
               {k:'CooldownBars', label:'COOLDOWN BARS',  step:1,    min:0},
               {k:'ADXMax',       label:'ADX MAX (ترند)', step:1,    min:10},
               {k:'MaxDrawdown',  label:'MAX DRAWDOWN $', step:5,    min:5},
@@ -1766,7 +1766,7 @@ export default function Dashboard() {
             ))}
           </div>
           <div style={{marginTop:10, fontSize:9, color:C.muted, lineHeight:1.6}}>
-            ⚡ RISK%&gt;0 = لوت تلقائي (رصيد × RISK% ÷ BASKET COUNT) — RISK%=0 = استخدم BASE LOT يدوياً
+            ⚡ RISK%&gt;0 = لوت تلقائي (رصيد × RISK% ÷ BASKET COUNT) — RISK%=0 = BASE LOT يدوي | الإغلاق بالدولار فقط (BASKET TP / MAX DD)
           </div>
         </div>
 

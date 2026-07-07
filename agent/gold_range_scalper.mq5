@@ -23,16 +23,13 @@ input int             MagicNumber   = 88888;
 #define ROW_H          16
 #define CLR_KEY        clrSilver
 #define CLR_VAL        clrWhite
-// SL أمان للسلة = مضاعف الـ SL العادي × ATR — يتمدد تلقائياً مع التذبذب
-// (خفيف أو قوي) بدل رقم ثابت، وواسع بما يكفي إنه خط دفاع أخير بس —
-// الإغلاق الفعلي يديره البوت بالدولار (BasketTP/MaxDrawdown)
-#define SAFETY_SL_MULT 4.0
+#define SAFETY_SL_MULT 4.0   // SL أمان = ATR × SLMult × SAFETY_SL_MULT (واسع — يمنع خسارة كبيرة فقط)
 
 CTrade trade;
 
 //--- settings (loaded from file every bar)
 double g_baseLot      = 0.11;
-double g_riskPct      = 1.0;   // % من الرصيد لكل سلة (0 = استخدم BaseLot)
+double g_riskPct      = 1.0;
 double g_basketTP     = 15.0;
 int    g_basketCount  = 5;
 double g_maxDrawdown  = 80.0;
@@ -40,18 +37,19 @@ double g_maxSpread    = 350.0;
 double g_lotBoost     = 2.0;
 int    g_cooldownBars = 3;
 double g_adxMax       = 25.0;
-bool   g_useADXFilter = true;  // زر تشغيل/إيقاف فلتر الترند (ADX) من الداشبورد
-double g_slMult       = 1.0;   // يُستخدم لحساب مضاعف SL الأمان (CalcSafetySL)
+bool   g_useADXFilter = true;
+double g_slMult       = 1.0;
 bool   g_botRunning   = true;
 int    g_magic        = MagicNumber;
 string g_lastHash     = "";
 
 //--- state
-datetime g_lastBar      = 0;
+datetime g_lastBar       = 0;
 int      g_lastSignalDir = 0;
-int      g_cooldownLeft = 0;
+int      g_cooldownLeft  = 0;
+string   g_lastDir       = "--";
+bool     g_inEntry       = false;
 
-//===================================================================
 //===================================================================
 //  SETTINGS FILE
 //===================================================================
@@ -77,7 +75,7 @@ void WriteDefaultSettings()
    if(fh != INVALID_HANDLE) { FileClose(fh); return; }
    fh = FileOpen(SETTINGS_FILE, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
    if(fh == INVALID_HANDLE) return;
-   string j = "{\"BaseLot\": 0.11, \"RiskPct\": 1.0, \"BasketCount\": 5, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"CooldownBars\": 3, \"ADXMax\": 25.0, \"UseADXFilter\": 1, \"SLMult\": 1.0, \"BotRunning\": 1}";
+   string j = "{\"BaseLot\": 0.11, \"RiskPct\": 1.0, \"BasketCount\": 5, \"BasketTP\": 15.0, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"CooldownBars\": 3, \"ADXMax\": 25.0, \"UseADXFilter\": 1, \"SLMult\": 1.0, \"BotRunning\": 1}";
    FileWriteString(fh, j);
    FileClose(fh);
   }
@@ -87,14 +85,14 @@ void LoadSettings()
    double bLot  = ReadSetting("BaseLot",      0.11);
    double rPct  = ReadSetting("RiskPct",      1.0);
    int    bCnt  = (int)ReadSetting("BasketCount",  5.0);
-   double bTP   = ReadSetting("BasketTP",     15.0);
-   double mDD   = ReadSetting("MaxDrawdown",  80.0);
-   double mSprd = ReadSetting("MaxSpread",   350.0);
-   double lBst  = ReadSetting("LotBoost",     2.0);
+   double bTP   = ReadSetting("BasketTP",    15.0);
+   double mDD   = ReadSetting("MaxDrawdown", 80.0);
+   double mSprd = ReadSetting("MaxSpread",  350.0);
+   double lBst  = ReadSetting("LotBoost",    2.0);
    int    cool  = (int)ReadSetting("CooldownBars", 3.0);
-   double adxMx = ReadSetting("ADXMax",      25.0);
+   double adxMx = ReadSetting("ADXMax",     25.0);
    bool   useAdx= (ReadSetting("UseADXFilter", 1.0) > 0.5);
-   double slM   = ReadSetting("SLMult",     1.0);
+   double slM   = ReadSetting("SLMult",      1.0);
    bool   botOn = (ReadSetting("BotRunning", 1.0) > 0.5);
 
    string hash = DoubleToString(bLot,3)+DoubleToString(rPct,2)+IntegerToString(bCnt)
@@ -119,11 +117,10 @@ void LoadSettings()
    g_botRunning   = botOn;
 
    EALog("Settings — BaseLot="+DoubleToString(g_baseLot,2)
+         +" RiskPct="+DoubleToString(g_riskPct,1)+"%"
          +" BasketCnt="+IntegerToString(g_basketCount)
-         +" BasketTP=$"+DoubleToString(g_basketTP,2)
+         +" TP=$"+DoubleToString(g_basketTP,2)
          +" MaxDD=$"+DoubleToString(g_maxDrawdown,1)
-         +" LotBoost="+DoubleToString(g_lotBoost,1)+"x"
-         +" Cooldown="+IntegerToString(g_cooldownBars)+"bars"
          +" ADXFilter="+(g_useADXFilter?"ON":"OFF"));
   }
 
@@ -142,7 +139,6 @@ void EALog(string msg)
      }
   }
 
-//--- dashboard label
 void DLabel(string name, string txt, int x, int y, color clr)
   {
    string n = DASH_PREFIX + name;
@@ -217,40 +213,37 @@ double NormLot(double lot)
   }
 
 //===================================================================
-//  AUTO LOT — يحسب اللوت بناءً على الرصيد وعدد الصفقات
+//  AUTO LOT
 //===================================================================
 
 double CalcAutoLot()
   {
-   // لو RiskPct=0 استخدم BaseLot اليدوي
    if(g_riskPct <= 0.0) return NormLot(g_baseLot);
 
-   double balance  = AccountInfoDouble(ACCOUNT_BALANCE);
-   double riskMoney = balance * g_riskPct / 100.0; // إجمالي المخاطرة بالدولار
-   double perTrade  = riskMoney / MathMax(1, g_basketCount); // مخاطرة كل صفقة
+   double balance   = AccountInfoDouble(ACCOUNT_BALANCE);
+   double riskMoney = balance * g_riskPct / 100.0;
+   double perTrade  = riskMoney / MathMax(1, g_basketCount);
 
-   // احسب SL المتوقع بناءً على ATR
    int hATR = iATR(_Symbol, PERIOD_M1, 14);
    double atr[];
    ArraySetAsSeries(atr, true);
-   double atrVal = 5.0 * _Point * 10; // fallback ~5 pips gold
+   double atrVal = 5.0 * _Point * 10;
    if(hATR != INVALID_HANDLE && CopyBuffer(hATR, 0, 1, 1, atr) == 1)
       atrVal = atr[0];
    IndicatorRelease(hATR);
 
-   double slDist    = g_slMult * atrVal;           // مسافة SL بوحدة السعر
-   double tickVal   = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-   double tickSize  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   double slDist   = g_slMult * atrVal;
+   double tickVal  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    if(tickSize <= 0 || tickVal <= 0) return NormLot(g_baseLot);
 
-   double slInTicks = slDist / tickSize;
-   double slValue   = slInTicks * tickVal;         // قيمة SL بالدولار لـ 1 لوت
+   double slValue = (slDist / tickSize) * tickVal;
    if(slValue <= 0) return NormLot(g_baseLot);
 
    double lot = perTrade / slValue;
    EALog("AutoLot: bal="+DoubleToString(balance,0)+" risk%="+DoubleToString(g_riskPct,1)
-         +" perTrade=$"+DoubleToString(perTrade,2)+" SL=$"+DoubleToString(slValue,2)+"/lot"
-         +" → lot="+DoubleToString(lot,3));
+         +" perTrade=$"+DoubleToString(perTrade,2)+" SLval=$"+DoubleToString(slValue,2)
+         +"/lot → lot="+DoubleToString(lot,3));
    return NormLot(lot);
   }
 
@@ -258,11 +251,8 @@ double CalcAutoLot()
 //  CANDLE SIGNAL
 //===================================================================
 
-// returns 1=bullish, -1=bearish, 0=no signal
-// uses ATR to measure candle strength, boosts lot on stronger candles
-int GetCandleSignal(double &outLot)
+int GetCandleSignal()
   {
-   // ── ADX فلتر: لو ترند قوي ما ندخل ──────────────────────────
    if(g_useADXFilter)
      {
       int hADX = iADX(_Symbol, PERIOD_M1, 14);
@@ -271,14 +261,13 @@ int GetCandleSignal(double &outLot)
       ArraySetAsSeries(adx, true);
       if(CopyBuffer(hADX, 0, 0, 2, adx) < 2) { IndicatorRelease(hADX); EALog("DIAG skip: ADX buffer not ready"); return 0; }
       IndicatorRelease(hADX);
-      if(adx[1] > g_adxMax) // ترند قوي — تجنب الدخول
+      if(adx[1] > g_adxMax)
         {
          EALog("DIAG skip: ADX="+DoubleToString(adx[1],1)+" > max="+DoubleToString(g_adxMax,1)+" (ترند قوي)");
          return 0;
         }
      }
 
-   // ── ATR ──────────────────────────────────────────────────────
    int hATR = iATR(_Symbol, PERIOD_M1, 14);
    if(hATR == INVALID_HANDLE) { EALog("DIAG skip: ATR handle invalid"); return 0; }
    double atr[];
@@ -289,10 +278,10 @@ int GetCandleSignal(double &outLot)
    double o[], h[], l[], c[];
    ArraySetAsSeries(o,true); ArraySetAsSeries(h,true);
    ArraySetAsSeries(l,true); ArraySetAsSeries(c,true);
-   if(CopyOpen (_Symbol,PERIOD_M1,0,3,o)<3) { EALog("DIAG skip: candle open data not ready"); return 0; }
-   if(CopyHigh (_Symbol,PERIOD_M1,0,3,h)<3) { EALog("DIAG skip: candle high data not ready"); return 0; }
-   if(CopyLow  (_Symbol,PERIOD_M1,0,3,l)<3) { EALog("DIAG skip: candle low data not ready"); return 0; }
-   if(CopyClose(_Symbol,PERIOD_M1,0,3,c)<3) { EALog("DIAG skip: candle close data not ready"); return 0; }
+   if(CopyOpen (_Symbol,PERIOD_M1,0,3,o)<3) { EALog("DIAG skip: candle data not ready"); return 0; }
+   if(CopyHigh (_Symbol,PERIOD_M1,0,3,h)<3) return 0;
+   if(CopyLow  (_Symbol,PERIOD_M1,0,3,l)<3) return 0;
+   if(CopyClose(_Symbol,PERIOD_M1,0,3,c)<3) return 0;
 
    double body  = MathAbs(c[1] - o[1]);
    double range = h[1] - l[1] + 1e-10;
@@ -300,35 +289,53 @@ int GetCandleSignal(double &outLot)
 
    if(body < 0.35*atr1 || body/range < 0.30)
      {
-      EALog("DIAG skip: candle too weak — body="+DoubleToString(body,2)
-            +" (need>="+DoubleToString(0.35*atr1,2)+") body/range="+DoubleToString(body/range,2)
-            +" (need>=0.30) ATR="+DoubleToString(atr1,2));
+      EALog("DIAG skip: candle weak body="+DoubleToString(body,2)
+            +" (need>="+DoubleToString(0.35*atr1,2)+") ratio="+DoubleToString(body/range,2));
       return 0;
      }
 
-   double strength = MathMin(body / atr1, 2.0) / 2.0;
-   outLot = NormLot(g_baseLot * (1.0 + (g_lotBoost - 1.0) * strength));
-
-   // عكس الزخم — شمعة صعود قوية = بيع، شمعة نزول قوية = شراء
-   if(c[1] > o[1]) return -1;
-   if(c[1] < o[1]) return  1;
+   if(c[1] > o[1]) return -1; // شمعة صعود → SELL (mean reversion)
+   if(c[1] < o[1]) return  1; // شمعة نزول → BUY
    return 0;
+  }
+
+//===================================================================
+//  SAFETY SL — واسع لمنع خسارة كبيرة فقط، الإغلاق الحقيقي بالدولار
+//===================================================================
+
+double CalcSafetySL(int signal)
+  {
+   int hATR = iATR(_Symbol, PERIOD_M1, 14);
+   double atr[];
+   ArraySetAsSeries(atr, true);
+   double atrVal = 5.0 * _Point * 10;
+   if(hATR != INVALID_HANDLE && CopyBuffer(hATR, 0, 1, 1, atr) == 1)
+      atrVal = atr[0];
+   IndicatorRelease(hATR);
+
+   double pip   = SymbolInfoDouble(_Symbol, SYMBOL_POINT) * 10;
+   double slPts = (SAFETY_SL_MULT * g_slMult * atrVal) / pip;
+   double bid   = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double ask   = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+
+   if(signal == 1) return NormalizeDouble(bid - slPts * pip, _Digits);
+   else            return NormalizeDouble(ask + slPts * pip, _Digits);
   }
 
 //===================================================================
 //  DASHBOARD
 //===================================================================
 
-void UpdateDashboard(int basket, double net, string lastDir)
+void UpdateDashboard(int basket, double net)
   {
    int x = PANEL_X, xV = PANEL_X + 90, y = PANEL_Y;
 
-   DLabel("K_NAME", "⬦ BASKET SCALPER", x, y, clrGold); y += ROW_H;
+   DLabel("K_NAME", "⬦ GRX SCALPER",  x, y, clrGold); y += ROW_H;
    DLabel("K_BSK",  "BASKET",    x, y, CLR_KEY);
    DLabel("V_BSK",  IntegerToString(basket), xV, y, basket>0?clrLime:clrGray); y += ROW_H;
    DLabel("K_DIR",  "DIRECTION", x, y, CLR_KEY);
-   color dc = (lastDir=="BUY")?clrLime:(lastDir=="SELL"?clrRed:clrGray);
-   DLabel("V_DIR",  lastDir,     xV, y, dc); y += ROW_H;
+   color dc = (g_lastDir=="BUY")?clrLime:(g_lastDir=="SELL"?clrRed:clrGray);
+   DLabel("V_DIR",  g_lastDir,   xV, y, dc); y += ROW_H;
    DLabel("K_NET",  "NET P/L",   x, y, CLR_KEY);
    color nc = net > 0 ? clrLime : (net < 0 ? clrRed : clrGray);
    DLabel("V_NET",  "$"+DoubleToString(net,2), xV, y, nc); y += ROW_H;
@@ -348,70 +355,11 @@ void UpdateDashboard(int basket, double net, string lastDir)
 //  ENTRY LOGIC
 //===================================================================
 
-string g_lastDir  = "--";
-bool   g_inEntry  = false;
-
-// ── SL أمان فقط (بدون TP) للسلة — الإغلاق الفعلي يديره البوت نفسه
-//    بالدولار (BasketTP/MaxDrawdown)، مو بضرب مستوى سعر. يتمدد مع
-//    ATR فيصلح للتذبذب الخفيف والقوي، وهو خط دفاع أخير فقط ───────
-void CalcSafetySL(int signal, double &sl)
-  {
-   int hATR = iATR(_Symbol, PERIOD_M1, 14);
-   double atr[];
-   ArraySetAsSeries(atr, true);
-   double atrVal = 5.0; // fallback
-   if(hATR != INVALID_HANDLE && CopyBuffer(hATR, 0, 1, 1, atr) == 1)
-      atrVal = atr[0];
-   IndicatorRelease(hATR);
-
-   double pip   = SymbolInfoDouble(_Symbol, SYMBOL_POINT) * 10;
-   double slPts = (SAFETY_SL_MULT * g_slMult * atrVal) / pip;
-
-   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-
-   if(signal == 1) // BUY
-      sl = NormalizeDouble(bid - slPts * pip, _Digits);
-   else            // SELL
-      sl = NormalizeDouble(ask + slPts * pip, _Digits);
-
-   EALog("SAFETY-SL ATR="+DoubleToString(atrVal,2)+" SL="+DoubleToString(sl,2));
-  }
-
-// ── فتح السلة الكاملة مباشرة عند الإشارة ────────────────────────
-void OpenBasket(int signal, double lot)
-  {
-   if(g_inEntry) return;
-   g_inEntry = true;
-
-   // بدون TP سعري — الإغلاق يديره OnTick() بصافي ربح/خسارة السلة بالدولار
-   // (BasketTP / MaxDrawdown). الـ SL هنا مجرد خط دفاع أمان واسع.
-   double sl = 0;
-   CalcSafetySL(signal, sl);
-
-   string dir = (signal == 1) ? "BUY" : "SELL";
-   int opened = 0;
-   for(int i = 0; i < g_basketCount; i++)
-     {
-      bool ok = false;
-      if(signal == 1)
-         ok = trade.Buy (lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_ASK), sl, 0, "GRX_BUY");
-      else
-         ok = trade.Sell(lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_BID), sl, 0, "GRX_SELL");
-      if(ok) opened++;
-      else { EALog("FAIL "+dir+" #"+IntegerToString(i+1)); break; }
-      Sleep(50);
-     }
-   EALog("BASKET OPENED "+IntegerToString(opened)+"/"+IntegerToString(g_basketCount)+" "+dir);
-   g_inEntry = false;
-  }
-
-// ── دخول جديد — مباشرة بالسلة الكاملة، بدون صفقة تجريبية ────────
 void TryEntry()
   {
    if(!g_botRunning) { EALog("DIAG skip: BotRunning=OFF"); return; }
-   if(g_inEntry) { EALog("DIAG skip: entry already in progress"); return; }
-   if(CountBasket() > 0) { EALog("DIAG skip: basket مفتوح بالفعل ("+IntegerToString(CountBasket())+" صفقة)"); return; }
+   if(g_inEntry)     { EALog("DIAG skip: entry in progress"); return; }
+   if(CountBasket() > 0) { EALog("DIAG skip: basket مفتوح"); return; }
 
    long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    if(spread > g_maxSpread)
@@ -420,8 +368,7 @@ void TryEntry()
       return;
      }
 
-   double lot = 0;
-   int signal = GetCandleSignal(lot); // GetCandleSignal تطبع سبب الرفض بنفسها لو 0
+   int signal = GetCandleSignal();
    if(signal == 0) return;
 
    if(g_cooldownLeft > 0 && signal == g_lastSignalDir)
@@ -434,7 +381,25 @@ void TryEntry()
    g_lastDir       = dir;
    g_lastSignalDir = signal;
 
-   OpenBasket(signal, CalcAutoLot());
+   double lot = CalcAutoLot();
+   double sl  = CalcSafetySL(signal); // SL أمان واسع فقط — بدون TP سعري
+
+   g_inEntry = true;
+   int opened = 0;
+   for(int i = 0; i < g_basketCount; i++)
+     {
+      bool ok = false;
+      if(signal == 1)
+         ok = trade.Buy (lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_ASK), sl, 0, "GRX_BUY");
+      else
+         ok = trade.Sell(lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_BID), sl, 0, "GRX_SELL");
+      if(ok) opened++;
+      else { EALog("FAIL "+dir+" #"+IntegerToString(i+1)); break; }
+      Sleep(50);
+     }
+   EALog("BASKET OPENED "+IntegerToString(opened)+"/"+IntegerToString(g_basketCount)
+         +" "+dir+" lot="+DoubleToString(lot,3)+" SL="+DoubleToString(sl,2));
+   g_inEntry = false;
   }
 
 //===================================================================
@@ -464,34 +429,28 @@ void OnTick()
    int    basket = CountBasket();
    double net    = BasketProfit();
 
-   // ── BASKET TP ────────────────────────────────────────────────
    if(basket > 0 && net >= g_basketTP)
      {
       CloseBasket("TP $"+DoubleToString(net,2));
-      UpdateDashboard(0, 0, g_lastDir);
+      UpdateDashboard(0, 0);
       return;
      }
 
-   // ── EMERGENCY CLOSE ──────────────────────────────────────────
    if(basket > 0 && net <= -g_maxDrawdown)
      {
       CloseBasket("MAXDD $"+DoubleToString(net,2));
-      UpdateDashboard(0, 0, g_lastDir);
+      UpdateDashboard(0, 0);
       return;
      }
 
-   UpdateDashboard(basket, net, g_lastDir);
+   UpdateDashboard(basket, net);
 
-   // ── BAR GATE ─────────────────────────────────────────────────
    datetime barTime = iTime(_Symbol, PERIOD_M1, 0);
    if(barTime == g_lastBar) return;
    g_lastBar = barTime;
 
-   // ── COOLDOWN ─────────────────────────────────────────────────
    if(g_cooldownLeft > 0) g_cooldownLeft--;
 
-   // ── ENTRY ────────────────────────────────────────────────────
-   if(CountBasket() == 0)
-      TryEntry();
+   TryEntry();
   }
 //+------------------------------------------------------------------+

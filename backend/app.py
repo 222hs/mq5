@@ -163,6 +163,7 @@ GRX_DEFAULT_SETTINGS = {
     "BaseLot":      0.11,
     "RiskPct":      1.0,
     "BasketCount":  5,
+    "BasketTP":     15.0,
     "MaxDrawdown":  80.0,
     "MaxSpread":    350,
     "LotBoost":     2.0,
@@ -271,6 +272,25 @@ def init_db():
             conn.execute(
                 "INSERT OR IGNORE INTO grx_settings (key, value) VALUES (?, ?)",
                 (k, str(v))
+            )
+        # استعادة إعدادات GRX من backup (مثل BTC تماماً)
+        _grx_backup = os.path.join(_db_dir if _db_dir else ".", "grx_settings_backup.json")
+        saved_grx = {}
+        if os.path.exists(_grx_backup):
+            try:
+                with open(_grx_backup, "r") as f:
+                    saved_grx = json.load(f)
+            except Exception:
+                saved_grx = {}
+        for k, v in saved_grx.items():
+            if k in GRX_DEFAULT_SETTINGS:
+                conn.execute(
+                    "INSERT OR REPLACE INTO grx_settings (key, value) VALUES (?, ?)",
+                    (k, str(v))
+                )
+        if saved_grx.get("_grx_user_saved"):
+            conn.execute(
+                "INSERT OR REPLACE INTO grx_settings (key, value) VALUES ('grx_user_saved', '1')"
             )
         # استعادة الإعدادات من الـ backup أولاً (يتجاوز الافتراضية)
         saved = {}
@@ -1074,6 +1094,23 @@ def api_seed_btc_settings():
     return jsonify({"status": "ok", "applied": True, "settings": get_btc_settings()})
 
 
+def is_grx_user_saved():
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT value FROM grx_settings WHERE key='grx_user_saved'"
+        ).fetchone()
+        return row is not None and row["value"] == "1"
+
+
+def _save_grx_backup(settings):
+    _grx_backup = os.path.join(_db_dir if _db_dir else ".", "grx_settings_backup.json")
+    try:
+        with open(_grx_backup, "w") as f:
+            json.dump({**settings, "_grx_user_saved": True}, f)
+    except Exception:
+        pass
+
+
 def get_grx_settings():
     result = dict(GRX_DEFAULT_SETTINGS)
     with get_db() as conn:
@@ -1088,7 +1125,7 @@ def get_grx_settings():
     return result
 
 
-def save_grx_settings(new_settings):
+def save_grx_settings(new_settings, mark_user_saved=True):
     with get_db() as conn:
         for k, v in new_settings.items():
             if k in GRX_DEFAULT_SETTINGS:
@@ -1096,7 +1133,13 @@ def save_grx_settings(new_settings):
                     "INSERT INTO grx_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                     (k, str(v))
                 )
+        if mark_user_saved:
+            conn.execute(
+                "INSERT OR REPLACE INTO grx_settings (key, value) VALUES ('grx_user_saved', '1')"
+            )
         conn.commit()
+    if mark_user_saved:
+        _save_grx_backup(get_grx_settings())
 
 
 @app.route("/api/settings/grx", methods=["GET"])
@@ -1119,6 +1162,23 @@ def api_save_grx_settings():
     except Exception:
         pass
     return jsonify({"status": "ok", "settings": get_grx_settings()})
+
+
+@app.route("/api/settings/grx/seed", methods=["POST"])
+def api_seed_grx_settings():
+    if not check_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True)
+    if not body:
+        return jsonify({"error": "No data"}), 400
+    if is_grx_user_saved():
+        return jsonify({"status": "ok", "applied": False, "settings": get_grx_settings()})
+    save_grx_settings(body, mark_user_saved=False)
+    try:
+        socketio.emit("grx_settings", get_grx_settings())
+    except Exception:
+        pass
+    return jsonify({"status": "ok", "applied": True, "settings": get_grx_settings()})
 
 
 @app.route("/api/settings/hedge", methods=["GET"])

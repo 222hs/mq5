@@ -747,6 +747,26 @@ def sync_settings():
             return
 
 
+def push_grx_settings():
+    """يرفع GRX_Settings.json المحلي للـ backend عبر /seed (آمن — لا يطبق لو الداشبورد سبق وحفظت)."""
+    grx_file = os.path.join(_MT5_COMMON, "GRX_Settings.json")
+    if not os.path.exists(grx_file):
+        return
+    try:
+        with open(grx_file, "r", encoding="utf-8") as f:
+            local = json.load(f)
+        r = _session.post(
+            f"{BACKEND_URL}/api/settings/grx/seed",
+            json=local, timeout=(5, 10)
+        )
+        if r.status_code == 200:
+            d = r.json()
+            if d.get("applied"):
+                print(f"📤 GRX seed applied — backend كان فارغاً، رُفعت الإعدادات المحلية")
+    except Exception as e:
+        print(f"⚠️ push_grx_settings: {type(e).__name__}")
+
+
 _last_grx_settings_hash = None
 
 def sync_grx_settings():
@@ -942,7 +962,8 @@ def main():
                 if btc_active:
                     sync_btc_settings()
                 sync_hedge_settings()    # Hedge settings — دائماً
-                sync_grx_settings()      # GRX settings — دائماً
+                push_grx_settings()      # رفع الإعدادات المحلية (seed فقط لو backend فارغ)
+                sync_grx_settings()      # سحب إعدادات GRX من backend → GRX_Settings.json
                 last_settings_sync = now
 
             tail_ea_logs()  # إرسال لوق EA الجديدة للداشبورد
