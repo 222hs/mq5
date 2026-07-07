@@ -1038,6 +1038,12 @@ def main():
                 last_rsi  = _calc_rsi(closes_m1)
 
             # كشف الصفقات الجديدة وإرسال snapshot فوري
+            cur_tickets = {p['ticket'] for p in positions}
+            prev_tickets = set(_known_positions.keys())
+            closed_now = prev_tickets - cur_tickets  # صفقات أُغلقت للتو
+            if closed_now and prev_tickets:  # prev_tickets check: تجنب أول loop
+                print(f"🔔 {datetime.now().strftime('%H:%M:%S')} - صفقة أُغلقت: {closed_now} — هستوري فوري")
+                last_history_sync = 0  # force immediate history sync
             for pos in positions:
                 if pos['ticket'] not in _known_positions and pos['ticket'] not in _snapped_tickets:
                     sym      = pos.get('symbol', detect_gold_symbol())
