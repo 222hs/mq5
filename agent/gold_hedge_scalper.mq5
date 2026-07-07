@@ -66,11 +66,14 @@ void EALog(string msg)
 //--- read a numeric value from SETTINGS_FILE (JSON key: value)
 double ReadSetting(const string name, const double fallback)
   {
-   string fname = SETTINGS_FILE;
-   int fh = FileOpen(fname, FILE_READ|FILE_ANSI|FILE_COMMON);
+   int fh = FileOpen(SETTINGS_FILE, FILE_READ|FILE_TXT|FILE_ANSI|FILE_COMMON);
    if(fh == INVALID_HANDLE) return fallback;
    string content = "";
-   while(!FileIsEnding(fh)) content += FileReadString(fh);
+   while(!FileIsEnding(fh))
+     {
+      string line = FileReadString(fh);
+      content += line;
+     }
    FileClose(fh);
    string key = "\"" + name + "\"";
    int p = StringFind(content, key);
@@ -124,13 +127,11 @@ bool LoadSettings()
 //--- write default settings file if missing
 void WriteDefaultSettings()
   {
-   // delete old multi-line file if exists, rewrite as single line
-   FileDelete(SETTINGS_FILE, FILE_COMMON);
+   // only create if file doesn't exist — never overwrite existing settings
    int fh = FileOpen(SETTINGS_FILE, FILE_READ|FILE_ANSI|FILE_COMMON);
-   if(fh != INVALID_HANDLE) { FileClose(fh); return; } // already exists
+   if(fh != INVALID_HANDLE) { FileClose(fh); return; }
    fh = FileOpen(SETTINGS_FILE, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
    if(fh == INVALID_HANDLE) return;
-   // single line JSON — ReadSetting() reads one line at a time
    string j = "{\"BaseLot\": 0.01, \"LotMultiplier\": 1.5, \"HedgeDistUSD\": 3.0, \"BasketTP\": 2.0, \"MaxDrawdown\": 50.0, \"MaxLevels\": 4, \"MaxSpread\": 350, \"BotRunning\": 1}";
    FileWriteString(fh, j);
    FileClose(fh);
@@ -332,6 +333,17 @@ int OnInit()
    trade.SetTypeFilling(ORDER_FILLING_IOC);
    WriteDefaultSettings();
    LoadSettings();
+   // diagnostic: print raw file content to Experts tab
+   int fh = FileOpen(SETTINGS_FILE, FILE_READ|FILE_TXT|FILE_ANSI|FILE_COMMON);
+   if(fh != INVALID_HANDLE)
+     {
+      string raw = "";
+      while(!FileIsEnding(fh)) raw += FileReadString(fh);
+      FileClose(fh);
+      Print(EA_NAME, ": [DEBUG] file=", raw);
+     }
+   else
+      Print(EA_NAME, ": [DEBUG] file NOT FOUND");
    EALog("Init — " + EA_NAME + " v" + EA_VERSION);
    return INIT_SUCCEEDED;
   }
