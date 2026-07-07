@@ -11,6 +11,9 @@
 //--- inputs (fallbacks only — real values come from settings file)
 input double          BaseLot       = 0.11;
 input int             MagicNumber   = 88888;
+input bool            UsePTDFilter  = true;   // فلتر اتجاه PTD
+input int             PTDFast       = 5;       // PTD فترة سريعة
+input int             PTDSlow       = 10;      // PTD فترة بطيئة
 
 //--- EA identity
 #define EA_NAME        "GoldRangeX"
@@ -51,6 +54,7 @@ string   g_lastDir          = "--";
 bool     g_inEntry          = false;
 int      g_consecutiveLosses = 0;  // خسائر متتالية → يشدد معايير الدخول
 int      g_barsAfterLoss    = 0;   // عداد البارات منذ آخر خسارة → reset بعد 20 بار
+int      g_hPTD             = INVALID_HANDLE; // handle إنديكاتور PTD
 
 //===================================================================
 //  SETTINGS FILE
@@ -316,9 +320,27 @@ int GetCandleSignal()
       return 0;
      }
 
-   if(c[1] > o[1]) return -1; // شمعة صعود → SELL (mean reversion)
-   if(c[1] < o[1]) return  1; // شمعة نزول → BUY
-   return 0;
+   int rawSignal = 0;
+   if(c[1] > o[1]) rawSignal = -1; // شمعة صعود → SELL
+   if(c[1] < o[1]) rawSignal =  1; // شمعة نزول → BUY
+   if(rawSignal == 0) return 0;
+
+   // ── فلتر PTD ─────────────────────────────────────────────────
+   if(UsePTDFilter && g_hPTD != INVALID_HANDLE)
+     {
+      double ptdTrend[];
+      ArraySetAsSeries(ptdTrend, true);
+      if(CopyBuffer(g_hPTD, 6, 0, 2, ptdTrend) >= 2)
+        {
+         int trend = (int)ptdTrend[1]; // 0=صاعد 1=هابط
+         if(trend == 0 && rawSignal == -1) // صاعد لكن إشارة SELL
+           { EALog("PTD block: اتجاه صاعد — رفض SELL"); return 0; }
+         if(trend == 1 && rawSignal ==  1) // هابط لكن إشارة BUY
+           { EALog("PTD block: اتجاه هابط — رفض BUY"); return 0; }
+        }
+     }
+
+   return rawSignal;
   }
 
 //===================================================================
@@ -436,6 +458,14 @@ int OnInit()
    WriteDefaultSettings();
    LoadSettings();
    EventSetTimer(5);
+   if(UsePTDFilter)
+     {
+      g_hPTD = iCustom(_Symbol, PERIOD_M1, "pivot_trend_detector", PTDFast, PTDSlow);
+      if(g_hPTD == INVALID_HANDLE)
+         EALog("⚠️ PTD handle فشل — تأكد أن pivot_trend_detector.mq5 مكمبايل في Indicators");
+      else
+         EALog("✅ PTD filter مفعّل (fast="+IntegerToString(PTDFast)+" slow="+IntegerToString(PTDSlow)+")");
+     }
    EALog("Init — "+EA_NAME+" v"+EA_VERSION);
    return INIT_SUCCEEDED;
   }
@@ -443,6 +473,7 @@ int OnInit()
 void OnDeinit(const int reason)
   {
    EventKillTimer();
+   if(g_hPTD != INVALID_HANDLE) IndicatorRelease(g_hPTD);
    ObjectsDeleteAll(0, DASH_PREFIX);
    EALog("Deinit reason="+IntegerToString(reason));
   }
