@@ -879,7 +879,7 @@ def main():
 
     # عند الـ startup فقط: ارفع الإعدادات المحلية للـ backend (Railway redeploy recovery)
     push_local_settings()
-    push_hedge_settings()
+    # لا نرفع hedge settings من الملف المحلي — الـ backend هو مصدر الحقيقة
 
     # بناء snapshots من MT5 history مباشرة ثم رفعها
     threading.Thread(target=bootstrap_snapshots, daemon=True).start()
