@@ -909,7 +909,8 @@ def main():
         except Exception:
             pass
 
-    # عند الـ startup فقط: ارفع الإعدادات المحلية للـ backend (Railway redeploy recovery)
+    # ارفع الإعدادات المحلية للـ backend فوراً عند الإقلاع (Railway redeploy recovery)
+    # — وتتكرر لاحقاً كل SETTINGS_CHECK_INTERVAL داخل الحلقة الرئيسية
     push_local_settings()
     # لا نرفع hedge settings من الملف المحلي — الـ backend هو مصدر الحقيقة
 
@@ -931,6 +932,11 @@ def main():
             now = time.time()
 
             if now - last_settings_sync >= SETTINGS_CHECK_INTERVAL:
+                # يعيد رفع الإعدادات المحلية الحقيقية قبل السحب — لو Railway
+                # عمل redeploy ومسح القاعدة بينما الإيجنت شغّال (بدون إعادة تشغيل)،
+                # هذا يمنع تطبيق القيم الافتراضية المُصفّرة على البوت الحي.
+                # لا تأثير له إذا كانت الداشبورد هي مصدر الحقيقة أصلاً (seed no-op).
+                push_local_settings()
                 sync_settings()          # الذهب دائماً — لا يُربط بكشف النشاط
                 _, btc_active = detect_active_bots()
                 if btc_active:
