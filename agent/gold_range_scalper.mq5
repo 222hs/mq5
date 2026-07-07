@@ -50,6 +50,7 @@ int      g_cooldownLeft     = 0;
 string   g_lastDir          = "--";
 bool     g_inEntry          = false;
 int      g_consecutiveLosses = 0;  // خسائر متتالية → يشدد معايير الدخول
+int      g_barsAfterLoss    = 0;   // عداد البارات منذ آخر خسارة → reset بعد 20 بار
 
 //===================================================================
 //  SETTINGS FILE
@@ -195,6 +196,7 @@ void CloseBasket(string reason)
    if(net >= 0)
      {
       g_consecutiveLosses = 0;
+      g_barsAfterLoss     = 0;
       EALog("CLOSE ["+reason+"] net=$"+DoubleToString(net,2)+" ✅ خسائر متتالية → صفر");
      }
    else
@@ -301,9 +303,9 @@ int GetCandleSignal()
 
    // كلما زادت الخسائر المتتالية، كلما اشترطنا شمعة أقوى
    double minRatio = 0.30;
-   if(g_consecutiveLosses == 1) minRatio = 0.55;
-   else if(g_consecutiveLosses == 2) minRatio = 0.65;
-   else if(g_consecutiveLosses >= 3) minRatio = 0.75;
+   if(g_consecutiveLosses == 1) minRatio = 0.45;
+   else if(g_consecutiveLosses == 2) minRatio = 0.55;
+   else if(g_consecutiveLosses >= 3) minRatio = 0.65;
 
    if(body < 0.35*atr1 || body/range < minRatio)
      {
@@ -478,6 +480,18 @@ void OnTick()
    g_lastBar = barTime;
 
    if(g_cooldownLeft > 0) g_cooldownLeft--;
+
+   // reset الخسائر المتتالية بعد 20 بار بدون صفقة — "نسيان" الخسارة
+   if(g_consecutiveLosses > 0)
+     {
+      g_barsAfterLoss++;
+      if(g_barsAfterLoss >= 20)
+        {
+         EALog("RESET: مرّ 20 بار بعد الخسارة → شروط الدخول تعود للطبيعي");
+         g_consecutiveLosses = 0;
+         g_barsAfterLoss     = 0;
+        }
+     }
 
    TryEntry();
   }
