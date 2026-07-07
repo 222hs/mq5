@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.27';
+const DASH_VERSION = 'v3.28';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -1745,8 +1745,7 @@ export default function Dashboard() {
               {k:'RiskPct',      label:'RISK % (تلقائي)',step:0.1,  min:0},
               {k:'BasketCount',  label:'BASKET COUNT',   step:1,    min:1},
               {k:'LotBoost',     label:'LOT BOOST',      step:0.5,  min:1},
-              {k:'TPMult',       label:'TP × ATR',       step:0.5,  min:0.5},
-              {k:'SLMult',       label:'SL × ATR',       step:0.5,  min:0.1},
+              {k:'SLMult',       label:'SL أمان × ATR',   step:0.5,  min:0.1},
               {k:'ProbeLot',     label:'PROBE LOT',      step:0.01, min:0.01},
               {k:'ProbeBars',    label:'PROBE BARS',     step:1,    min:1},
               {k:'CooldownBars', label:'COOLDOWN BARS',  step:1,    min:0},

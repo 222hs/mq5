@@ -23,9 +23,10 @@ input int             MagicNumber   = 88888;
 #define ROW_H          16
 #define CLR_KEY        clrSilver
 #define CLR_VAL        clrWhite
-// SL أمان للـ probe = مضاعف الـ SL العادي × ATR — يتمدد تلقائياً مع التذبذب
-// (خفيف أو قوي) بدل رقم ثابت، وواسع بما يكفي إنه ما يقطع الانتظار قبل وقته
-#define PROBE_SAFETY_MULT 4.0
+// SL أمان (للـ probe والسلة الكاملة) = مضاعف الـ SL العادي × ATR — يتمدد
+// تلقائياً مع التذبذب (خفيف أو قوي) بدل رقم ثابت، وواسع بما يكفي إنه خط
+// دفاع أخير بس — الإغلاق الفعلي يديره البوت بالدولار (BasketTP/MaxDrawdown)
+#define SAFETY_SL_MULT 4.0
 
 CTrade trade;
 
@@ -42,8 +43,7 @@ double g_adxMax       = 25.0;
 bool   g_useADXFilter = true;  // زر تشغيل/إيقاف فلتر الترند (ADX) من الداشبورد
 double g_probeLot     = 0.01;
 int    g_probeBars    = 3;
-double g_tpMult       = 1.5;   // TP = ATR × tpMult
-double g_slMult       = 1.0;   // SL = ATR × slMult
+double g_slMult       = 1.0;   // يُستخدم لحساب مضاعف SL الأمان (CalcSafetySL)
 bool   g_botRunning   = true;
 int    g_magic        = MagicNumber;
 string g_lastHash     = "";
@@ -83,7 +83,7 @@ void WriteDefaultSettings()
    if(fh != INVALID_HANDLE) { FileClose(fh); return; }
    fh = FileOpen(SETTINGS_FILE, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
    if(fh == INVALID_HANDLE) return;
-   string j = "{\"BaseLot\": 0.11, \"RiskPct\": 1.0, \"BasketCount\": 5, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"CooldownBars\": 3, \"ADXMax\": 25.0, \"UseADXFilter\": 1, \"ProbeLot\": 0.01, \"ProbeBars\": 3, \"TPMult\": 1.5, \"SLMult\": 1.0, \"BotRunning\": 1}";
+   string j = "{\"BaseLot\": 0.11, \"RiskPct\": 1.0, \"BasketCount\": 5, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"CooldownBars\": 3, \"ADXMax\": 25.0, \"UseADXFilter\": 1, \"ProbeLot\": 0.01, \"ProbeBars\": 3, \"SLMult\": 1.0, \"BotRunning\": 1}";
    FileWriteString(fh, j);
    FileClose(fh);
   }
@@ -102,7 +102,6 @@ void LoadSettings()
    bool   useAdx= (ReadSetting("UseADXFilter", 1.0) > 0.5);
    double pLot  = ReadSetting("ProbeLot",   0.01);
    int    pBars = (int)ReadSetting("ProbeBars", 3.0);
-   double tpM   = ReadSetting("TPMult",     1.5);
    double slM   = ReadSetting("SLMult",     1.0);
    bool   botOn = (ReadSetting("BotRunning", 1.0) > 0.5);
 
@@ -111,7 +110,7 @@ void LoadSettings()
                + DoubleToString(mSprd,0)+DoubleToString(lBst,1)
                + IntegerToString(cool)+DoubleToString(adxMx,0)+(useAdx?"1":"0")
                + DoubleToString(pLot,2)+IntegerToString(pBars)
-               + DoubleToString(tpM,1)+DoubleToString(slM,1)+(botOn?"1":"0");
+               + DoubleToString(slM,1)+(botOn?"1":"0");
    if(hash == g_lastHash) return;
    g_lastHash = hash;
 
@@ -127,7 +126,6 @@ void LoadSettings()
    g_useADXFilter = useAdx;
    g_probeLot     = MathMax(0.01, pLot);
    g_probeBars    = MathMax(1,    pBars);
-   g_tpMult       = MathMax(0.5,  tpM);
    g_slMult       = MathMax(0.1,  slM);
    g_botRunning   = botOn;
 
@@ -366,8 +364,11 @@ void UpdateDashboard(int basket, double net, string lastDir)
 string g_lastDir  = "--";
 bool   g_inEntry  = false;
 
-// ── احسب TP/SL بناءً على ATR واللوت ─────────────────────────────
-void CalcTPSL(int signal, double lot, double &tp, double &sl)
+// ── SL أمان فقط (بدون TP) — يُستخدم لكل من الـ probe والسلة الكاملة.
+//    الإغلاق الفعلي يديره البوت نفسه بالدولار (BasketTP/MaxDrawdown أو
+//    ربح/خسارة الـ probe العائم)، مو بضرب مستوى سعر. يتمدد مع ATR
+//    فيصلح للتذبذب الخفيف والقوي، وهو خط دفاع أخير فقط ────────────
+void CalcSafetySL(int signal, double &sl)
   {
    int hATR = iATR(_Symbol, PERIOD_M1, 14);
    double atr[];
@@ -378,41 +379,7 @@ void CalcTPSL(int signal, double lot, double &tp, double &sl)
    IndicatorRelease(hATR);
 
    double pip   = SymbolInfoDouble(_Symbol, SYMBOL_POINT) * 10;
-   double tpPts = (g_tpMult * atrVal) / pip; // نقاط
-   double slPts = (g_slMult * atrVal) / pip;
-
-   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-
-   if(signal == 1) // BUY
-     {
-      tp = NormalizeDouble(ask + tpPts * pip, _Digits);
-      sl = NormalizeDouble(bid - slPts * pip, _Digits);
-     }
-   else // SELL
-     {
-      tp = NormalizeDouble(bid - tpPts * pip, _Digits);
-      sl = NormalizeDouble(ask + slPts * pip, _Digits);
-     }
-
-   EALog("ATR="+DoubleToString(atrVal,2)+" TP="+DoubleToString(tp,2)+" SL="+DoubleToString(sl,2));
-  }
-
-// ── SL أمان فقط للـ probe (بدون TP) — القرار الحقيقي وقتي بعد
-//    ProbeBars شمعة، مو بضرب مستوى سعر. يتمدد مع ATR فيصلح للتذبذب
-//    الخفيف والقوي بدون ما يقطع فترة الانتظار مبكراً ─────────────
-void CalcProbeSL(int signal, double &sl)
-  {
-   int hATR = iATR(_Symbol, PERIOD_M1, 14);
-   double atr[];
-   ArraySetAsSeries(atr, true);
-   double atrVal = 5.0; // fallback
-   if(hATR != INVALID_HANDLE && CopyBuffer(hATR, 0, 1, 1, atr) == 1)
-      atrVal = atr[0];
-   IndicatorRelease(hATR);
-
-   double pip   = SymbolInfoDouble(_Symbol, SYMBOL_POINT) * 10;
-   double slPts = (PROBE_SAFETY_MULT * g_slMult * atrVal) / pip;
+   double slPts = (SAFETY_SL_MULT * g_slMult * atrVal) / pip;
 
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
@@ -422,7 +389,7 @@ void CalcProbeSL(int signal, double &sl)
    else            // SELL
       sl = NormalizeDouble(ask + slPts * pip, _Digits);
 
-   EALog("PROBE SAFETY-SL ATR="+DoubleToString(atrVal,2)+" SL="+DoubleToString(sl,2));
+   EALog("SAFETY-SL ATR="+DoubleToString(atrVal,2)+" SL="+DoubleToString(sl,2));
   }
 
 // ── فتح السلة الكاملة بعد تأكيد الـ probe ──────────────────────
@@ -431,8 +398,10 @@ void OpenBasket(int signal, double lot)
    if(g_inEntry) return;
    g_inEntry = true;
 
-   double tp = 0, sl = 0;
-   CalcTPSL(signal, lot, tp, sl);
+   // بدون TP سعري — الإغلاق يديره OnTick() بصافي ربح/خسارة السلة بالدولار
+   // (BasketTP / MaxDrawdown). الـ SL هنا مجرد خط دفاع أمان واسع.
+   double sl = 0;
+   CalcSafetySL(signal, sl);
 
    string dir = (signal == 1) ? "BUY" : "SELL";
    int opened = 0;
@@ -440,9 +409,9 @@ void OpenBasket(int signal, double lot)
      {
       bool ok = false;
       if(signal == 1)
-         ok = trade.Buy (lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_ASK), sl, tp, "GRX_BUY");
+         ok = trade.Buy (lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_ASK), sl, 0, "GRX_BUY");
       else
-         ok = trade.Sell(lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_BID), sl, tp, "GRX_SELL");
+         ok = trade.Sell(lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_BID), sl, 0, "GRX_SELL");
       if(ok) opened++;
       else { EALog("FAIL "+dir+" #"+IntegerToString(i+1)); break; }
       Sleep(50);
@@ -535,7 +504,7 @@ void TryEntry()
    // افتح صفقة تجريبية صغيرة بـ SL أمان فقط (بدون TP)
    double pLot = NormLot(g_probeLot);
    double sl = 0;
-   CalcProbeSL(signal, sl); // SL أمان واسع فقط — بدون TP، القرار وقتي لا سعري
+   CalcSafetySL(signal, sl); // SL أمان واسع فقط — بدون TP، القرار وقتي لا سعري
    bool ok = false;
    if(signal == 1)
       ok = trade.Buy (pLot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_ASK), sl, 0, "GRX_PROBE");

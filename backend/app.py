@@ -171,7 +171,6 @@ GRX_DEFAULT_SETTINGS = {
     "UseADXFilter": 1,
     "ProbeLot":     0.01,
     "ProbeBars":    3,
-    "TPMult":       1.5,
     "SLMult":       1.0,
     "BotRunning":   1,
 }
