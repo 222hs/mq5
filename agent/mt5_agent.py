@@ -1049,7 +1049,7 @@ def main():
             _known_positions.update({p['ticket']: p for p in positions})
 
             history = []
-            if now - last_history_sync > 10:
+            if now - last_history_sync > 3:
                 history = get_recent_history(days=30)
                 last_history_sync = now
                 # حفظ الـ history محلياً
