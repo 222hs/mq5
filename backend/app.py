@@ -167,6 +167,7 @@ GRX_DEFAULT_SETTINGS = {
     "MaxSpread":    350,
     "LotBoost":     2.0,
     "CooldownBars": 3,
+    "ADXMax":       25.0,
     "BotRunning":   1,
 }
 

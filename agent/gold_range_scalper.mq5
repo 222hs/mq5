@@ -34,6 +34,7 @@ double g_maxDrawdown  = 80.0;
 double g_maxSpread    = 350.0;
 double g_lotBoost     = 2.0;
 int    g_cooldownBars = 3;
+double g_adxMax       = 25.0;
 bool   g_botRunning   = true;
 int    g_magic        = MagicNumber;
 string g_lastHash     = "";
@@ -69,7 +70,7 @@ void WriteDefaultSettings()
    if(fh != INVALID_HANDLE) { FileClose(fh); return; }
    fh = FileOpen(SETTINGS_FILE, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
    if(fh == INVALID_HANDLE) return;
-   string j = "{\"BaseLot\": 0.11, \"BasketCount\": 5, \"BasketTP\": 15.0, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"CooldownBars\": 3, \"BotRunning\": 1}";
+   string j = "{\"BaseLot\": 0.11, \"BasketCount\": 5, \"BasketTP\": 15.0, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"CooldownBars\": 3, \"ADXMax\": 25.0, \"BotRunning\": 1}";
    FileWriteString(fh, j);
    FileClose(fh);
   }
@@ -83,12 +84,13 @@ void LoadSettings()
    double mSprd = ReadSetting("MaxSpread",   350.0);
    double lBst  = ReadSetting("LotBoost",     2.0);
    int    cool  = (int)ReadSetting("CooldownBars", 3.0);
+   double adxMx = ReadSetting("ADXMax", 25.0);
    bool   botOn = (ReadSetting("BotRunning",  1.0) > 0.5);
 
    string hash = DoubleToString(bLot,3)+IntegerToString(bCnt)
                + DoubleToString(bTP,2)+DoubleToString(mDD,1)
                + DoubleToString(mSprd,0)+DoubleToString(lBst,1)
-               + IntegerToString(cool)+(botOn?"1":"0");
+               + IntegerToString(cool)+DoubleToString(adxMx,0)+(botOn?"1":"0");
    if(hash == g_lastHash) return;
    g_lastHash = hash;
 
@@ -99,6 +101,7 @@ void LoadSettings()
    g_maxSpread    = mSprd;
    g_lotBoost     = MathMax(1.0,  lBst);
    g_cooldownBars = MathMax(0,    cool);
+   g_adxMax       = MathMax(10.0, adxMx);
    g_botRunning   = botOn;
 
    EALog("Settings — BaseLot="+DoubleToString(g_baseLot,2)
@@ -206,6 +209,16 @@ double NormLot(double lot)
 // uses ATR to measure candle strength, boosts lot on stronger candles
 int GetCandleSignal(double &outLot)
   {
+   // ── ADX فلتر: لو ترند قوي ما ندخل ──────────────────────────
+   int hADX = iADX(_Symbol, PERIOD_M1, 14);
+   if(hADX == INVALID_HANDLE) return 0;
+   double adx[];
+   ArraySetAsSeries(adx, true);
+   if(CopyBuffer(hADX, 0, 0, 2, adx) < 2) { IndicatorRelease(hADX); return 0; }
+   IndicatorRelease(hADX);
+   if(adx[1] > g_adxMax) return 0; // ترند قوي — تجنب الدخول
+
+   // ── ATR ──────────────────────────────────────────────────────
    int hATR = iATR(_Symbol, PERIOD_M1, 14);
    if(hATR == INVALID_HANDLE) return 0;
    double atr[];
@@ -225,16 +238,14 @@ int GetCandleSignal(double &outLot)
    double range = h[1] - l[1] + 1e-10;
    double atr1  = atr[1];
 
-   // need a meaningful candle
    if(body < 0.35*atr1 || body/range < 0.30) return 0;
 
-   // lot boost proportional to candle strength (1x to LotBoost)
-   double strength = MathMin(body / atr1, 2.0) / 2.0; // 0..1
+   double strength = MathMin(body / atr1, 2.0) / 2.0;
    outLot = NormLot(g_baseLot * (1.0 + (g_lotBoost - 1.0) * strength));
 
    // عكس الزخم — شمعة صعود قوية = بيع، شمعة نزول قوية = شراء
-   if(c[1] > o[1]) return -1; // bullish candle → SELL
-   if(c[1] < o[1]) return  1; // bearish candle → BUY
+   if(c[1] > o[1]) return -1;
+   if(c[1] < o[1]) return  1;
    return 0;
   }
 
