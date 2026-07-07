@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.31';
+const DASH_VERSION = 'v3.32';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -406,22 +406,24 @@ export default function Dashboard() {
   };
 
   const [histLoading, setHistLoading] = useState(false);
-  const fetchHistory = async () => {
-    setHistLoading(true);
+  const fetchHistory = async (showSpinner=false) => {
+    if(showSpinner) setHistLoading(true);
     try {
       const r = await fetch(`${API_URL}/api/history?limit=200`, { headers: {'X-API-Key': API_KEY} });
       if (r.ok) {
         const hist = await r.json();
-        setData(d => ({ ...d, history: hist }));
+        // الأحدث أولاً
+        const sorted = hist.slice().sort((a,b) => new Date(b.time) - new Date(a.time));
+        setData(d => ({ ...d, history: sorted }));
       }
     } catch(e) {}
-    setHistLoading(false);
+    if(showSpinner) setHistLoading(false);
   };
 
-  // Pull history on mount + every 5s
+  // Pull history on mount (with spinner), then silently every 30s
   useEffect(() => {
-    fetchHistory();
-    const t = setInterval(fetchHistory, 5000);
+    fetchHistory(true);
+    const t = setInterval(() => fetchHistory(false), 30000);
     return () => clearInterval(t);
   }, []);
 
@@ -1834,7 +1836,7 @@ export default function Dashboard() {
               &gt; TRADE HISTORY · LAST {Math.min(history.length,20)}
             </span>
             <div style={{display:'flex',gap:6}}>
-              <button className="bbtn" onClick={fetchHistory} disabled={histLoading}
+              <button className="bbtn" onClick={()=>fetchHistory(true)} disabled={histLoading}
                 style={{fontSize:9,padding:'3px 12px',letterSpacing:'1px',border:`1px solid ${C.neon}`,color:C.neon,background:'transparent',fontFamily:'monospace',cursor:'pointer'}}>
                 {histLoading ? 'LOADING...' : '↻ PULL'}
               </button>
