@@ -169,8 +169,6 @@ GRX_DEFAULT_SETTINGS = {
     "CooldownBars": 3,
     "ADXMax":       25.0,
     "UseADXFilter": 1,
-    "ProbeLot":     0.01,
-    "ProbeBars":    3,
     "SLMult":       1.0,
     "BotRunning":   1,
 }
