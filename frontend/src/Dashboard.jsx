@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.29';
+const DASH_VERSION = 'v3.30';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -132,12 +132,11 @@ export default function Dashboard() {
     return () => clearInterval(t);
   }, []);
 
-  // auto-scroll داخل صندوق اللوج فقط — لا يحرك الصفحة
+  // auto-scroll داخل صندوق اللوج فقط — دائماً ينزل لآخر سطر
   useEffect(() => {
     const box = logBoxRef.current;
     if (!box) return;
-    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
-    if (atBottom) box.scrollTop = box.scrollHeight;
+    box.scrollTop = box.scrollHeight;
   }, [logs]);
 
   // HTTP poll — سريع وموثوق، بديل WebSocket للبيانات الرئيسية
