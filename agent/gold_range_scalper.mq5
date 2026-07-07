@@ -170,6 +170,7 @@ double BasketProfit()
 void CloseBasket(string reason)
   {
    EALog("CLOSE ["+reason+"] net=$"+DoubleToString(BasketProfit(),2));
+   g_lastCloseBar = iTime(_Symbol, PERIOD_M1, 0); // منع إعادة الدخول على نفس الشمعة
    for(int i = PositionsTotal()-1; i >= 0; i--)
      {
       ulong t = PositionGetTicket(i);
@@ -262,12 +263,14 @@ void UpdateDashboard(int basket, double net, string lastDir)
 //  ENTRY LOGIC
 //===================================================================
 
-string g_lastDir = "--";
+string   g_lastDir      = "--";
+datetime g_lastCloseBar = 0;
 
 void TryEntry()
   {
    if(!g_botRunning) return;
-   if(CountBasket() > 0) return; // wait for basket to close
+   if(CountBasket() > 0) return;
+   if(iTime(_Symbol, PERIOD_M1, 0) <= g_lastCloseBar) return; // انتظر شمعة جديدة بعد الإغلاق
 
    long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    if(spread > g_maxSpread) return;
