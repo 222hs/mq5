@@ -1100,6 +1100,53 @@ def api_get_snapshots():
     return jsonify(result)
 
 
+@app.route("/api/export/trades", methods=["GET"])
+def api_export_trades():
+    history   = get_history(10000)
+    snapshots = get_snapshots(10000)
+    snap_map  = {s.get("ticket"): s for s in snapshots if s.get("ticket")}
+
+    trades = []
+    for t in history:
+        ticket = t.get("ticket")
+        snap   = snap_map.get(ticket, {})
+        trades.append({
+            "ticket":      ticket,
+            "symbol":      t.get("symbol"),
+            "type":        t.get("type"),
+            "volume":      t.get("volume"),
+            "entry_price": t.get("price"),
+            "profit":      t.get("profit"),
+            "swap":        t.get("swap"),
+            "commission":  t.get("commission"),
+            "open_time":   t.get("time"),
+            "comment":     t.get("comment"),
+            "rsi_at_entry":   snap.get("rsi"),
+            "atr_at_entry":   snap.get("atr"),
+            "ema_up":         snap.get("ema_up"),
+            "session":        snap.get("session"),
+            "candles_before": snap.get("candles", [])[-20:],
+        })
+
+    export = {
+        "exported_at": datetime.now().isoformat(),
+        "total_trades": len(trades),
+        "summary": {
+            "wins":   len([x for x in trades if (x["profit"] or 0) > 0]),
+            "losses": len([x for x in trades if (x["profit"] or 0) <= 0]),
+            "total_pnl": round(sum((x["profit"] or 0) for x in trades), 2),
+        },
+        "trades": trades,
+    }
+
+    from flask import Response
+    return Response(
+        json.dumps(export, ensure_ascii=False, indent=2),
+        mimetype="application/json",
+        headers={"Content-Disposition": "attachment; filename=trades_export.json"}
+    )
+
+
 @app.route("/api/candles", methods=["POST"])
 def update_candles():
     if not check_api_key():
