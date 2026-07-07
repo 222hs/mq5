@@ -308,9 +308,7 @@ int OnInit()
    trade.SetTypeFilling(ORDER_FILLING_IOC);
    WriteDefaultSettings();
    LoadSettings();
-   UpdateRange();
-   EALog("Init — "+EA_NAME+" v"+EA_VERSION
-         +" range="+DoubleToString(g_rangeLow,2)+"-"+DoubleToString(g_rangeHigh,2));
+   EALog("Init — "+EA_NAME+" v"+EA_VERSION);
    return INIT_SUCCEEDED;
   }
 
@@ -330,7 +328,7 @@ void OnTick()
    if(basket > 0 && net >= g_basketTP)
      {
       CloseBasket("TP $"+DoubleToString(net,2));
-      UpdateDashboard(0, 0);
+      UpdateDashboard(0, 0, g_lastDir);
       return;
      }
 
@@ -338,19 +336,16 @@ void OnTick()
    if(basket > 0 && net <= -g_maxDrawdown)
      {
       CloseBasket("MAXDD $"+DoubleToString(net,2));
-      UpdateDashboard(0, 0);
+      UpdateDashboard(0, 0, g_lastDir);
       return;
      }
 
-   UpdateDashboard(basket, net);
+   UpdateDashboard(basket, net, g_lastDir);
 
    // ── BAR GATE ─────────────────────────────────────────────────
    datetime barTime = iTime(_Symbol, PERIOD_M1, 0);
    if(barTime == g_lastBar) return;
    g_lastBar = barTime;
-
-   // ── UPDATE RANGE (every new bar) ─────────────────────────────
-   UpdateRange();
 
    // ── ENTRY ────────────────────────────────────────────────────
    TryEntry();
