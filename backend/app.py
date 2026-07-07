@@ -332,7 +332,7 @@ def upsert_history(trades):
         return
     with get_db() as conn:
         conn.executemany("""
-            INSERT OR IGNORE INTO trade_history
+            INSERT OR REPLACE INTO trade_history
                 (ticket, symbol, type, volume, price, profit, swap, commission, time, comment)
             VALUES
                 (:ticket, :symbol, :type, :volume, :price, :profit, :swap, :commission, :time, :comment)
