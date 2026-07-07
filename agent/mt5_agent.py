@@ -297,7 +297,7 @@ def get_h1_bias(symbol):
     return ema >= ema_prev
 
 
-def get_recent_history(days=30):
+def get_recent_history(days=3, limit=150):
     from_date = datetime.now().timestamp() - (days * 24 * 60 * 60)
     deals = mt5.history_deals_get(datetime.fromtimestamp(from_date), datetime.now())
     if deals is None:
@@ -319,7 +319,9 @@ def get_recent_history(days=30):
                 "time":       datetime.fromtimestamp(deal.time).isoformat(),
                 "comment":    deal.comment,
             })
-    print(f"📋 {datetime.now().strftime('%H:%M:%S')} - history: {len(result)} صفقة مغلقة (من {len(deals)} deal)")
+    # آخر N صفقة فقط — تجنب timeout من payload ضخم
+    result = result[-limit:]
+    print(f"📋 {datetime.now().strftime('%H:%M:%S')} - history: {len(result)} صفقة (آخر {days} أيام)")
     return result
 
 
