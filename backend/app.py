@@ -556,7 +556,7 @@ def build_dashboard_payload():
             last = datetime.fromisoformat(latest_data["last_update"])
             is_online = (datetime.now() - last).total_seconds() < 30
 
-        closed_trades = get_history(100)
+        closed_trades = get_history(200)
         wins   = [t for t in closed_trades if t["profit"] > 0]
         losses = [t for t in closed_trades if t["profit"] <= 0]
         win_rate     = (len(wins) / len(closed_trades) * 100) if closed_trades else 0

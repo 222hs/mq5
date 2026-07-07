@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.35';
+const DASH_VERSION = 'v3.36';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -151,8 +151,11 @@ export default function Dashboard() {
         if (!active) return;
         if (r.ok) {
           const d = await r.json();
-          // history مصدره fetchHistory + WS فقط — لا تلمسه هنا
-          setData(prev => ({ ...d, history: prev?.history || [] }));
+          // history من dashboard مباشرة — أبسط وأضمن
+          const hist = Array.isArray(d.history) && d.history.length > 0
+            ? d.history.slice().sort((a,b) => new Date(b.time) - new Date(a.time))
+            : null;
+          setData(prev => ({ ...d, history: hist || prev?.history || [] }));
           if (d.settings) setSettingsDraft(prev => mergeKeepDirty(d.settings, settingsDirty, prev));
           if (d.btc_settings) {
             setBtcSettings({ ...d.btc_settings });
@@ -206,7 +209,10 @@ export default function Dashboard() {
       }
       prevPositions.current = curPos;
       if (hadClose) fetchHistory(false);
-      setData(prev => ({ ...d, history: prev?.history || [] }));
+      const hist = Array.isArray(d.history) && d.history.length > 0
+        ? d.history.slice().sort((a,b) => new Date(b.time) - new Date(a.time))
+        : null;
+      setData(prev => ({ ...d, history: hist || prev?.history || [] }));
       if (d.settings) setSettingsDraft(prev => mergeKeepDirty(d.settings, settingsDirty, prev));
       if (Array.isArray(d.candles) && d.candles.length > 0)
         setCandleData({ candles: d.candles, sessions: d.sessions || {} });
