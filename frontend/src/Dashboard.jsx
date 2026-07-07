@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.20';
+const DASH_VERSION = 'v3.21';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -1729,12 +1729,13 @@ export default function Dashboard() {
           {/* fields */}
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))', gap:8}}>
             {[
-              {k:'BaseLot',     label:'BASE LOT',      step:0.01, min:0.01},
-              {k:'BasketCount', label:'BASKET COUNT',  step:1,    min:1},
-              {k:'BasketTP',    label:'BASKET TP $',   step:1,    min:0.5},
-              {k:'LotBoost',    label:'LOT BOOST',     step:0.5,  min:1},
-              {k:'MaxDrawdown', label:'MAX DRAWDOWN $', step:5,   min:5},
-              {k:'MaxSpread',   label:'MAX SPREAD',    step:10,   min:10},
+              {k:'BaseLot',      label:'BASE LOT',       step:0.01, min:0.01},
+              {k:'BasketCount',  label:'BASKET COUNT',   step:1,    min:1},
+              {k:'BasketTP',     label:'BASKET TP $',    step:1,    min:0.5},
+              {k:'LotBoost',     label:'LOT BOOST',      step:0.5,  min:1},
+              {k:'CooldownBars', label:'COOLDOWN BARS',  step:1,    min:0},
+              {k:'MaxDrawdown',  label:'MAX DRAWDOWN $', step:5,    min:5},
+              {k:'MaxSpread',    label:'MAX SPREAD',     step:10,   min:10},
             ].map(({k,label,step,min}) => (
               <div key={k} style={{display:'flex',flexDirection:'column',gap:3}}>
                 <div style={bLabel({fontSize:9,color:'#f0b429'})}>{label}</div>

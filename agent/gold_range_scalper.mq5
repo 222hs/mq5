@@ -33,12 +33,15 @@ double g_basketTP     = 15.0;
 double g_maxDrawdown  = 80.0;
 double g_maxSpread    = 350.0;
 double g_lotBoost     = 2.0;
+int    g_cooldownBars = 3;
 bool   g_botRunning   = true;
 int    g_magic        = MagicNumber;
 string g_lastHash     = "";
 
 //--- state
-datetime g_lastBar   = 0;
+datetime g_lastBar      = 0;
+int      g_lastCloseDir = 0;    // 1=BUY 0=none -1=SELL
+int      g_cooldownLeft = 0;    // شمعات متبقية قبل إعادة نفس الاتجاه
 
 //===================================================================
 //===================================================================
@@ -66,40 +69,44 @@ void WriteDefaultSettings()
    if(fh != INVALID_HANDLE) { FileClose(fh); return; }
    fh = FileOpen(SETTINGS_FILE, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
    if(fh == INVALID_HANDLE) return;
-   string j = "{\"BaseLot\": 0.11, \"BasketCount\": 5, \"BasketTP\": 15.0, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"BotRunning\": 1}";
+   string j = "{\"BaseLot\": 0.11, \"BasketCount\": 5, \"BasketTP\": 15.0, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"CooldownBars\": 3, \"BotRunning\": 1}";
    FileWriteString(fh, j);
    FileClose(fh);
   }
 
 void LoadSettings()
   {
-   double bLot  = ReadSetting("BaseLot",     0.11);
-   int    bCnt  = (int)ReadSetting("BasketCount", 5.0);
-   double bTP   = ReadSetting("BasketTP",    15.0);
-   double mDD   = ReadSetting("MaxDrawdown", 80.0);
-   double mSprd = ReadSetting("MaxSpread",  350.0);
-   double lBst  = ReadSetting("LotBoost",    2.0);
-   bool   botOn = (ReadSetting("BotRunning", 1.0) > 0.5);
+   double bLot  = ReadSetting("BaseLot",      0.11);
+   int    bCnt  = (int)ReadSetting("BasketCount",  5.0);
+   double bTP   = ReadSetting("BasketTP",     15.0);
+   double mDD   = ReadSetting("MaxDrawdown",  80.0);
+   double mSprd = ReadSetting("MaxSpread",   350.0);
+   double lBst  = ReadSetting("LotBoost",     2.0);
+   int    cool  = (int)ReadSetting("CooldownBars", 3.0);
+   bool   botOn = (ReadSetting("BotRunning",  1.0) > 0.5);
 
    string hash = DoubleToString(bLot,3)+IntegerToString(bCnt)
                + DoubleToString(bTP,2)+DoubleToString(mDD,1)
-               + DoubleToString(mSprd,0)+DoubleToString(lBst,1)+(botOn?"1":"0");
+               + DoubleToString(mSprd,0)+DoubleToString(lBst,1)
+               + IntegerToString(cool)+(botOn?"1":"0");
    if(hash == g_lastHash) return;
    g_lastHash = hash;
 
-   g_baseLot     = MathMax(0.01, bLot);
-   g_basketCount = MathMax(1,    bCnt);
-   g_basketTP    = MathMax(0.5,  bTP);
-   g_maxDrawdown = MathMax(5.0,  mDD);
-   g_maxSpread   = mSprd;
-   g_lotBoost    = MathMax(1.0,  lBst);
-   g_botRunning  = botOn;
+   g_baseLot      = MathMax(0.01, bLot);
+   g_basketCount  = MathMax(1,    bCnt);
+   g_basketTP     = MathMax(0.5,  bTP);
+   g_maxDrawdown  = MathMax(5.0,  mDD);
+   g_maxSpread    = mSprd;
+   g_lotBoost     = MathMax(1.0,  lBst);
+   g_cooldownBars = MathMax(0,    cool);
+   g_botRunning   = botOn;
 
    EALog("Settings — BaseLot="+DoubleToString(g_baseLot,2)
          +" BasketCnt="+IntegerToString(g_basketCount)
          +" BasketTP=$"+DoubleToString(g_basketTP,2)
          +" MaxDD=$"+DoubleToString(g_maxDrawdown,1)
-         +" LotBoost="+DoubleToString(g_lotBoost,1)+"x");
+         +" LotBoost="+DoubleToString(g_lotBoost,1)+"x"
+         +" Cooldown="+IntegerToString(g_cooldownBars)+"bars");
   }
 
 //===================================================================
@@ -170,7 +177,7 @@ double BasketProfit()
 void CloseBasket(string reason)
   {
    EALog("CLOSE ["+reason+"] net=$"+DoubleToString(BasketProfit(),2));
-   g_lastCloseBar = iTime(_Symbol, PERIOD_M1, 0); // منع إعادة الدخول على نفس الشمعة
+   g_cooldownLeft = g_cooldownBars;
    for(int i = PositionsTotal()-1; i >= 0; i--)
      {
       ulong t = PositionGetTicket(i);
@@ -263,14 +270,13 @@ void UpdateDashboard(int basket, double net, string lastDir)
 //  ENTRY LOGIC
 //===================================================================
 
-string   g_lastDir      = "--";
-datetime g_lastCloseBar = 0;
+string g_lastDir      = "--";
+int    g_lastSignal   = 0; // آخر اتجاه دخل (1=BUY -1=SELL)
 
 void TryEntry()
   {
    if(!g_botRunning) return;
    if(CountBasket() > 0) return;
-   if(iTime(_Symbol, PERIOD_M1, 0) <= g_lastCloseBar) return; // انتظر شمعة جديدة بعد الإغلاق
 
    long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    if(spread > g_maxSpread) return;
@@ -279,8 +285,12 @@ void TryEntry()
    int signal = GetCandleSignal(lot);
    if(signal == 0) return;
 
+   // كولداون: إذا نفس اتجاه آخر سلة، انتظر g_cooldownLeft شمعات
+   if(g_cooldownLeft > 0 && signal == g_lastSignal) return;
+
    string dir = (signal == 1) ? "BUY" : "SELL";
-   g_lastDir = dir;
+   g_lastDir    = dir;
+   g_lastSignal = signal;
 
    EALog("SIGNAL "+dir+" lot="+DoubleToString(lot,2)+" x"+IntegerToString(g_basketCount));
 
@@ -349,6 +359,9 @@ void OnTick()
    datetime barTime = iTime(_Symbol, PERIOD_M1, 0);
    if(barTime == g_lastBar) return;
    g_lastBar = barTime;
+
+   // ── COOLDOWN COUNTER ─────────────────────────────────────────
+   if(g_cooldownLeft > 0) g_cooldownLeft--;
 
    // ── ENTRY ────────────────────────────────────────────────────
    TryEntry();
