@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.34';
+const DASH_VERSION = 'v3.35';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -191,12 +191,13 @@ export default function Dashboard() {
     socket.on('connect_error', () => setConnState('connecting'));
 
     const handleDashboard = (d) => {
-      // Popup: detect closed positions (updates every 2s) — أسرع من history (60s)
       const curPos = Array.isArray(d.positions) ? d.positions : [];
+      let hadClose = false;
       if (prevPositions.current !== null && prevPositions.current.length > 0) {
         const curTickets = new Set(curPos.map(p => p.ticket));
         const closed = prevPositions.current.filter(p => !curTickets.has(p.ticket));
         if (closed.length > 0) {
+          hadClose = true;
           const totalNet = closed.reduce((sum, p) => sum + (p.profit || 0), 0);
           setPopup({ profit: totalNet, count: closed.length });
           clearTimeout(popupTimer.current);
@@ -204,15 +205,11 @@ export default function Dashboard() {
         }
       }
       prevPositions.current = curPos;
-      // لو أُغلقت صفقة → اجلب الـ history فوراً
-      if (closed.length > 0) fetchHistory(false);
-      // history مصدره WS "history" event + fetchHistory — لا تلمسه هنا
+      if (hadClose) fetchHistory(false);
       setData(prev => ({ ...d, history: prev?.history || [] }));
       if (d.settings) setSettingsDraft(prev => mergeKeepDirty(d.settings, settingsDirty, prev));
-      // الشمعات تأتي داخل dashboard snapshot عند الاتصال الأول
-      if (Array.isArray(d.candles) && d.candles.length > 0) {
+      if (Array.isArray(d.candles) && d.candles.length > 0)
         setCandleData({ candles: d.candles, sessions: d.sessions || {} });
-      }
     };
 
     socket.on('dashboard', handleDashboard);
