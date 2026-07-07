@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//|                                         GoldHedgeScalper v1.04  |
+//|                                         GoldHedgeScalper v1.05  |
 //|          Scalping + Hedging Basket — Separate from GoldScalperX  |
 //+------------------------------------------------------------------+
 #property copyright "GHS"
@@ -47,6 +47,7 @@ string   g_lastHash    = "";
 double   g_peakProfit  = 0.0;   // highest net profit seen while in trail
 bool     g_partialDone = false; // partial close already executed this basket
 datetime g_lastEntryTime = 0;
+ulong    g_hedgeTicket = 0;     // ticket of the single hedge position (0 = no hedge)
 
 //=== OBJECTS =======================================================
 CTrade trade;
@@ -153,7 +154,7 @@ void WriteDefaultSettings()
 //  POSITION HELPERS
 //===================================================================
 
-//--- count positions with our magic
+//--- count MAIN basket positions (excludes single hedge position)
 int CountBasket()
   {
    int n = 0;
@@ -163,9 +164,35 @@ int CountBasket()
       if(ticket == 0) continue;
       if(PositionGetString(POSITION_SYMBOL)  != _Symbol)  continue;
       if(PositionGetInteger(POSITION_MAGIC)  != g_magic)  continue;
+      if(ticket == g_hedgeTicket) continue;
       n++;
      }
    return n;
+  }
+
+//--- check if hedge position is still open, clear ticket if closed
+bool HedgeIsOpen()
+  {
+   if(g_hedgeTicket == 0) return false;
+   for(int i = PositionsTotal()-1; i >= 0; i--)
+     {
+      if(PositionGetTicket(i) == g_hedgeTicket) return true;
+     }
+   g_hedgeTicket = 0;
+   return false;
+  }
+
+//--- close hedge position only
+void CloseHedge(string reason)
+  {
+   if(!HedgeIsOpen()) return;
+   if(PositionSelectByTicket(g_hedgeTicket))
+     {
+      double profit = PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
+      trade.PositionClose(g_hedgeTicket, (ulong)(g_maxSpread*2));
+      EALog("CLOSE HEDGE ["+reason+"] p=$"+DoubleToString(profit,2));
+     }
+   g_hedgeTicket = 0;
   }
 
 //--- net floating profit of entire basket (USD)
@@ -222,7 +249,7 @@ int BasketDirection()
    return dir;
   }
 
-//--- close all basket positions
+//--- close all positions (basket + hedge)
 void CloseBasket(string reason)
   {
    EALog("CLOSE BASKET ["+reason+"] net=$"+DoubleToString(BasketProfit(),2));
@@ -237,6 +264,7 @@ void CloseBasket(string reason)
      }
    g_peakProfit  = 0.0;
    g_partialDone = false;
+   g_hedgeTicket = 0;
   }
 
 // close the most profitable positions up to partialPct% of total count
@@ -473,17 +501,17 @@ void OnTick()
    long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    if(spread > g_maxSpread) return;
 
-   // ── MAX LEVELS REACHED — wait for TP or emergency only ───────
-   if(basket >= g_maxLevels) return;
-
    // ── BAR GATE ─────────────────────────────────────────────────
    datetime barTime = iTime(_Symbol, TF, 0);
    if(barTime == g_lastBar) return;
    g_lastBar = barTime;
 
-   // ── HEDGE CHECK (new bar, basket open) ───────────────────────
+   // ── HEDGE CHECK (runs every new bar when basket is open) ─────
    if(basket > 0)
       CheckHedge();
+
+   // ── MAX LEVELS REACHED — only hedge allowed, no more entries ─
+   if(basket >= g_maxLevels) return;
 
    // ── ENTRY: add to basket in same direction OR open new basket ─
    TryEntry(basket);
@@ -554,61 +582,77 @@ void TryEntry(int currentBasket)
   }
 
 //===================================================================
-//  HEDGE CHECK — called every tick when basket is open
+//  HEDGE CHECK — ONE hedge position only, close when price recovers
 //===================================================================
 
 void CheckHedge()
   {
-   // find worst individual position loss
-   double worstLoss = 0;
-   int    worstType = -1;
-   double lastLot   = g_baseLot;
-   datetime latestTime = 0;
+   int basketDir = BasketDirection(); // direction of main basket
 
-   for(int i = PositionsTotal()-1; i >= 0; i--)
+   // ── if hedge is open: check if price recovered → close hedge ──
+   if(HedgeIsOpen())
      {
-      ulong ticket = PositionGetTicket(i);
-      if(ticket == 0) continue;
-      if(PositionGetString(POSITION_SYMBOL) != _Symbol)  continue;
-      if(PositionGetInteger(POSITION_MAGIC) != g_magic)  continue;
-
-      double profit = PositionGetDouble(POSITION_PROFIT)
-                    + PositionGetDouble(POSITION_SWAP);
-      int    ptype  = (int)PositionGetInteger(POSITION_TYPE);
-      datetime pt   = (datetime)PositionGetInteger(POSITION_TIME);
-
-      if(profit < worstLoss) { worstLoss = profit; worstType = ptype; }
-      if(pt >= latestTime)   { latestTime = pt; lastLot = PositionGetDouble(POSITION_VOLUME); }
+      if(PositionSelectByTicket(g_hedgeTicket))
+        {
+         double hedgeProfit = PositionGetDouble(POSITION_PROFIT)
+                            + PositionGetDouble(POSITION_SWAP);
+         // close hedge when it's profitable (price moved back in basket direction)
+         if(hedgeProfit > 0)
+            CloseHedge("recovered p=$"+DoubleToString(hedgeProfit,2));
+        }
+      return; // hedge already open — don't open another
      }
 
-   // if worst position is losing more than hedgeDistUSD → open hedge
-   if(worstLoss <= -g_hedgeDistUSD && worstType >= 0)
-     {
-      double newLot = NormLot(lastLot * g_lotMult);
-      double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-      double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   // ── no hedge yet: check if basket net loss > hedgeDistUSD ─────
+   double basketNet = BasketProfit();
+   if(basketNet > -g_hedgeDistUSD) return; // not enough loss yet
 
-      // hedge in OPPOSITE direction of worst loser
-      if(worstType == POSITION_TYPE_BUY)
+   // open ONE hedge in opposite direction of basket
+   double hedgeLot = NormLot(TotalBasketLots() * 0.5); // hedge = 50% of basket size
+   if(hedgeLot <= 0) hedgeLot = NormLot(g_baseLot);
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+
+   if(basketDir == 1)
+     {
+      // basket is BUY, losing → hedge SELL
+      if(trade.Sell(hedgeLot, _Symbol, bid, 0, 0, "GHX_HEDGE"))
         {
-         // worst is a buy → open sell hedge
-         if(trade.Sell(newLot, _Symbol, bid, 0, 0, "GHX_HEDGE"))
-            EALog("SELL_HEDGE lvl="+IntegerToString(CountBasket()+1)
-                  +" lot="+DoubleToString(newLot,2)
-                  +" trigger=$"+DoubleToString(worstLoss,2));
-         else
-            EALog("FAIL SELL_HEDGE "+IntegerToString(trade.ResultRetcode())+" "+trade.ResultComment());
+         g_hedgeTicket = trade.ResultDeal();
+         // find the actual position ticket
+         for(int i = PositionsTotal()-1; i >= 0; i--)
+           {
+            if(PositionGetTicket(i) != 0
+               && PositionGetString(POSITION_SYMBOL) == _Symbol
+               && PositionGetInteger(POSITION_MAGIC) == g_magic
+               && PositionGetString(POSITION_COMMENT) == "GHX_HEDGE")
+              { g_hedgeTicket = PositionGetTicket(i); break; }
+           }
+         EALog("SELL_HEDGE lot="+DoubleToString(hedgeLot,2)
+               +" basketNet=$"+DoubleToString(basketNet,2));
         }
       else
+         EALog("FAIL SELL_HEDGE "+IntegerToString(trade.ResultRetcode()));
+     }
+   else
+     {
+      // basket is SELL, losing → hedge BUY
+      if(trade.Buy(hedgeLot, _Symbol, ask, 0, 0, "GHX_HEDGE"))
         {
-         // worst is a sell → open buy hedge
-         if(trade.Buy(newLot, _Symbol, ask, 0, 0, "GHX_HEDGE"))
-            EALog("BUY_HEDGE lvl="+IntegerToString(CountBasket()+1)
-                  +" lot="+DoubleToString(newLot,2)
-                  +" trigger=$"+DoubleToString(worstLoss,2));
-         else
-            EALog("FAIL BUY_HEDGE "+IntegerToString(trade.ResultRetcode())+" "+trade.ResultComment());
+         g_hedgeTicket = trade.ResultDeal();
+         for(int i = PositionsTotal()-1; i >= 0; i--)
+           {
+            if(PositionGetTicket(i) != 0
+               && PositionGetString(POSITION_SYMBOL) == _Symbol
+               && PositionGetInteger(POSITION_MAGIC) == g_magic
+               && PositionGetString(POSITION_COMMENT) == "GHX_HEDGE")
+              { g_hedgeTicket = PositionGetTicket(i); break; }
+           }
+         EALog("BUY_HEDGE lot="+DoubleToString(hedgeLot,2)
+               +" basketNet=$"+DoubleToString(basketNet,2));
         }
+      else
+         EALog("FAIL BUY_HEDGE "+IntegerToString(trade.ResultRetcode()));
      }
   }
 //+------------------------------------------------------------------+
