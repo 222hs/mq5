@@ -275,34 +275,44 @@ int GetCandleSignal(double &outLot)
   {
    // ── ADX فلتر: لو ترند قوي ما ندخل ──────────────────────────
    int hADX = iADX(_Symbol, PERIOD_M1, 14);
-   if(hADX == INVALID_HANDLE) return 0;
+   if(hADX == INVALID_HANDLE) { EALog("DIAG skip: ADX handle invalid"); return 0; }
    double adx[];
    ArraySetAsSeries(adx, true);
-   if(CopyBuffer(hADX, 0, 0, 2, adx) < 2) { IndicatorRelease(hADX); return 0; }
+   if(CopyBuffer(hADX, 0, 0, 2, adx) < 2) { IndicatorRelease(hADX); EALog("DIAG skip: ADX buffer not ready"); return 0; }
    IndicatorRelease(hADX);
-   if(adx[1] > g_adxMax) return 0; // ترند قوي — تجنب الدخول
+   if(adx[1] > g_adxMax) // ترند قوي — تجنب الدخول
+     {
+      EALog("DIAG skip: ADX="+DoubleToString(adx[1],1)+" > max="+DoubleToString(g_adxMax,1)+" (ترند قوي)");
+      return 0;
+     }
 
    // ── ATR ──────────────────────────────────────────────────────
    int hATR = iATR(_Symbol, PERIOD_M1, 14);
-   if(hATR == INVALID_HANDLE) return 0;
+   if(hATR == INVALID_HANDLE) { EALog("DIAG skip: ATR handle invalid"); return 0; }
    double atr[];
    ArraySetAsSeries(atr, true);
-   if(CopyBuffer(hATR, 0, 0, 3, atr) < 3) { IndicatorRelease(hATR); return 0; }
+   if(CopyBuffer(hATR, 0, 0, 3, atr) < 3) { IndicatorRelease(hATR); EALog("DIAG skip: ATR buffer not ready"); return 0; }
    IndicatorRelease(hATR);
 
    double o[], h[], l[], c[];
    ArraySetAsSeries(o,true); ArraySetAsSeries(h,true);
    ArraySetAsSeries(l,true); ArraySetAsSeries(c,true);
-   if(CopyOpen (_Symbol,PERIOD_M1,0,3,o)<3) return 0;
-   if(CopyHigh (_Symbol,PERIOD_M1,0,3,h)<3) return 0;
-   if(CopyLow  (_Symbol,PERIOD_M1,0,3,l)<3) return 0;
-   if(CopyClose(_Symbol,PERIOD_M1,0,3,c)<3) return 0;
+   if(CopyOpen (_Symbol,PERIOD_M1,0,3,o)<3) { EALog("DIAG skip: candle open data not ready"); return 0; }
+   if(CopyHigh (_Symbol,PERIOD_M1,0,3,h)<3) { EALog("DIAG skip: candle high data not ready"); return 0; }
+   if(CopyLow  (_Symbol,PERIOD_M1,0,3,l)<3) { EALog("DIAG skip: candle low data not ready"); return 0; }
+   if(CopyClose(_Symbol,PERIOD_M1,0,3,c)<3) { EALog("DIAG skip: candle close data not ready"); return 0; }
 
    double body  = MathAbs(c[1] - o[1]);
    double range = h[1] - l[1] + 1e-10;
    double atr1  = atr[1];
 
-   if(body < 0.35*atr1 || body/range < 0.30) return 0;
+   if(body < 0.35*atr1 || body/range < 0.30)
+     {
+      EALog("DIAG skip: candle too weak — body="+DoubleToString(body,2)
+            +" (need>="+DoubleToString(0.35*atr1,2)+") body/range="+DoubleToString(body/range,2)
+            +" (need>=0.30) ATR="+DoubleToString(atr1,2));
+      return 0;
+     }
 
    double strength = MathMin(body / atr1, 2.0) / 2.0;
    outLot = NormLot(g_baseLot * (1.0 + (g_lotBoost - 1.0) * strength));
@@ -489,19 +499,27 @@ void CheckProbe()
 // ── دخول جديد (probe فقط) ──────────────────────────────────────
 void TryEntry()
   {
-   if(!g_botRunning) return;
-   if(g_inEntry) return;
-   if(g_probeTicket != 0) return; // في probe نشط
-   if(CountBasket() > 0) return;
+   if(!g_botRunning) { EALog("DIAG skip: BotRunning=OFF"); return; }
+   if(g_inEntry) { EALog("DIAG skip: entry already in progress"); return; }
+   if(g_probeTicket != 0) { EALog("DIAG skip: probe نشط بالفعل (ticket="+IntegerToString((long)g_probeTicket)+")"); return; }
+   if(CountBasket() > 0) { EALog("DIAG skip: basket مفتوح بالفعل ("+IntegerToString(CountBasket())+" صفقة)"); return; }
 
    long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
-   if(spread > g_maxSpread) return;
+   if(spread > g_maxSpread)
+     {
+      EALog("DIAG skip: spread="+IntegerToString(spread)+" > max="+DoubleToString(g_maxSpread,0));
+      return;
+     }
 
    double lot = 0;
    int signal = GetCandleSignal(lot); // lot not used for probe — uses g_probeLot
-   if(signal == 0) return;
+   if(signal == 0) return; // GetCandleSignal تطبع سبب الرفض بنفسها
 
-   if(g_cooldownLeft > 0 && signal == g_lastSignalDir) return;
+   if(g_cooldownLeft > 0 && signal == g_lastSignalDir)
+     {
+      EALog("DIAG skip: cooldown="+IntegerToString(g_cooldownLeft)+" bars (نفس اتجاه آخر إشارة)");
+      return;
+     }
 
    string dir = (signal == 1) ? "BUY" : "SELL";
    g_lastDir       = dir;
