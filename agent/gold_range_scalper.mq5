@@ -28,8 +28,6 @@ CTrade trade;
 
 //--- settings (loaded from file every bar)
 double g_baseLot      = 0.11;
-int    g_rangePeriod  = 30;
-double g_touchZonePct = 20.0;
 int    g_basketCount  = 5;
 double g_basketTP     = 15.0;
 double g_maxDrawdown  = 80.0;
@@ -41,9 +39,6 @@ string g_lastHash     = "";
 
 //--- state
 datetime g_lastBar   = 0;
-double   g_rangeHigh = 0;
-double   g_rangeLow  = 0;
-double   g_rangeMid  = 0;
 
 //===================================================================
 //===================================================================
@@ -68,46 +63,39 @@ double ReadSetting(string key, double def)
 void WriteDefaultSettings()
   {
    int fh = FileOpen(SETTINGS_FILE, FILE_READ|FILE_TXT|FILE_ANSI|FILE_COMMON);
-   if(fh != INVALID_HANDLE) { FileClose(fh); return; } // already exists
+   if(fh != INVALID_HANDLE) { FileClose(fh); return; }
    fh = FileOpen(SETTINGS_FILE, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
    if(fh == INVALID_HANDLE) return;
-   string j = "{\"BaseLot\": 0.11, \"RangePeriod\": 30, \"TouchZonePct\": 20.0, \"BasketCount\": 5, \"BasketTP\": 15.0, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"BotRunning\": 1}";
+   string j = "{\"BaseLot\": 0.11, \"BasketCount\": 5, \"BasketTP\": 15.0, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"BotRunning\": 1}";
    FileWriteString(fh, j);
    FileClose(fh);
   }
 
 void LoadSettings()
   {
-   double bLot  = ReadSetting("BaseLot",      0.11);
-   int    rPer  = (int)ReadSetting("RangePeriod", 30.0);
-   double tZone = ReadSetting("TouchZonePct", 20.0);
-   int    bCnt  = (int)ReadSetting("BasketCount",  5.0);
-   double bTP   = ReadSetting("BasketTP",     15.0);
-   double mDD   = ReadSetting("MaxDrawdown",  80.0);
-   double mSprd = ReadSetting("MaxSpread",   350.0);
-   double lBst  = ReadSetting("LotBoost",     2.0);
-   bool   botOn = (ReadSetting("BotRunning",  1.0) > 0.5);
+   double bLot  = ReadSetting("BaseLot",     0.11);
+   int    bCnt  = (int)ReadSetting("BasketCount", 5.0);
+   double bTP   = ReadSetting("BasketTP",    15.0);
+   double mDD   = ReadSetting("MaxDrawdown", 80.0);
+   double mSprd = ReadSetting("MaxSpread",  350.0);
+   double lBst  = ReadSetting("LotBoost",    2.0);
+   bool   botOn = (ReadSetting("BotRunning", 1.0) > 0.5);
 
-   string hash = DoubleToString(bLot,3)+IntegerToString(rPer)
-               + DoubleToString(tZone,1)+IntegerToString(bCnt)
+   string hash = DoubleToString(bLot,3)+IntegerToString(bCnt)
                + DoubleToString(bTP,2)+DoubleToString(mDD,1)
                + DoubleToString(mSprd,0)+DoubleToString(lBst,1)+(botOn?"1":"0");
    if(hash == g_lastHash) return;
    g_lastHash = hash;
 
-   g_baseLot      = MathMax(0.01, bLot);
-   g_rangePeriod  = MathMax(5,    rPer);
-   g_touchZonePct = MathMax(1.0,  tZone);
-   g_basketCount  = MathMax(1,    bCnt);
-   g_basketTP     = MathMax(0.5,  bTP);
-   g_maxDrawdown  = MathMax(5.0,  mDD);
-   g_maxSpread    = mSprd;
-   g_lotBoost     = MathMax(1.0,  lBst);
-   g_botRunning   = botOn;
+   g_baseLot     = MathMax(0.01, bLot);
+   g_basketCount = MathMax(1,    bCnt);
+   g_basketTP    = MathMax(0.5,  bTP);
+   g_maxDrawdown = MathMax(5.0,  mDD);
+   g_maxSpread   = mSprd;
+   g_lotBoost    = MathMax(1.0,  lBst);
+   g_botRunning  = botOn;
 
    EALog("Settings — BaseLot="+DoubleToString(g_baseLot,2)
-         +" Range="+IntegerToString(g_rangePeriod)
-         +" TouchZone="+DoubleToString(g_touchZonePct,1)+"%"
          +" BasketCnt="+IntegerToString(g_basketCount)
          +" BasketTP=$"+DoubleToString(g_basketTP,2)
          +" MaxDD=$"+DoubleToString(g_maxDrawdown,1)
@@ -203,47 +191,70 @@ double NormLot(double lot)
   }
 
 //===================================================================
-//  RANGE DETECTION
+//  CANDLE SIGNAL
 //===================================================================
 
-void UpdateRange()
+// returns 1=bullish, -1=bearish, 0=no signal
+// uses ATR to measure candle strength, boosts lot on stronger candles
+int GetCandleSignal(double &outLot)
   {
-   double hi[], lo[];
-   ArraySetAsSeries(hi, true);
-   ArraySetAsSeries(lo, true);
-   if(CopyHigh(_Symbol, PERIOD_M5, 1, g_rangePeriod, hi) < g_rangePeriod) return;
-   if(CopyLow (_Symbol, PERIOD_M5, 1, g_rangePeriod, lo) < g_rangePeriod) return;
+   int hATR = iATR(_Symbol, PERIOD_M1, 14);
+   if(hATR == INVALID_HANDLE) return 0;
+   double atr[];
+   ArraySetAsSeries(atr, true);
+   if(CopyBuffer(hATR, 0, 0, 3, atr) < 3) { IndicatorRelease(hATR); return 0; }
+   IndicatorRelease(hATR);
 
-   g_rangeHigh = hi[ArrayMaximum(hi, 0, g_rangePeriod)];
-   g_rangeLow  = lo[ArrayMinimum(lo, 0, g_rangePeriod)];
-   g_rangeMid  = (g_rangeHigh + g_rangeLow) / 2.0;
+   double o[], h[], l[], c[];
+   ArraySetAsSeries(o,true); ArraySetAsSeries(h,true);
+   ArraySetAsSeries(l,true); ArraySetAsSeries(c,true);
+   if(CopyOpen (_Symbol,PERIOD_M1,0,3,o)<3) return 0;
+   if(CopyHigh (_Symbol,PERIOD_M1,0,3,h)<3) return 0;
+   if(CopyLow  (_Symbol,PERIOD_M1,0,3,l)<3) return 0;
+   if(CopyClose(_Symbol,PERIOD_M1,0,3,c)<3) return 0;
+
+   double body  = MathAbs(c[1] - o[1]);
+   double range = h[1] - l[1] + 1e-10;
+   double atr1  = atr[1];
+
+   // need a meaningful candle
+   if(body < 0.35*atr1 || body/range < 0.30) return 0;
+
+   // lot boost proportional to candle strength (1x to LotBoost)
+   double strength = MathMin(body / atr1, 2.0) / 2.0; // 0..1
+   outLot = NormLot(g_baseLot * (1.0 + (g_lotBoost - 1.0) * strength));
+
+   if(c[1] > o[1]) return  1; // bullish
+   if(c[1] < o[1]) return -1; // bearish
+   return 0;
   }
 
 //===================================================================
 //  DASHBOARD
 //===================================================================
 
-void UpdateDashboard(int basket, double net)
+void UpdateDashboard(int basket, double net, string lastDir)
   {
    int x = PANEL_X, xV = PANEL_X + 90, y = PANEL_Y;
 
-   DLabel("K_NAME", "⬦ RANGE SCALPER", x, y, clrGold); y += ROW_H;
-   DLabel("K_RH",   "RANGE H",  x, y, CLR_KEY);
-   DLabel("V_RH",   DoubleToString(g_rangeHigh,2), xV, y, clrAqua); y += ROW_H;
-   DLabel("K_RL",   "RANGE L",  x, y, CLR_KEY);
-   DLabel("V_RL",   DoubleToString(g_rangeLow,2),  xV, y, clrAqua); y += ROW_H;
-   DLabel("K_BSK",  "BASKET",   x, y, CLR_KEY);
-   DLabel("V_BSK",  IntegerToString(basket),        xV, y, basket>0?clrLime:clrGray); y += ROW_H;
-   DLabel("K_NET",  "NET P/L",  x, y, CLR_KEY);
+   DLabel("K_NAME", "⬦ BASKET SCALPER", x, y, clrGold); y += ROW_H;
+   DLabel("K_BSK",  "BASKET",    x, y, CLR_KEY);
+   DLabel("V_BSK",  IntegerToString(basket), xV, y, basket>0?clrLime:clrGray); y += ROW_H;
+   DLabel("K_DIR",  "DIRECTION", x, y, CLR_KEY);
+   color dc = (lastDir=="BUY")?clrLime:(lastDir=="SELL"?clrRed:clrGray);
+   DLabel("V_DIR",  lastDir,     xV, y, dc); y += ROW_H;
+   DLabel("K_NET",  "NET P/L",   x, y, CLR_KEY);
    color nc = net > 0 ? clrLime : (net < 0 ? clrRed : clrGray);
-   DLabel("V_NET",  "$"+DoubleToString(net,2),      xV, y, nc); y += ROW_H;
-   DLabel("K_TP",   "BASKET TP",x, y, CLR_KEY);
+   DLabel("V_NET",  "$"+DoubleToString(net,2), xV, y, nc); y += ROW_H;
+   DLabel("K_TP",   "BASKET TP", x, y, CLR_KEY);
    DLabel("V_TP",   "$"+DoubleToString(g_basketTP,2), xV, y, clrCyan); y += ROW_H;
-   DLabel("K_BOT",  "BOT",      x, y, CLR_KEY);
-   DLabel("V_BOT",  g_botRunning?"ON":"OFF",        xV, y, g_botRunning?clrLime:clrRed); y += ROW_H;
+   DLabel("K_CNT",  "BASKET CNT",x, y, CLR_KEY);
+   DLabel("V_CNT",  IntegerToString(g_basketCount)+"x", xV, y, clrCyan); y += ROW_H;
+   DLabel("K_BOT",  "BOT",       x, y, CLR_KEY);
+   DLabel("V_BOT",  g_botRunning?"ON":"OFF", xV, y, g_botRunning?clrLime:clrRed); y += ROW_H;
    long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
-   DLabel("K_SPR",  "SPREAD",   x, y, CLR_KEY);
-   DLabel("V_SPR",  IntegerToString(spread),        xV, y, spread>g_maxSpread?clrRed:clrGray);
+   DLabel("K_SPR",  "SPREAD",    x, y, CLR_KEY);
+   DLabel("V_SPR",  IntegerToString(spread), xV, y, spread>g_maxSpread?clrRed:clrGray);
    ChartRedraw(0);
   }
 
@@ -251,59 +262,39 @@ void UpdateDashboard(int basket, double net)
 //  ENTRY LOGIC
 //===================================================================
 
+string g_lastDir = "--";
+
 void TryEntry()
   {
    if(!g_botRunning) return;
-   if(CountBasket() > 0) return;   // wait for basket to close before new entry
+   if(CountBasket() > 0) return; // wait for basket to close
 
    long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    if(spread > g_maxSpread) return;
 
-   double rangeWidth = g_rangeHigh - g_rangeLow;
-   if(rangeWidth < 1.0) return; // range too narrow, skip
+   double lot = g_baseLot;
+   int signal = GetCandleSignal(lot);
+   if(signal == 0) return;
 
-   double touchZone = rangeWidth * (g_touchZonePct / 100.0);
-   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   string dir = (signal == 1) ? "BUY" : "SELL";
+   g_lastDir = dir;
 
-   // how close to boundary as a fraction (0=at boundary, 1=at midpoint)
-   double distToHigh = g_rangeHigh - bid;
-   double distToLow  = ask - g_rangeLow;
-
-   bool sellSignal = (distToHigh <= touchZone); // price near top → SELL
-   bool buySignal  = (distToLow  <= touchZone); // price near bottom → BUY
-
-   if(!sellSignal && !buySignal) return;
-
-   // boost lot when very close to boundary (within 50% of touch zone)
-   double proximity = sellSignal
-                    ? (1.0 - distToHigh / touchZone)
-                    : (1.0 - distToLow  / touchZone);
-   double lot = NormLot(g_baseLot * (proximity >= 0.5 ? g_lotBoost : 1.0));
-
-   string dir = sellSignal ? "SELL" : "BUY";
-   EALog("SIGNAL "+dir+" range="+DoubleToString(g_rangeLow,2)+"-"+DoubleToString(g_rangeHigh,2)
-         +" zone="+DoubleToString(touchZone,2)+" lot="+DoubleToString(lot,2)
-         +" proximity="+DoubleToString(proximity*100,0)+"%");
+   EALog("SIGNAL "+dir+" lot="+DoubleToString(lot,2)+" x"+IntegerToString(g_basketCount));
 
    int opened = 0;
    for(int i = 0; i < g_basketCount; i++)
      {
       bool ok = false;
-      if(sellSignal)
-         ok = trade.Sell(lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_BID), 0, 0, "GRX_SELL");
-      else
+      if(signal == 1)
          ok = trade.Buy (lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_ASK), 0, 0, "GRX_BUY");
+      else
+         ok = trade.Sell(lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_BID), 0, 0, "GRX_SELL");
 
       if(ok) opened++;
-      else
-        {
-         EALog("FAIL "+dir+" #"+IntegerToString(i+1)+" "+IntegerToString(trade.ResultRetcode()));
-         break;
-        }
+      else { EALog("FAIL "+dir+" #"+IntegerToString(i+1)+" "+IntegerToString(trade.ResultRetcode())); break; }
       Sleep(50);
      }
-   EALog("OPENED "+IntegerToString(opened)+" x "+dir+" "+DoubleToString(lot,2)+" lot");
+   EALog("OPENED "+IntegerToString(opened)+"/"+IntegerToString(g_basketCount)+" "+dir);
   }
 
 //===================================================================
