@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//|                                         GoldHedgeScalper v1.03  |
+//|                                         GoldHedgeScalper v1.04  |
 //|          Scalping + Hedging Basket — Separate from GoldScalperX  |
 //+------------------------------------------------------------------+
 #property copyright "GHS"
@@ -518,24 +518,6 @@ void TryEntry(int currentBasket)
    bool bullBar = (c[1] > o[1]) && (body >= 0.35*atr1) && (body/range >= 0.30);
    bool bearBar = (c[1] < o[1]) && (body >= 0.35*atr1) && (body/range >= 0.30);
 
-   // EMA50 on M5 — trend filter for FIRST entry only
-   if(currentBasket == 0)
-     {
-      int hEMA = iMA(_Symbol, PERIOD_M5, 50, 0, MODE_EMA, PRICE_CLOSE);
-      if(hEMA != INVALID_HANDLE)
-        {
-         double ema[];
-         ArraySetAsSeries(ema, true);
-         if(CopyBuffer(hEMA, 0, 0, 2, ema) == 2)
-           {
-            double price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-            if(bullBar && price < ema[0]) bullBar = false; // price below EMA — no buy
-            if(bearBar && price > ema[0]) bearBar = false; // price above EMA — no sell
-           }
-         IndicatorRelease(hEMA);
-        }
-     }
-
    // if basket is open, only add in SAME direction as basket
    if(currentBasket > 0)
      {
@@ -548,7 +530,9 @@ void TryEntry(int currentBasket)
       if(!bullBar && !bearBar) return; // no basket — need signal to open
      }
 
-   double lot = NormLot(g_baseLot);
+   // dynamic lot: scale with candle strength (body / ATR), capped at 3x baseLot
+   double candleStrength = MathMin(body / (atr1 + 1e-10), 3.0); // 0..3
+   double lot = NormLot(g_baseLot * MathMax(1.0, candleStrength));
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    string tag = currentBasket > 0 ? "GHX_ADD" : "GHX_ENTRY";
