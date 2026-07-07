@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//|                                         GoldHedgeScalper v1.01  |
+//|                                         GoldHedgeScalper v1.03  |
 //|          Scalping + Hedging Basket — Separate from GoldScalperX  |
 //+------------------------------------------------------------------+
 #property copyright "GHS"
@@ -514,11 +514,9 @@ void TryEntry(int currentBasket)
    double range = h[1] - l[1] + 1e-10;
    double atr1  = atr[1];
 
-   // stronger candle filter: body >= 45% ATR + small wick on signal side
-   bool bullBar = (c[1] > o[1]) && (body >= 0.45*atr1) && (body/range >= 0.40)
-                  && ((h[1]-c[1]) < body*0.5);   // upper wick < 50% of body
-   bool bearBar = (c[1] < o[1]) && (body >= 0.45*atr1) && (body/range >= 0.40)
-                  && ((c[1]-l[1]) < body*0.5);   // lower wick < 50% of body
+   // candle filter: body >= 35% ATR, body dominates range
+   bool bullBar = (c[1] > o[1]) && (body >= 0.35*atr1) && (body/range >= 0.30);
+   bool bearBar = (c[1] < o[1]) && (body >= 0.35*atr1) && (body/range >= 0.30);
 
    // EMA50 on M5 — trend filter for FIRST entry only
    if(currentBasket == 0)
