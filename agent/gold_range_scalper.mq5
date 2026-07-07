@@ -29,6 +29,7 @@ CTrade trade;
 //--- settings (loaded from file every bar)
 double g_baseLot      = 0.11;
 double g_riskPct      = 1.0;   // % من الرصيد لكل سلة (0 = استخدم BaseLot)
+double g_basketTP     = 15.0;
 int    g_basketCount  = 5;
 double g_maxDrawdown  = 80.0;
 double g_maxSpread    = 350.0;
