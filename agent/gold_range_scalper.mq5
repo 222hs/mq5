@@ -55,6 +55,8 @@ bool     g_inEntry          = false;
 int      g_consecutiveLosses = 0;  // خسائر متتالية → يشدد معايير الدخول
 int      g_barsAfterLoss    = 0;   // عداد البارات منذ آخر خسارة → reset بعد 20 بار
 int      g_hPTD             = INVALID_HANDLE; // handle إنديكاتور PTD
+int      g_consecutiveWins  = 0;   // أرباح متتالية → يرفع الـ TP
+double   g_dynamicTP        = 0;   // الـ TP الديناميكي الفعلي
 
 //===================================================================
 //  SETTINGS FILE
@@ -163,6 +165,38 @@ void DLabel(string name, string txt, int x, int y, color clr)
   }
 
 //===================================================================
+//  DYNAMIC TP
+//===================================================================
+
+double CalcDynamicTP()
+  {
+   // ── ATR-based base ───────────────────────────────────────────
+   int hATR = iATR(_Symbol, PERIOD_M1, 14);
+   double atrBase = g_basketTP; // fallback
+   if(hATR != INVALID_HANDLE)
+     {
+      double atr[];
+      ArraySetAsSeries(atr, true);
+      if(CopyBuffer(hATR, 0, 1, 1, atr) >= 1)
+        {
+         double atrDollar = atr[0] * SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE)
+                          / SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE)
+                          * g_baseLot * g_basketCount;
+         atrBase = MathMax(g_basketTP * 0.5, MathMin(g_basketTP * 2.0, atrDollar * 1.5));
+        }
+      IndicatorRelease(hATR);
+     }
+
+   // ── Win streak boost: +$2 لكل ربح متتالي ────────────────────
+   double winBoost = g_consecutiveWins * 2.0;
+
+   // ── حد أدنى وأقصى ────────────────────────────────────────────
+   double tp = MathMax(g_basketTP * 0.5,
+               MathMin(g_basketTP * 3.0, atrBase + winBoost));
+   return tp;
+  }
+
+//===================================================================
 //  BASKET MANAGEMENT
 //===================================================================
 
@@ -201,13 +235,20 @@ void CloseBasket(string reason)
      {
       g_consecutiveLosses = 0;
       g_barsAfterLoss     = 0;
-      EALog("CLOSE ["+reason+"] net=$"+DoubleToString(net,2)+" ✅ خسائر متتالية → صفر");
+      g_consecutiveWins++;
+      g_dynamicTP = CalcDynamicTP();
+      EALog("CLOSE ["+reason+"] net=$"+DoubleToString(net,2)
+            +" ✅ wins="+IntegerToString(g_consecutiveWins)
+            +" → nextTP=$"+DoubleToString(g_dynamicTP,2));
      }
    else
      {
       g_consecutiveLosses++;
+      g_consecutiveWins = 0;
+      g_dynamicTP = CalcDynamicTP();
       EALog("CLOSE ["+reason+"] net=$"+DoubleToString(net,2)
-            +" ❌ خسائر متتالية="+IntegerToString(g_consecutiveLosses));
+            +" ❌ خسائر="+IntegerToString(g_consecutiveLosses)
+            +" → nextTP=$"+DoubleToString(g_dynamicTP,2));
      }
    g_cooldownLeft = g_cooldownBars;
    for(int i = PositionsTotal()-1; i >= 0; i--)
@@ -490,9 +531,13 @@ void OnTick()
    int    basket = CountBasket();
    double net    = BasketProfit();
 
-   if(basket > 0 && net >= g_basketTP)
+   // ── حساب الـ TP الديناميكي لو لم يحسب بعد ─────────────────
+   if(g_dynamicTP <= 0) g_dynamicTP = CalcDynamicTP();
+   double activeTP = g_dynamicTP;
+
+   if(basket > 0 && net >= activeTP)
      {
-      CloseBasket("TP $"+DoubleToString(net,2));
+      CloseBasket("TP $"+DoubleToString(net,2)+" (dTP=$"+DoubleToString(activeTP,2)+")");
       UpdateDashboard(0, 0);
       return;
      }
