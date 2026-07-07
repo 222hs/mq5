@@ -271,11 +271,13 @@ void UpdateDashboard(int basket, double net, string lastDir)
 //===================================================================
 
 string g_lastDir      = "--";
-int    g_lastSignal   = 0; // آخر اتجاه دخل (1=BUY -1=SELL)
+int    g_lastSignal   = 0;
+bool   g_inEntry      = false; // منع دخول مزدوج
 
 void TryEntry()
   {
    if(!g_botRunning) return;
+   if(g_inEntry) return;
    if(CountBasket() > 0) return;
 
    long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
@@ -285,8 +287,10 @@ void TryEntry()
    int signal = GetCandleSignal(lot);
    if(signal == 0) return;
 
-   // كولداون: إذا نفس اتجاه آخر سلة، انتظر g_cooldownLeft شمعات
+   // كولداون: نفس الاتجاه فقط
    if(g_cooldownLeft > 0 && signal == g_lastSignal) return;
+
+   g_inEntry = true;
 
    string dir = (signal == 1) ? "BUY" : "SELL";
    g_lastDir    = dir;
@@ -308,6 +312,7 @@ void TryEntry()
       Sleep(50);
      }
    EALog("OPENED "+IntegerToString(opened)+"/"+IntegerToString(g_basketCount)+" "+dir);
+   g_inEntry = false;
   }
 
 //===================================================================
