@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//|                                         GoldHedgeScalper v1.00  |
+//|                                         GoldHedgeScalper v1.01  |
 //|          Scalping + Hedging Basket — Separate from GoldScalperX  |
 //+------------------------------------------------------------------+
 #property copyright "GHS"
@@ -428,8 +428,29 @@ void TryEntry(int currentBasket)
    double range = h[1] - l[1] + 1e-10;
    double atr1  = atr[1];
 
-   bool bullBar = (c[1] > o[1]) && (body >= 0.35*atr1) && (body/range >= 0.30);
-   bool bearBar = (c[1] < o[1]) && (body >= 0.35*atr1) && (body/range >= 0.30);
+   // stronger candle filter: body >= 45% ATR + small wick on signal side
+   bool bullBar = (c[1] > o[1]) && (body >= 0.45*atr1) && (body/range >= 0.40)
+                  && ((h[1]-c[1]) < body*0.5);   // upper wick < 50% of body
+   bool bearBar = (c[1] < o[1]) && (body >= 0.45*atr1) && (body/range >= 0.40)
+                  && ((c[1]-l[1]) < body*0.5);   // lower wick < 50% of body
+
+   // EMA50 on M5 — trend filter for FIRST entry only
+   if(currentBasket == 0)
+     {
+      int hEMA = iMA(_Symbol, PERIOD_M5, 50, 0, MODE_EMA, PRICE_CLOSE);
+      if(hEMA != INVALID_HANDLE)
+        {
+         double ema[];
+         ArraySetAsSeries(ema, true);
+         if(CopyBuffer(hEMA, 0, 0, 2, ema) == 2)
+           {
+            double price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+            if(bullBar && price < ema[0]) bullBar = false; // price below EMA — no buy
+            if(bearBar && price > ema[0]) bearBar = false; // price above EMA — no sell
+           }
+         IndicatorRelease(hEMA);
+        }
+     }
 
    // if basket is open, only add in SAME direction as basket
    if(currentBasket > 0)
