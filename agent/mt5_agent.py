@@ -987,6 +987,7 @@ def main():
     print("اضغط Ctrl+C للإيقاف\n")
 
     last_history_sync  = 0
+    last_full_history_sync = 0
     last_settings_sync = 0
     last_candles_sync  = 0
     _grx_seed_done     = False  # push_grx_settings مرة وحدة فقط عند الإقلاع
@@ -1056,8 +1057,22 @@ def main():
 
             history = []
             if now - last_history_sync > 3:
-                history = get_recent_history(days=30)
+                # صفقات اليوم فقط — خفيف وسريع
+                history = get_recent_history(days=1, limit=50)
                 last_history_sync = now
+            # full sync كل دقيقة — يضمن وجود كل الهستوري القديم في الباكند
+            if now - last_full_history_sync > 60:
+                full_h = get_recent_history(days=30, limit=200)
+                if full_h:
+                    try:
+                        _session.post(f"{BACKEND_URL}/api/update", json={
+                            "account": None, "positions": [], "pending_orders": [],
+                            "news_filter": {"blocked": False, "title": ""},
+                            "history": full_h, "timestamp": datetime.now().isoformat(),
+                        }, timeout=(5, 15))
+                    except Exception:
+                        pass
+                last_full_history_sync = now
                 # حفظ الـ history محلياً
                 save_local_history(history)
                 # snapshot للصفقات المغلقة الجديدة فقط
