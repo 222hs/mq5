@@ -413,14 +413,22 @@ int OnInit()
    trade.SetTypeFilling(ORDER_FILLING_IOC);
    WriteDefaultSettings();
    LoadSettings();
+   EventSetTimer(5);
    EALog("Init — "+EA_NAME+" v"+EA_VERSION);
    return INIT_SUCCEEDED;
   }
 
 void OnDeinit(const int reason)
   {
+   EventKillTimer();
    ObjectsDeleteAll(0, DASH_PREFIX);
    EALog("Deinit reason="+IntegerToString(reason));
+  }
+
+void OnTimer()
+  {
+   LoadSettings();
+   UpdateDashboard(CountBasket(), BasketProfit());
   }
 
 void OnTick()
