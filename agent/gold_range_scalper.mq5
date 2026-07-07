@@ -23,6 +23,9 @@ input int             MagicNumber   = 88888;
 #define ROW_H          16
 #define CLR_KEY        clrSilver
 #define CLR_VAL        clrWhite
+// SL أمان للـ probe = مضاعف الـ SL العادي × ATR — يتمدد تلقائياً مع التذبذب
+// (خفيف أو قوي) بدل رقم ثابت، وواسع بما يكفي إنه ما يقطع الانتظار قبل وقته
+#define PROBE_SAFETY_MULT 4.0
 
 CTrade trade;
 
@@ -378,6 +381,33 @@ void CalcTPSL(int signal, double lot, double &tp, double &sl)
    EALog("ATR="+DoubleToString(atrVal,2)+" TP="+DoubleToString(tp,2)+" SL="+DoubleToString(sl,2));
   }
 
+// ── SL أمان فقط للـ probe (بدون TP) — القرار الحقيقي وقتي بعد
+//    ProbeBars شمعة، مو بضرب مستوى سعر. يتمدد مع ATR فيصلح للتذبذب
+//    الخفيف والقوي بدون ما يقطع فترة الانتظار مبكراً ─────────────
+void CalcProbeSL(int signal, double &sl)
+  {
+   int hATR = iATR(_Symbol, PERIOD_M1, 14);
+   double atr[];
+   ArraySetAsSeries(atr, true);
+   double atrVal = 5.0; // fallback
+   if(hATR != INVALID_HANDLE && CopyBuffer(hATR, 0, 1, 1, atr) == 1)
+      atrVal = atr[0];
+   IndicatorRelease(hATR);
+
+   double pip   = SymbolInfoDouble(_Symbol, SYMBOL_POINT) * 10;
+   double slPts = (PROBE_SAFETY_MULT * g_slMult * atrVal) / pip;
+
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+
+   if(signal == 1) // BUY
+      sl = NormalizeDouble(bid - slPts * pip, _Digits);
+   else            // SELL
+      sl = NormalizeDouble(ask + slPts * pip, _Digits);
+
+   EALog("PROBE SAFETY-SL ATR="+DoubleToString(atrVal,2)+" SL="+DoubleToString(sl,2));
+  }
+
 // ── فتح السلة الكاملة بعد تأكيد الـ probe ──────────────────────
 void OpenBasket(int signal, double lot)
   {
@@ -412,9 +442,23 @@ void CheckProbe()
    // تأكد أن الصفقة لا تزال مفتوحة
    if(!PositionSelectByTicket(g_probeTicket))
      {
-      // أُغلقت من الخارج — أعد الضبط
-      g_probeTicket = 0;
-      g_probeDir    = 0;
+      // أُغلقت من الخارج (غالباً SL الأمان) — سجّل النتيجة الفعلية بدل الصمت
+      double closedNet = 0;
+      if(HistorySelectByPosition(g_probeTicket))
+        {
+         int total = HistoryDealsTotal();
+         for(int i = 0; i < total; i++)
+           {
+            ulong dTicket = HistoryDealGetTicket(i);
+            closedNet += HistoryDealGetDouble(dTicket, DEAL_PROFIT)
+                       + HistoryDealGetDouble(dTicket, DEAL_SWAP)
+                       + HistoryDealGetDouble(dTicket, DEAL_COMMISSION);
+           }
+        }
+      EALog("PROBE SAFETY-STOP net=$"+DoubleToString(closedNet,2)+" — أُغلق قبل انتهاء الانتظار");
+      g_probeTicket  = 0;
+      g_probeDir     = 0;
+      g_cooldownLeft = g_cooldownBars;
       return;
      }
 
@@ -463,19 +507,19 @@ void TryEntry()
    g_lastDir       = dir;
    g_lastSignalDir = signal;
 
-   // افتح صفقة تجريبية صغيرة مع TP/SL
+   // افتح صفقة تجريبية صغيرة بـ SL أمان فقط (بدون TP)
    double pLot = NormLot(g_probeLot);
-   double tp = 0, sl = 0;
-   CalcTPSL(signal, pLot, tp, sl);
+   double sl = 0;
+   CalcProbeSL(signal, sl); // SL أمان واسع فقط — بدون TP، القرار وقتي لا سعري
    bool ok = false;
    if(signal == 1)
-      ok = trade.Buy (pLot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_ASK), sl, tp, "GRX_PROBE");
+      ok = trade.Buy (pLot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_ASK), sl, 0, "GRX_PROBE");
    else
-      ok = trade.Sell(pLot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_BID), sl, tp, "GRX_PROBE");
+      ok = trade.Sell(pLot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_BID), sl, 0, "GRX_PROBE");
 
    if(ok)
      {
-      g_probeTicket   = trade.ResultDeal();
+      g_probeTicket   = trade.ResultOrder(); // رقم الأمر = رقم المركز عند الفتح (مو رقم الـ deal)
       g_probeDir      = signal;
       g_probeBarsLeft = g_probeBars;
       EALog("PROBE "+dir+" lot="+DoubleToString(pLot,2)+" — انتظار "+IntegerToString(g_probeBars)+" شمعات");
