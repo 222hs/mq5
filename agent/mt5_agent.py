@@ -944,6 +944,7 @@ def main():
     last_history_sync  = 0
     last_settings_sync = 0
     last_candles_sync  = 0
+    _grx_seed_done     = False  # push_grx_settings مرة وحدة فقط عند الإقلاع
     last_news_sync     = 0
     news_status        = {"blocked": False, "title": ""}
 
@@ -962,7 +963,9 @@ def main():
                 if btc_active:
                     sync_btc_settings()
                 sync_hedge_settings()    # Hedge settings — دائماً
-                push_grx_settings()      # رفع الإعدادات المحلية (seed فقط لو backend فارغ)
+                if not _grx_seed_done:   # مرة وحدة عند الإقلاع — لو Railway صفّر القاعدة
+                    push_grx_settings()
+                    _grx_seed_done = True
                 sync_grx_settings()      # سحب إعدادات GRX من backend → GRX_Settings.json
                 last_settings_sync = now
 
