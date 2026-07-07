@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//|                                         GoldHedgeScalper v1.05  |
+//|                                         GoldHedgeScalper v1.06  |
 //|          Scalping + Hedging Basket — Separate from GoldScalperX  |
 //+------------------------------------------------------------------+
 #property copyright "GHS"
@@ -546,17 +546,8 @@ void TryEntry(int currentBasket)
    bool bullBar = (c[1] > o[1]) && (body >= 0.35*atr1) && (body/range >= 0.30);
    bool bearBar = (c[1] < o[1]) && (body >= 0.35*atr1) && (body/range >= 0.30);
 
-   // if basket is open, only add in SAME direction as basket
-   if(currentBasket > 0)
-     {
-      int dir = BasketDirection(); // 1=buy basket, -1=sell basket
-      if(dir == 1  && !bullBar) return; // basket is buy, wait for bull candle
-      if(dir == -1 && !bearBar) return; // basket is sell, wait for bear candle
-     }
-   else
-     {
-      if(!bullBar && !bearBar) return; // no basket — need signal to open
-     }
+   // need a candle signal in either direction
+   if(!bullBar && !bearBar) return;
 
    // dynamic lot: scale with candle strength (body / ATR), capped at 3x baseLot
    double candleStrength = MathMin(body / (atr1 + 1e-10), 3.0); // 0..3
@@ -565,7 +556,7 @@ void TryEntry(int currentBasket)
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    string tag = currentBasket > 0 ? "GHX_ADD" : "GHX_ENTRY";
 
-   if(bullBar || (currentBasket > 0 && BasketDirection() == 1))
+   if(bullBar)
      {
       if(trade.Buy(lot, _Symbol, ask, 0, 0, tag))
          EALog("BUY_"+tag+" #"+IntegerToString(currentBasket+1)+" lot="+DoubleToString(lot,2));
