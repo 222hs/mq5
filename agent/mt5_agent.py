@@ -776,10 +776,13 @@ def sync_grx_settings():
     try:
         r = _session.get(f"{BACKEND_URL}/api/settings/grx", timeout=(5, 10))
         if r.status_code != 200:
+            print(f"⚠️ grx sync: HTTP {r.status_code}")
             return
         settings = r.json()
         new_hash = str(sorted(settings.items()))
+        t = datetime.now().strftime('%H:%M:%S')
         if new_hash == _last_grx_settings_hash:
+            print(f"[{t}] GRX sync — لا تغيير (BasketTP=${settings.get('BasketTP')} BaseLot={settings.get('BaseLot')})")
             return
         _last_grx_settings_hash = new_hash
 
@@ -789,15 +792,14 @@ def sync_grx_settings():
             json.dump(settings, f, separators=(',', ':'))
         os.replace(tmp, grx_file)
 
-        t = datetime.now().strftime('%H:%M:%S')
         print(f"\n{'='*55}")
-        print(f"📊 [{t}] إعدادات GRX جديدة:")
+        print(f"📊 [{t}] إعدادات GRX جديدة — كُتبت للملف:")
         print(f"   BaseLot={settings.get('BaseLot')}  BasketCount={settings.get('BasketCount')}  BasketTP=${settings.get('BasketTP')}")
         print(f"   MaxDD=${settings.get('MaxDrawdown')}  LotBoost={settings.get('LotBoost')}x")
-        print(f"   📝 GRX_Settings.json ✓")
+        print(f"   📁 {grx_file}")
         print(f"{'='*55}\n")
     except Exception as e:
-        print(f"⚠️ grx sync: {type(e).__name__}")
+        print(f"⚠️ grx sync: {type(e).__name__}: {e}")
 
 
 _last_hedge_settings_hash = None
