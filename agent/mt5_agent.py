@@ -218,19 +218,56 @@ def detect_gold_symbol():
     return "XAUUSD"
 
 
+def calc_ptd(rates, fast=5, slow=10):
+    """يحسب PTD (Pivot Trend Detector) — نفس منطق MQL5 تماماً"""
+    n = len(rates)
+    if n == 0:
+        return [], [], []
+    slow_line = [0.0] * n
+    fast_line = [0.0] * n
+    trend     = [0.0] * n
+    slow_line[0] = rates[0]["close"]
+    fast_line[0] = rates[0]["close"]
+    for i in range(1, n):
+        fs = max(0, i - fast + 1)
+        ss = max(0, i - slow + 1)
+        sl_high = max(r["high"] for r in rates[ss:i+1])
+        sl_low  = min(r["low"]  for r in rates[ss:i+1])
+        fl_high = max(r["high"] for r in rates[fs:i+1])
+        fl_low  = min(r["low"]  for r in rates[fs:i+1])
+        c = rates[i]["close"]
+        slow_line[i] = sl_low  if c > slow_line[i-1] else sl_high
+        fast_line[i] = fl_low  if c > fast_line[i-1] else fl_high
+        trend[i] = trend[i-1]
+        if c < slow_line[i] and c < fast_line[i]:
+            trend[i] = 1.0  # هابط
+        if c > slow_line[i] and c > fast_line[i]:
+            trend[i] = 0.0  # صاعد
+    return slow_line, fast_line, trend
+
+
 def get_candles(symbol="XAUUSD", timeframe=mt5.TIMEFRAME_M1, count=80):
-    """يجلب آخر N شمعة M1"""
+    """يجلب آخر N شمعة M1 مع PTD"""
     rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
     if rates is None:
         return []
+    rates_list = [
+        {"time": int(r["time"]), "open": float(r["open"]),
+         "high": float(r["high"]), "low": float(r["low"]), "close": float(r["close"])}
+        for r in rates
+    ]
+    slow_line, fast_line, trend = calc_ptd(rates_list)
     result = []
-    for r in rates:
+    for i, r in enumerate(rates_list):
         result.append({
-            "t": int(r["time"]),
-            "o": float(r["open"]),
-            "h": float(r["high"]),
-            "l": float(r["low"]),
-            "c": float(r["close"]),
+            "t":  r["time"],
+            "o":  r["open"],
+            "h":  r["high"],
+            "l":  r["low"],
+            "c":  r["close"],
+            "ps": round(slow_line[i], 5),
+            "pf": round(fast_line[i], 5),
+            "pt": int(trend[i]),
         })
     return result
 

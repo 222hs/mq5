@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.30';
+const DASH_VERSION = 'v3.31';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -880,7 +880,14 @@ export default function Dashboard() {
               const range=Math.max(hi-lo,0.1);
               const Y=v=>padT+((hi-v)/range)*(H-padT-padB);
               const Cx=i=>padL+i*cw+(cw-bodyW)/2;
+              const midX=i=>Cx(i)+bodyW/2;
               const pLabels=[0,0.25,0.5,0.75,1].map(f=>lo+f*range);
+              const hasPTD = last.some(c => c.ps != null);
+              // بناء polyline PTD
+              const ptdSlowPts = last.map((c,i) => c.ps!=null ? `${midX(i)},${Y(c.ps)}` : null).filter(Boolean).join(' ');
+              const ptdFastPts = last.map((c,i) => c.pf!=null ? `${midX(i)},${Y(c.pf)}` : null).filter(Boolean).join(' ');
+              const lastPTD = last[last.length-1];
+              const ptdUp = lastPTD?.pt === 0;
               return (
                 <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block',background:C.bg}}>
                   {pLabels.map((p,i)=>{
@@ -890,19 +897,34 @@ export default function Dashboard() {
                       <text x={W-padR+4} y={y+3} fontSize="8" fill={C.muted} fontFamily={C.mono}>{p.toFixed(2)}</text>
                     </g>;
                   })}
+                  {/* PTD fill between slow & fast */}
+                  {hasPTD && (() => {
+                    const validIdx = last.map((_,i)=>i).filter(i=>last[i].ps!=null&&last[i].pf!=null);
+                    if(validIdx.length<2) return null;
+                    const fwdPts = validIdx.map(i=>`${midX(i)},${Y(last[i].ps)}`).join(' ');
+                    const bwdPts = validIdx.slice().reverse().map(i=>`${midX(i)},${Y(last[i].pf)}`).join(' ');
+                    return <polygon points={`${fwdPts} ${bwdPts}`}
+                      fill={ptdUp ? 'rgba(0,255,65,0.07)' : 'rgba(255,69,96,0.07)'}/>;
+                  })()}
                   {last.map((c,i)=>{
                     const bull=c.c>=c.o;
                     const col=bull?C.neon:C.red;
-                    const midX=Cx(i)+bodyW/2;
+                    const mx=midX(i);
                     const bTop=Y(Math.max(c.o,c.c));
                     const bBot=Y(Math.min(c.o,c.c));
                     const bH=Math.max(1,bBot-bTop);
                     return <g key={c.t??i}>
-                      <line x1={midX} y1={Y(c.h)} x2={midX} y2={bTop} stroke={col} strokeWidth="1"/>
+                      <line x1={mx} y1={Y(c.h)} x2={mx} y2={bTop} stroke={col} strokeWidth="1"/>
                       <rect x={Cx(i)} y={bTop} width={bodyW} height={bH} fill={col}/>
-                      <line x1={midX} y1={bBot} x2={midX} y2={Y(c.l)} stroke={col} strokeWidth="1"/>
+                      <line x1={mx} y1={bBot} x2={mx} y2={Y(c.l)} stroke={col} strokeWidth="1"/>
                     </g>;
                   })}
+                  {/* PTD slow line */}
+                  {hasPTD && ptdSlowPts && <polyline points={ptdSlowPts} fill="none"
+                    stroke={ptdUp?C.neon:C.red} strokeWidth="1.5" strokeOpacity="0.9"/>}
+                  {/* PTD fast line (dotted) */}
+                  {hasPTD && ptdFastPts && <polyline points={ptdFastPts} fill="none"
+                    stroke={ptdUp?C.neon:C.red} strokeWidth="1" strokeDasharray="3 2" strokeOpacity="0.7"/>}
                   {positions.map((p,i)=>{
                     const y=Y(p.price_open);
                     if(y<padT||y>H-padB) return null;
@@ -919,6 +941,14 @@ export default function Dashboard() {
                       <text x={W-padR+3} y={y+4} fontSize="8" fill="#000" fontFamily={C.mono} fontWeight="900">{lc.c?.toFixed(2)}</text>
                     </g>;
                   })()}
+                  {/* PTD badge */}
+                  {hasPTD && <g>
+                    <rect x={padL} y={padT} width={44} height={14} rx="1"
+                      fill={ptdUp?'rgba(0,255,65,0.15)':'rgba(255,69,96,0.15)'}
+                      stroke={ptdUp?C.neon:C.red} strokeWidth="0.5"/>
+                    <text x={padL+4} y={padT+10} fontSize="8" fontWeight="bold" fontFamily="monospace"
+                      fill={ptdUp?C.neon:C.red}>PTD {ptdUp?'▲ UP':'▼ DN'}</text>
+                  </g>}
                 </svg>
               );
             })()}
