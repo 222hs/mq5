@@ -159,6 +159,16 @@ HEDGE_DEFAULT_SETTINGS = {
     "PartialPct":    50.0,
 }
 
+GRX_DEFAULT_SETTINGS = {
+    "BaseLot":     0.11,
+    "BasketCount": 5,
+    "BasketTP":    15.0,
+    "MaxDrawdown": 80.0,
+    "MaxSpread":   350,
+    "LotBoost":    2.0,
+    "BotRunning":  1,
+}
+
 
 # ---------- SQLite ----------
 def get_db():
@@ -245,6 +255,17 @@ def init_db():
         for k, v in HEDGE_DEFAULT_SETTINGS.items():
             conn.execute(
                 "INSERT OR IGNORE INTO hedge_settings (key, value) VALUES (?, ?)",
+                (k, str(v))
+            )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS grx_settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        for k, v in GRX_DEFAULT_SETTINGS.items():
+            conn.execute(
+                "INSERT OR IGNORE INTO grx_settings (key, value) VALUES (?, ?)",
                 (k, str(v))
             )
         # استعادة الإعدادات من الـ backup أولاً (يتجاوز الافتراضية)
@@ -1037,6 +1058,53 @@ def api_seed_btc_settings():
     except Exception:
         pass
     return jsonify({"status": "ok", "applied": True, "settings": get_btc_settings()})
+
+
+def get_grx_settings():
+    result = dict(GRX_DEFAULT_SETTINGS)
+    with get_db() as conn:
+        rows = conn.execute("SELECT key, value FROM grx_settings").fetchall()
+        for row in rows:
+            k, v = row["key"], row["value"]
+            if k in GRX_DEFAULT_SETTINGS:
+                try:
+                    result[k] = type(GRX_DEFAULT_SETTINGS[k])(v)
+                except Exception:
+                    result[k] = v
+    return result
+
+
+def save_grx_settings(new_settings):
+    with get_db() as conn:
+        for k, v in new_settings.items():
+            if k in GRX_DEFAULT_SETTINGS:
+                conn.execute(
+                    "INSERT INTO grx_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (k, str(v))
+                )
+        conn.commit()
+
+
+@app.route("/api/settings/grx", methods=["GET"])
+def api_get_grx_settings():
+    if not check_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify(get_grx_settings()), 200
+
+
+@app.route("/api/settings/grx", methods=["POST"])
+def api_save_grx_settings():
+    if not check_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True)
+    if not body:
+        return jsonify({"error": "No data"}), 400
+    save_grx_settings(body)
+    try:
+        socketio.emit("grx_settings", get_grx_settings())
+    except Exception:
+        pass
+    return jsonify({"status": "ok", "settings": get_grx_settings()})
 
 
 @app.route("/api/settings/hedge", methods=["GET"])

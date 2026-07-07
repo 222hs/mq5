@@ -747,6 +747,38 @@ def sync_settings():
             return
 
 
+_last_grx_settings_hash = None
+
+def sync_grx_settings():
+    """يسحب إعدادات GRX من الـ backend ويكتبها لـ GRX_Settings.json في MT5 Common."""
+    global _last_grx_settings_hash
+    try:
+        r = _session.get(f"{BACKEND_URL}/api/settings/grx", timeout=(5, 10))
+        if r.status_code != 200:
+            return
+        settings = r.json()
+        new_hash = str(sorted(settings.items()))
+        if new_hash == _last_grx_settings_hash:
+            return
+        _last_grx_settings_hash = new_hash
+
+        grx_file = os.path.join(_MT5_COMMON, "GRX_Settings.json")
+        tmp = grx_file + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(settings, f, separators=(',', ': '))
+        os.replace(tmp, grx_file)
+
+        t = datetime.now().strftime('%H:%M:%S')
+        print(f"\n{'='*55}")
+        print(f"📊 [{t}] إعدادات GRX جديدة:")
+        print(f"   BaseLot={settings.get('BaseLot')}  BasketCount={settings.get('BasketCount')}  BasketTP=${settings.get('BasketTP')}")
+        print(f"   MaxDD=${settings.get('MaxDrawdown')}  LotBoost={settings.get('LotBoost')}x")
+        print(f"   📝 GRX_Settings.json ✓")
+        print(f"{'='*55}\n")
+    except Exception as e:
+        print(f"⚠️ grx sync: {type(e).__name__}")
+
+
 _last_hedge_settings_hash = None
 
 def sync_hedge_settings():
@@ -904,6 +936,7 @@ def main():
                 if btc_active:
                     sync_btc_settings()
                 sync_hedge_settings()    # Hedge settings — دائماً
+                sync_grx_settings()      # GRX settings — دائماً
                 last_settings_sync = now
 
             tail_ea_logs()  # إرسال لوق EA الجديدة للداشبورد

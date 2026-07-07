@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.18';
+const DASH_VERSION = 'v3.19';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -100,6 +100,10 @@ export default function Dashboard() {
   const [busy, setBusy] = useState(false);
   const [hedgeSaveMsg, setHedgeSaveMsg] = useState('');
   const [hedgeBusy, setHedgeBusy] = useState(false);
+  const [grxSettingsDraft, setGrxSettingsDraft] = useState({});
+  const grxSettingsDirty = useRef(false);
+  const [grxSaveMsg, setGrxSaveMsg] = useState('');
+  const [grxBusy, setGrxBusy] = useState(false);
   const [candleData, setCandleData] = useState({ candles: [], sessions: {} });
   const [tradePopup, setTradePopup] = useState(null); // trade detail popup
   const [tradeSnapshot, setTradeSnapshot] = useState(null); // entry snapshot
@@ -215,6 +219,10 @@ export default function Dashboard() {
       hedgeSettingsDirty.current = false;
       setHedgeSettingsDraft({ ...s });
     });
+    socket.on('grx_settings', (s) => {
+      grxSettingsDirty.current = false;
+      setGrxSettingsDraft({ ...s });
+    });
     socket.on('log', (entry) => {
       setLogs(prev => {
         const next = [...prev, entry];
@@ -231,6 +239,7 @@ export default function Dashboard() {
       socket.off('settings');
       socket.off('btc_settings');
       socket.off('hedge_settings');
+      socket.off('grx_settings');
       socket.off('log');
       socket.off('log_history');
       socket.off('connect');
@@ -326,6 +335,26 @@ export default function Dashboard() {
     setTimeout(() => setSaveMsg(''), 2500);
   };
 
+  const saveGrxSingle = async (key, value) => {
+    setGrxBusy(true);
+    setGrxSaveMsg(`SAVING ${key}...`);
+    try {
+      const r = await fetch(`${API_URL}/api/settings/grx`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+        body: JSON.stringify({ ...grxSettingsDraft, [key]: value }),
+      });
+      if (r.ok) {
+        grxSettingsDirty.current = false;
+        const updated = await r.json();
+        if (updated.settings) setGrxSettingsDraft(updated.settings);
+      }
+      setGrxSaveMsg(r.ok ? `✓ ${key} SAVED` : 'ERROR');
+    } catch (e) { setGrxSaveMsg('ERROR'); }
+    setGrxBusy(false);
+    setTimeout(() => setGrxSaveMsg(''), 2500);
+  };
+
   const saveHedgeSingle = async (key, value) => {
     setHedgeBusy(true);
     setHedgeSaveMsg(`SAVING ${key}...`);
@@ -392,6 +421,10 @@ export default function Dashboard() {
     fetch(`${API_URL}/api/settings/hedge`, { headers: {'X-API-Key': API_KEY} })
       .then(r => r.ok ? r.json() : null)
       .then(s => { if(s) setHedgeSettingsDraft(s); })
+      .catch(()=>{});
+    fetch(`${API_URL}/api/settings/grx`, { headers: {'X-API-Key': API_KEY} })
+      .then(r => r.ok ? r.json() : null)
+      .then(s => { if(s) setGrxSettingsDraft(s); })
       .catch(()=>{});
   }, []);
 
@@ -1649,6 +1682,53 @@ export default function Dashboard() {
           </div>
           <div style={{marginTop:10, fontSize:9, color:C.muted, lineHeight:1.6}}>
             ⚡ منطق: دخول بزخم شمعة → إذا خسرت صفقة &gt; HEDGE DIST$ تفتح معاكسة بـ LOT×MULT → إغلاق الكل لما الربح الإجمالي &ge; BASKET TP$
+          </div>
+        </div>
+
+        {/* ═══ GRX BOT SETTINGS ═══════════════════════════════ */}
+        <div className="bcard" style={bCard()}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
+            <div style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#f0b429'}}>◆ GOLD RANGE SCALPER (GRX)</div>
+            <div style={{display:'flex', gap:10, alignItems:'center'}}>
+              {grxSaveMsg && <span style={{fontSize:9, color: grxSaveMsg.includes('ERROR')?C.red:'#f0b429', fontFamily:C.mono}}>{grxSaveMsg}</span>}
+              <div style={{fontSize:9, color:C.muted}}>GRX_Settings.json</div>
+            </div>
+          </div>
+          {/* BOT ON/OFF */}
+          <div style={{display:'flex', gap:10, alignItems:'center', marginBottom:12}}>
+            <div style={{fontSize:9, color:C.muted, letterSpacing:'1px'}}>BOT</div>
+            <button className="bbtn"
+              onClick={()=>{ const v=(grxSettingsDraft.BotRunning??1)===1?0:1; setGrxSettingsDraft(d=>({...d,BotRunning:v})); saveGrxSingle('BotRunning',v); }}
+              style={bBtn((grxSettingsDraft.BotRunning??1)===1,{padding:'5px 18px', borderColor:'#f0b429', color:(grxSettingsDraft.BotRunning??1)===1?'#000':'#f0b429'})}>
+              {(grxSettingsDraft.BotRunning??1)===1?'ON':'OFF'}
+            </button>
+          </div>
+          {/* fields */}
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))', gap:8}}>
+            {[
+              {k:'BaseLot',     label:'BASE LOT',      step:0.01, min:0.01},
+              {k:'BasketCount', label:'BASKET COUNT',  step:1,    min:1},
+              {k:'BasketTP',    label:'BASKET TP $',   step:1,    min:0.5},
+              {k:'LotBoost',    label:'LOT BOOST',     step:0.5,  min:1},
+              {k:'MaxDrawdown', label:'MAX DRAWDOWN $', step:5,   min:5},
+              {k:'MaxSpread',   label:'MAX SPREAD',    step:10,   min:10},
+            ].map(({k,label,step,min}) => (
+              <div key={k} style={{display:'flex',flexDirection:'column',gap:3}}>
+                <div style={bLabel({fontSize:9,color:'#f0b429'})}>{label}</div>
+                <div style={{display:'flex',gap:4}}>
+                  <input type="number" step={step} min={min}
+                    value={grxSettingsDraft[k]??''}
+                    onChange={e=>{grxSettingsDirty.current=true; setGrxSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}));}}
+                    style={{width:80,background:C.bg,border:`1px solid #f0b429`,color:C.ink,fontFamily:C.mono,fontSize:10,padding:'4px 6px',borderRadius:3}}
+                  />
+                  <button className="bbtn" onClick={()=>saveGrxSingle(k,grxSettingsDraft[k])} disabled={grxBusy}
+                    style={{fontSize:9,padding:'4px 8px',border:`1px solid #f0b429`,color:'#f0b429',background:'transparent',fontFamily:C.mono,cursor:'pointer'}}>✓</button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{marginTop:10, fontSize:9, color:C.muted, lineHeight:1.6}}>
+            ⚡ منطق: شمعة M1 قوية → يفتح BASKET COUNT صفقة بنفس الاتجاه → يغلق الكل عند ربح BASKET TP$
           </div>
         </div>
 
