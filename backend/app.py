@@ -161,6 +161,7 @@ HEDGE_DEFAULT_SETTINGS = {
 
 GRX_DEFAULT_SETTINGS = {
     "BaseLot":      0.11,
+    "RiskPct":      1.0,
     "BasketCount":  5,
     "MaxDrawdown":  80.0,
     "MaxSpread":    350,

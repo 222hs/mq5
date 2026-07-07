@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.24';
+const DASH_VERSION = 'v3.25';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -1729,7 +1729,8 @@ export default function Dashboard() {
           {/* fields */}
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))', gap:8}}>
             {[
-              {k:'BaseLot',      label:'BASE LOT',       step:0.01, min:0.01},
+              {k:'BaseLot',      label:'BASE LOT (يدوي)', step:0.01, min:0.01},
+              {k:'RiskPct',      label:'RISK % (تلقائي)',step:0.1,  min:0},
               {k:'BasketCount',  label:'BASKET COUNT',   step:1,    min:1},
               {k:'LotBoost',     label:'LOT BOOST',      step:0.5,  min:1},
               {k:'TPMult',       label:'TP × ATR',       step:0.5,  min:0.5},
@@ -1756,7 +1757,7 @@ export default function Dashboard() {
             ))}
           </div>
           <div style={{marginTop:10, fontSize:9, color:C.muted, lineHeight:1.6}}>
-            ⚡ منطق: شمعة M1 قوية → يفتح BASKET COUNT صفقة بنفس الاتجاه → يغلق الكل عند ربح BASKET TP$
+            ⚡ RISK%&gt;0 = لوت تلقائي (رصيد × RISK% ÷ BASKET COUNT) — RISK%=0 = استخدم BASE LOT يدوياً
           </div>
         </div>
 

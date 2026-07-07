@@ -28,6 +28,7 @@ CTrade trade;
 
 //--- settings (loaded from file every bar)
 double g_baseLot      = 0.11;
+double g_riskPct      = 1.0;   // % من الرصيد لكل سلة (0 = استخدم BaseLot)
 int    g_basketCount  = 5;
 double g_maxDrawdown  = 80.0;
 double g_maxSpread    = 350.0;
@@ -36,8 +37,8 @@ int    g_cooldownBars = 3;
 double g_adxMax       = 25.0;
 double g_probeLot     = 0.01;
 int    g_probeBars    = 3;
-double g_tpMult       = 1.5;   // TP = ATR × tpMult × lots
-double g_slMult       = 1.0;   // SL = ATR × slMult × lots
+double g_tpMult       = 1.5;   // TP = ATR × tpMult
+double g_slMult       = 1.0;   // SL = ATR × slMult
 bool   g_botRunning   = true;
 int    g_magic        = MagicNumber;
 string g_lastHash     = "";
@@ -77,7 +78,7 @@ void WriteDefaultSettings()
    if(fh != INVALID_HANDLE) { FileClose(fh); return; }
    fh = FileOpen(SETTINGS_FILE, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
    if(fh == INVALID_HANDLE) return;
-   string j = "{\"BaseLot\": 0.11, \"BasketCount\": 5, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"CooldownBars\": 3, \"ADXMax\": 25.0, \"ProbeLot\": 0.01, \"ProbeBars\": 3, \"TPMult\": 1.5, \"SLMult\": 1.0, \"BotRunning\": 1}";
+   string j = "{\"BaseLot\": 0.11, \"RiskPct\": 1.0, \"BasketCount\": 5, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"CooldownBars\": 3, \"ADXMax\": 25.0, \"ProbeLot\": 0.01, \"ProbeBars\": 3, \"TPMult\": 1.5, \"SLMult\": 1.0, \"BotRunning\": 1}";
    FileWriteString(fh, j);
    FileClose(fh);
   }
@@ -85,6 +86,7 @@ void WriteDefaultSettings()
 void LoadSettings()
   {
    double bLot  = ReadSetting("BaseLot",      0.11);
+   double rPct  = ReadSetting("RiskPct",      1.0);
    int    bCnt  = (int)ReadSetting("BasketCount",  5.0);
    double bTP   = ReadSetting("BasketTP",     15.0);
    double mDD   = ReadSetting("MaxDrawdown",  80.0);
@@ -98,7 +100,7 @@ void LoadSettings()
    double slM   = ReadSetting("SLMult",     1.0);
    bool   botOn = (ReadSetting("BotRunning", 1.0) > 0.5);
 
-   string hash = DoubleToString(bLot,3)+IntegerToString(bCnt)
+   string hash = DoubleToString(bLot,3)+DoubleToString(rPct,2)+IntegerToString(bCnt)
                + DoubleToString(bTP,2)+DoubleToString(mDD,1)
                + DoubleToString(mSprd,0)+DoubleToString(lBst,1)
                + IntegerToString(cool)+DoubleToString(adxMx,0)
@@ -108,6 +110,7 @@ void LoadSettings()
    g_lastHash = hash;
 
    g_baseLot      = MathMax(0.01, bLot);
+   g_riskPct      = MathMax(0.0,  rPct);
    g_basketCount  = MathMax(1,    bCnt);
    g_basketTP     = MathMax(0.5,  bTP);
    g_maxDrawdown  = MathMax(5.0,  mDD);
@@ -218,6 +221,44 @@ double NormLot(double lot)
    double maxL = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
    lot = MathFloor(lot / step) * step;
    return MathMax(minL, MathMin(maxL, lot));
+  }
+
+//===================================================================
+//  AUTO LOT — يحسب اللوت بناءً على الرصيد وعدد الصفقات
+//===================================================================
+
+double CalcAutoLot()
+  {
+   // لو RiskPct=0 استخدم BaseLot اليدوي
+   if(g_riskPct <= 0.0) return NormLot(g_baseLot);
+
+   double balance  = AccountInfoDouble(ACCOUNT_BALANCE);
+   double riskMoney = balance * g_riskPct / 100.0; // إجمالي المخاطرة بالدولار
+   double perTrade  = riskMoney / MathMax(1, g_basketCount); // مخاطرة كل صفقة
+
+   // احسب SL المتوقع بناءً على ATR
+   int hATR = iATR(_Symbol, PERIOD_M1, 14);
+   double atr[];
+   ArraySetAsSeries(atr, true);
+   double atrVal = 5.0 * _Point * 10; // fallback ~5 pips gold
+   if(hATR != INVALID_HANDLE && CopyBuffer(hATR, 0, 1, 1, atr) == 1)
+      atrVal = atr[0];
+   IndicatorRelease(hATR);
+
+   double slDist    = g_slMult * atrVal;           // مسافة SL بوحدة السعر
+   double tickVal   = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   double tickSize  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   if(tickSize <= 0 || tickVal <= 0) return NormLot(g_baseLot);
+
+   double slInTicks = slDist / tickSize;
+   double slValue   = slInTicks * tickVal;         // قيمة SL بالدولار لـ 1 لوت
+   if(slValue <= 0) return NormLot(g_baseLot);
+
+   double lot = perTrade / slValue;
+   EALog("AutoLot: bal="+DoubleToString(balance,0)+" risk%="+DoubleToString(g_riskPct,1)
+         +" perTrade=$"+DoubleToString(perTrade,2)+" SL=$"+DoubleToString(slValue,2)+"/lot"
+         +" → lot="+DoubleToString(lot,3));
+   return NormLot(lot);
   }
 
 //===================================================================
@@ -385,8 +426,7 @@ void CheckProbe()
      {
       // الـ probe رابح — افتح السلة الكاملة
       EALog("PROBE OK profit=$"+DoubleToString(probeProfit,2)+" — فتح السلة");
-      double lot = g_baseLot;
-      GetCandleSignal(lot); // لحساب اللوت فقط
+      double lot = CalcAutoLot();
       OpenBasket(g_probeDir, lot);
      }
    else
@@ -412,8 +452,8 @@ void TryEntry()
    long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    if(spread > g_maxSpread) return;
 
-   double lot = g_baseLot;
-   int signal = GetCandleSignal(lot);
+   double lot = 0;
+   int signal = GetCandleSignal(lot); // lot not used for probe — uses g_probeLot
    if(signal == 0) return;
 
    if(g_cooldownLeft > 0 && signal == g_lastSignalDir) return;
