@@ -85,6 +85,7 @@ latest_data = {
     "pattern_time": None,
 }
 _last_pattern_count = 0
+_logged_trade_tickets = set()   # tickets already pushed to live log
 
 DEFAULT_SETTINGS = {
     "LotSize":        0.5,
@@ -847,14 +848,18 @@ def update_data():
         if latest_data["account"]:
             save_account(latest_data["account"], now)
 
-        # لوج الصفقات الجديدة
+        # لوج الصفقات الجديدة فقط (تجاهل المكررة)
         if history_payload:
             for t in (history_payload if isinstance(history_payload, list) else [history_payload]):
+                ticket = t.get("ticket", "")
+                if ticket in _logged_trade_tickets:
+                    continue
+                _logged_trade_tickets.add(ticket)
                 profit = t.get("profit", 0)
                 sym    = t.get("symbol", "")
                 tp     = t.get("type", "")
                 emoji  = "🟢" if profit > 0 else "🔴"
-                push_log("trade", f"{emoji} TRADE #{t.get('ticket','')} {tp} {sym} P&L: ${profit:.2f}")
+                push_log("trade", f"{emoji} TRADE #{ticket} {tp} {sym} P&L: ${profit:.2f}")
 
         pos = payload.get("positions", [])
 
