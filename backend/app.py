@@ -154,6 +154,8 @@ HEDGE_DEFAULT_SETTINGS = {
     "MaxLevels":     4,
     "MaxSpread":     350,
     "BotRunning":    1,
+    "TrailPct":      30.0,
+    "PartialPct":    50.0,
 }
 
 

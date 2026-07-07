@@ -38,10 +38,14 @@ int    g_maxLevels     = 4;
 double g_maxSpread     = 350.0;
 bool   g_botRunning    = true;
 int    g_magic         = MagicNumber;
+double g_trailPct      = 30.0;  // % pullback from peak → trail close (0=off)
+double g_partialPct    = 50.0;  // % of positions to close at first TP hit
 
 //=== STATE =========================================================
 datetime g_lastBar     = 0;
 string   g_lastHash    = "";
+double   g_peakProfit  = 0.0;   // highest net profit seen while in trail
+bool     g_partialDone = false; // partial close already executed this basket
 datetime g_lastEntryTime = 0;
 
 //=== OBJECTS =======================================================
@@ -89,19 +93,22 @@ double ReadSetting(const string name, const double fallback)
 //--- load / reload settings, return true if changed
 bool LoadSettings()
   {
-   double bLot  = ReadSetting("BaseLot",        0.01);
-   double mult  = ReadSetting("LotMultiplier",  1.5);
-   double hDist = ReadSetting("HedgeDistUSD",   3.0);
-   double bTP   = ReadSetting("BasketTP",        2.0);
-   double mDD   = ReadSetting("MaxDrawdown",    50.0);
-   int    mLvl  = (int)ReadSetting("MaxLevels",  4.0);
-   double mSprd = ReadSetting("MaxSpread",      350.0);
-   bool   botOn = (ReadSetting("BotRunning",    1.0) > 0.5);
+   double bLot   = ReadSetting("BaseLot",        0.01);
+   double mult   = ReadSetting("LotMultiplier",  1.5);
+   double hDist  = ReadSetting("HedgeDistUSD",   3.0);
+   double bTP    = ReadSetting("BasketTP",        2.0);
+   double mDD    = ReadSetting("MaxDrawdown",    50.0);
+   int    mLvl   = (int)ReadSetting("MaxLevels",  4.0);
+   double mSprd  = ReadSetting("MaxSpread",      350.0);
+   bool   botOn  = (ReadSetting("BotRunning",    1.0) > 0.5);
+   double trlPct = ReadSetting("TrailPct",       30.0);
+   double ptlPct = ReadSetting("PartialPct",     50.0);
 
    string hash = DoubleToString(bLot,3)+DoubleToString(mult,2)
                + DoubleToString(hDist,2)+DoubleToString(bTP,2)
                + DoubleToString(mDD,1)+IntegerToString(mLvl)
-               + DoubleToString(mSprd,0)+(botOn?"1":"0");
+               + DoubleToString(mSprd,0)+(botOn?"1":"0")
+               + DoubleToString(trlPct,1)+DoubleToString(ptlPct,1);
    bool changed = (hash != g_lastHash);
    g_lastHash = hash;
 
@@ -113,6 +120,8 @@ bool LoadSettings()
    g_maxLevels    = MathMax(1,    mLvl);
    g_maxSpread    = mSprd;
    g_botRunning   = botOn;
+   g_trailPct     = MathMax(0.0,  trlPct);
+   g_partialPct   = MathMax(0.0,  MathMin(100.0, ptlPct));
 
    if(changed)
       EALog("Settings loaded — BaseLot="+DoubleToString(g_baseLot,2)
@@ -120,7 +129,9 @@ bool LoadSettings()
             +" HedgeDist=$"+DoubleToString(g_hedgeDistUSD,2)
             +" BasketTP=$"+DoubleToString(g_basketTP,2)
             +" MaxDD=$"+DoubleToString(g_maxDrawdown,1)
-            +" MaxLvl="+IntegerToString(g_maxLevels));
+            +" MaxLvl="+IntegerToString(g_maxLevels)
+            +" Trail="+DoubleToString(g_trailPct,0)+"%"
+            +" Partial="+DoubleToString(g_partialPct,0)+"%");
    return changed;
   }
 
@@ -132,7 +143,7 @@ void WriteDefaultSettings()
    if(fh != INVALID_HANDLE) { FileClose(fh); return; }
    fh = FileOpen(SETTINGS_FILE, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
    if(fh == INVALID_HANDLE) return;
-   string j = "{\"BaseLot\": 0.01, \"LotMultiplier\": 1.5, \"HedgeDistUSD\": 3.0, \"BasketTP\": 2.0, \"MaxDrawdown\": 50.0, \"MaxLevels\": 4, \"MaxSpread\": 350, \"BotRunning\": 1}";
+   string j = "{\"BaseLot\": 0.01, \"LotMultiplier\": 1.5, \"HedgeDistUSD\": 3.0, \"BasketTP\": 2.0, \"MaxDrawdown\": 50.0, \"MaxLevels\": 4, \"MaxSpread\": 350, \"BotRunning\": 1, \"TrailPct\": 30.0, \"PartialPct\": 50.0}";
    FileWriteString(fh, j);
    FileClose(fh);
    EALog("Default settings written to "+SETTINGS_FILE);
@@ -224,6 +235,48 @@ void CloseBasket(string reason)
       trade.PositionClose(ticket, (ulong)(g_maxSpread*2));
       Sleep(100);
      }
+   g_peakProfit  = 0.0;
+   g_partialDone = false;
+  }
+
+// close the most profitable positions up to partialPct% of total count
+void PartialCloseBasket()
+  {
+   if(g_partialPct <= 0.0) return;
+   int total = CountBasket();
+   if(total <= 1) return;
+   int toClose = (int)MathRound(total * g_partialPct / 100.0);
+   if(toClose < 1) toClose = 1;
+   if(toClose >= total) toClose = total - 1; // always keep at least 1
+
+   // collect tickets with their profit, sort best first
+   ulong  tickets[];  ArrayResize(tickets,  total);
+   double profits[];  ArrayResize(profits,  total);
+   int cnt = 0;
+   for(int i = PositionsTotal()-1; i >= 0; i--)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != g_magic) continue;
+      tickets[cnt] = ticket;
+      profits[cnt] = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+      cnt++;
+     }
+   // simple selection sort — close highest profit first
+   for(int i = 0; i < toClose && i < cnt; i++)
+     {
+      int best = i;
+      for(int j = i+1; j < cnt; j++)
+         if(profits[j] > profits[best]) best = j;
+      double tmp = profits[i]; profits[i] = profits[best]; profits[best] = tmp;
+      ulong  ttmp = tickets[i]; tickets[i] = tickets[best]; tickets[best] = ttmp;
+      trade.PositionClose(tickets[i], (ulong)(g_maxSpread*2));
+      Sleep(100);
+     }
+   EALog("PARTIAL CLOSE "+IntegerToString(toClose)+"/"+IntegerToString(total)
+         +" positions ("+DoubleToString(g_partialPct,0)+"%)");
+   g_partialDone = true;
   }
 
 //--- total lots of entire basket
@@ -362,12 +415,45 @@ void OnTick()
    double net = BasketProfit();
    double dynTP = DynamicBasketTP();
 
-   // ── BASKET TP (dynamic) ───────────────────────────────────────
+   // ── BASKET TP + PARTIAL + TRAILING ───────────────────────────
    if(basket > 0 && net >= dynTP)
      {
-      CloseBasket("TP $"+DoubleToString(net,2)+" (target $"+DoubleToString(dynTP,2)+")");
-      UpdateDashboard(0, 0, 0);
-      return;
+      // Step 1 — Partial close (first time we hit TP)
+      if(!g_partialDone && g_partialPct > 0.0 && basket > 1)
+        {
+         PartialCloseBasket();
+         g_peakProfit = net; // start trailing from here
+         UpdateDashboard(CountBasket(), BasketProfit(), CountBasket(), DynamicBasketTP());
+         return;
+        }
+
+      // Step 2 — Trailing: update peak, check pullback
+      if(g_trailPct > 0.0)
+        {
+         if(net > g_peakProfit) g_peakProfit = net;
+         double pullback = (g_peakProfit > 0) ? (g_peakProfit - net) / g_peakProfit * 100.0 : 0;
+         if(pullback >= g_trailPct)
+           {
+            CloseBasket("TRAIL peak=$"+DoubleToString(g_peakProfit,2)
+                        +" pull="+DoubleToString(pullback,1)+"%");
+            UpdateDashboard(0, 0, 0);
+            return;
+           }
+         // still riding — update peak
+         if(net > g_peakProfit) g_peakProfit = net;
+        }
+      else
+        {
+         // no trailing configured — close immediately
+         CloseBasket("TP $"+DoubleToString(net,2)+" (target $"+DoubleToString(dynTP,2)+")");
+         UpdateDashboard(0, 0, 0);
+         return;
+        }
+     }
+   else if(basket == 0)
+     {
+      g_peakProfit  = 0.0;
+      g_partialDone = false;
      }
 
    // ── EMERGENCY CLOSE (max drawdown) ───────────────────────────
