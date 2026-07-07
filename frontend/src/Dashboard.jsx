@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.15';
+const DASH_VERSION = 'v3.16';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -98,6 +98,8 @@ export default function Dashboard() {
   const hedgeSettingsDirty = useRef(false);
   const [saveMsg, setSaveMsg] = useState('');
   const [busy, setBusy] = useState(false);
+  const [hedgeSaveMsg, setHedgeSaveMsg] = useState('');
+  const [hedgeBusy, setHedgeBusy] = useState(false);
   const [candleData, setCandleData] = useState({ candles: [], sessions: {} });
   const [tradePopup, setTradePopup] = useState(null); // trade detail popup
   const [tradeSnapshot, setTradeSnapshot] = useState(null); // entry snapshot
@@ -325,19 +327,23 @@ export default function Dashboard() {
   };
 
   const saveHedgeSingle = async (key, value) => {
-    setBusy(true);
-    setSaveMsg(`SAVING HEDGE ${key}...`);
+    setHedgeBusy(true);
+    setHedgeSaveMsg(`SAVING ${key}...`);
     try {
       const r = await fetch(`${API_URL}/api/settings/hedge`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
         body: JSON.stringify({ [key]: value }),
       });
-      if (r.ok) hedgeSettingsDirty.current = false;
-      setSaveMsg(r.ok ? `✓ HEDGE ${key} SAVED` : 'ERROR');
-    } catch (e) { setSaveMsg('ERROR'); }
-    setBusy(false);
-    setTimeout(() => setSaveMsg(''), 2500);
+      if (r.ok) {
+        hedgeSettingsDirty.current = false;
+        const updated = await r.json();
+        if (updated.settings) setHedgeSettingsDraft(updated.settings);
+      }
+      setHedgeSaveMsg(r.ok ? `✓ ${key} SAVED` : 'ERROR');
+    } catch (e) { setHedgeSaveMsg('ERROR'); }
+    setHedgeBusy(false);
+    setTimeout(() => setHedgeSaveMsg(''), 2500);
   };
 
   // ── presets ────────────────────────────────────────────────────
@@ -1600,7 +1606,10 @@ export default function Dashboard() {
         <div className="bcard" style={bCard()}>
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
             <div style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#ff4444'}}>⚔ GOLD HEDGE SCALPER</div>
-            <div style={{fontSize:9, color:C.muted}}>GSX_Hedge.json</div>
+            <div style={{display:'flex', gap:10, alignItems:'center'}}>
+              {hedgeSaveMsg && <span style={{fontSize:9, color: hedgeSaveMsg.includes('ERROR')?C.red:'#ff8888', fontFamily:C.mono}}>{hedgeSaveMsg}</span>}
+              <div style={{fontSize:9, color:C.muted}}>GSX_Hedge.json</div>
+            </div>
           </div>
           {/* BOT ON/OFF */}
           <div style={{display:'flex', gap:10, alignItems:'center', marginBottom:12}}>
@@ -1630,7 +1639,7 @@ export default function Dashboard() {
                     onChange={e=>{hedgeSettingsDirty.current=true; setHedgeSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}));}}
                     style={{width:80,background:C.bg,border:`1px solid #ff4444`,color:C.ink,fontFamily:C.mono,fontSize:10,padding:'4px 6px',borderRadius:3}}
                   />
-                  <button className="bbtn" onClick={()=>saveHedgeSingle(k,hedgeSettingsDraft[k])} disabled={busy}
+                  <button className="bbtn" onClick={()=>saveHedgeSingle(k,hedgeSettingsDraft[k])} disabled={hedgeBusy}
                     style={{fontSize:9,padding:'4px 8px',border:`1px solid #ff4444`,color:'#ff4444',background:'transparent',fontFamily:C.mono,cursor:'pointer'}}>✓</button>
                 </div>
               </div>
