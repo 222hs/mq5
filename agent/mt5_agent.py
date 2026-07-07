@@ -762,11 +762,11 @@ def sync_hedge_settings():
             return
         _last_hedge_settings_hash = new_hash
 
-        # اكتب الإعدادات كـ JSON لـ GSX_Hedge.json
+        # اكتب الإعدادات كـ JSON في سطر واحد — ReadSetting() في MQL5 تقرأ سطر واحد فقط
         hedge_file = os.path.join(_MT5_COMMON, "GSX_Hedge.json")
         tmp = hedge_file + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(settings, f, indent=2)
+            json.dump(settings, f, separators=(',', ': '))
         os.replace(tmp, hedge_file)
 
         t = datetime.now().strftime('%H:%M:%S')

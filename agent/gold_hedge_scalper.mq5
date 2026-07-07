@@ -124,20 +124,14 @@ bool LoadSettings()
 //--- write default settings file if missing
 void WriteDefaultSettings()
   {
+   // delete old multi-line file if exists, rewrite as single line
+   FileDelete(SETTINGS_FILE, FILE_COMMON);
    int fh = FileOpen(SETTINGS_FILE, FILE_READ|FILE_ANSI|FILE_COMMON);
    if(fh != INVALID_HANDLE) { FileClose(fh); return; } // already exists
    fh = FileOpen(SETTINGS_FILE, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
    if(fh == INVALID_HANDLE) return;
-   string j = "{\n";
-   j += "  \"BaseLot\": 0.01,\n";
-   j += "  \"LotMultiplier\": 1.5,\n";
-   j += "  \"HedgeDistUSD\": 3.0,\n";
-   j += "  \"BasketTP\": 2.0,\n";
-   j += "  \"MaxDrawdown\": 50.0,\n";
-   j += "  \"MaxLevels\": 4,\n";
-   j += "  \"MaxSpread\": 350,\n";
-   j += "  \"BotRunning\": 1\n";
-   j += "}\n";
+   // single line JSON — ReadSetting() reads one line at a time
+   string j = "{\"BaseLot\": 0.01, \"LotMultiplier\": 1.5, \"HedgeDistUSD\": 3.0, \"BasketTP\": 2.0, \"MaxDrawdown\": 50.0, \"MaxLevels\": 4, \"MaxSpread\": 350, \"BotRunning\": 1}";
    FileWriteString(fh, j);
    FileClose(fh);
    EALog("Default settings written to "+SETTINGS_FILE);
