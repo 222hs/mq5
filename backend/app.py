@@ -168,6 +168,7 @@ GRX_DEFAULT_SETTINGS = {
     "LotBoost":     2.0,
     "CooldownBars": 3,
     "ADXMax":       25.0,
+    "UseADXFilter": 1,
     "ProbeLot":     0.01,
     "ProbeBars":    3,
     "TPMult":       1.5,

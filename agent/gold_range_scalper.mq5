@@ -39,6 +39,7 @@ double g_maxSpread    = 350.0;
 double g_lotBoost     = 2.0;
 int    g_cooldownBars = 3;
 double g_adxMax       = 25.0;
+bool   g_useADXFilter = true;  // زر تشغيل/إيقاف فلتر الترند (ADX) من الداشبورد
 double g_probeLot     = 0.01;
 int    g_probeBars    = 3;
 double g_tpMult       = 1.5;   // TP = ATR × tpMult
@@ -82,7 +83,7 @@ void WriteDefaultSettings()
    if(fh != INVALID_HANDLE) { FileClose(fh); return; }
    fh = FileOpen(SETTINGS_FILE, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
    if(fh == INVALID_HANDLE) return;
-   string j = "{\"BaseLot\": 0.11, \"RiskPct\": 1.0, \"BasketCount\": 5, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"CooldownBars\": 3, \"ADXMax\": 25.0, \"ProbeLot\": 0.01, \"ProbeBars\": 3, \"TPMult\": 1.5, \"SLMult\": 1.0, \"BotRunning\": 1}";
+   string j = "{\"BaseLot\": 0.11, \"RiskPct\": 1.0, \"BasketCount\": 5, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"CooldownBars\": 3, \"ADXMax\": 25.0, \"UseADXFilter\": 1, \"ProbeLot\": 0.01, \"ProbeBars\": 3, \"TPMult\": 1.5, \"SLMult\": 1.0, \"BotRunning\": 1}";
    FileWriteString(fh, j);
    FileClose(fh);
   }
@@ -98,6 +99,7 @@ void LoadSettings()
    double lBst  = ReadSetting("LotBoost",     2.0);
    int    cool  = (int)ReadSetting("CooldownBars", 3.0);
    double adxMx = ReadSetting("ADXMax",      25.0);
+   bool   useAdx= (ReadSetting("UseADXFilter", 1.0) > 0.5);
    double pLot  = ReadSetting("ProbeLot",   0.01);
    int    pBars = (int)ReadSetting("ProbeBars", 3.0);
    double tpM   = ReadSetting("TPMult",     1.5);
@@ -107,7 +109,7 @@ void LoadSettings()
    string hash = DoubleToString(bLot,3)+DoubleToString(rPct,2)+IntegerToString(bCnt)
                + DoubleToString(bTP,2)+DoubleToString(mDD,1)
                + DoubleToString(mSprd,0)+DoubleToString(lBst,1)
-               + IntegerToString(cool)+DoubleToString(adxMx,0)
+               + IntegerToString(cool)+DoubleToString(adxMx,0)+(useAdx?"1":"0")
                + DoubleToString(pLot,2)+IntegerToString(pBars)
                + DoubleToString(tpM,1)+DoubleToString(slM,1)+(botOn?"1":"0");
    if(hash == g_lastHash) return;
@@ -122,6 +124,7 @@ void LoadSettings()
    g_lotBoost     = MathMax(1.0,  lBst);
    g_cooldownBars = MathMax(0,    cool);
    g_adxMax       = MathMax(10.0, adxMx);
+   g_useADXFilter = useAdx;
    g_probeLot     = MathMax(0.01, pLot);
    g_probeBars    = MathMax(1,    pBars);
    g_tpMult       = MathMax(0.5,  tpM);
@@ -133,7 +136,8 @@ void LoadSettings()
          +" BasketTP=$"+DoubleToString(g_basketTP,2)
          +" MaxDD=$"+DoubleToString(g_maxDrawdown,1)
          +" LotBoost="+DoubleToString(g_lotBoost,1)+"x"
-         +" Cooldown="+IntegerToString(g_cooldownBars)+"bars");
+         +" Cooldown="+IntegerToString(g_cooldownBars)+"bars"
+         +" ADXFilter="+(g_useADXFilter?"ON":"OFF"));
   }
 
 //===================================================================
@@ -274,16 +278,19 @@ double CalcAutoLot()
 int GetCandleSignal(double &outLot)
   {
    // ── ADX فلتر: لو ترند قوي ما ندخل ──────────────────────────
-   int hADX = iADX(_Symbol, PERIOD_M1, 14);
-   if(hADX == INVALID_HANDLE) { EALog("DIAG skip: ADX handle invalid"); return 0; }
-   double adx[];
-   ArraySetAsSeries(adx, true);
-   if(CopyBuffer(hADX, 0, 0, 2, adx) < 2) { IndicatorRelease(hADX); EALog("DIAG skip: ADX buffer not ready"); return 0; }
-   IndicatorRelease(hADX);
-   if(adx[1] > g_adxMax) // ترند قوي — تجنب الدخول
+   if(g_useADXFilter)
      {
-      EALog("DIAG skip: ADX="+DoubleToString(adx[1],1)+" > max="+DoubleToString(g_adxMax,1)+" (ترند قوي)");
-      return 0;
+      int hADX = iADX(_Symbol, PERIOD_M1, 14);
+      if(hADX == INVALID_HANDLE) { EALog("DIAG skip: ADX handle invalid"); return 0; }
+      double adx[];
+      ArraySetAsSeries(adx, true);
+      if(CopyBuffer(hADX, 0, 0, 2, adx) < 2) { IndicatorRelease(hADX); EALog("DIAG skip: ADX buffer not ready"); return 0; }
+      IndicatorRelease(hADX);
+      if(adx[1] > g_adxMax) // ترند قوي — تجنب الدخول
+        {
+         EALog("DIAG skip: ADX="+DoubleToString(adx[1],1)+" > max="+DoubleToString(g_adxMax,1)+" (ترند قوي)");
+         return 0;
+        }
      }
 
    // ── ATR ──────────────────────────────────────────────────────

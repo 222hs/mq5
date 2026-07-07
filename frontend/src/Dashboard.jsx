@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.26';
+const DASH_VERSION = 'v3.27';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -1724,12 +1724,18 @@ export default function Dashboard() {
             </div>
           </div>
           {/* BOT ON/OFF */}
-          <div style={{display:'flex', gap:10, alignItems:'center', marginBottom:12}}>
+          <div style={{display:'flex', gap:10, alignItems:'center', marginBottom:12, flexWrap:'wrap'}}>
             <div style={{fontSize:9, color:C.muted, letterSpacing:'1px'}}>BOT</div>
             <button className="bbtn"
               onClick={()=>{ const v=(grxSettingsDraft.BotRunning??1)===1?0:1; setGrxSettingsDraft(d=>({...d,BotRunning:v})); saveGrxSingle('BotRunning',v); }}
               style={bBtn((grxSettingsDraft.BotRunning??1)===1,{padding:'5px 18px', borderColor:'#f0b429', color:(grxSettingsDraft.BotRunning??1)===1?'#000':'#f0b429'})}>
               {(grxSettingsDraft.BotRunning??1)===1?'ON':'OFF'}
+            </button>
+            <div style={{fontSize:9, color:C.muted, letterSpacing:'1px', marginLeft:8}}>فلتر الترند (ADX)</div>
+            <button className="bbtn"
+              onClick={()=>{ const v=(grxSettingsDraft.UseADXFilter??1)===1?0:1; setGrxSettingsDraft(d=>({...d,UseADXFilter:v})); saveGrxSingle('UseADXFilter',v); }}
+              style={bBtn((grxSettingsDraft.UseADXFilter??1)===1,{padding:'5px 18px', borderColor:'#f0b429', color:(grxSettingsDraft.UseADXFilter??1)===1?'#000':'#f0b429'})}>
+              {(grxSettingsDraft.UseADXFilter??1)===1?'ON':'OFF'}
             </button>
           </div>
           {/* fields */}
