@@ -243,7 +243,7 @@ void UpdateDashboard(int basket, double net)
    DLabel("V_BOT",  g_botRunning?"ON":"OFF",        xV, y, g_botRunning?clrLime:clrRed); y += ROW_H;
    long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    DLabel("K_SPR",  "SPREAD",   x, y, CLR_KEY);
-   DLabel("V_SPR",  IntegerToString(spread),        xV, y, spread>MaxSpread?clrRed:clrGray);
+   DLabel("V_SPR",  IntegerToString(spread),        xV, y, spread>g_maxSpread?clrRed:clrGray);
    ChartRedraw(0);
   }
 
