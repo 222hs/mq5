@@ -8,12 +8,22 @@
 
 #include <Trade\Trade.mqh>
 
-//--- inputs (fallbacks only — real values come from settings file)
-input double          BaseLot       = 0.11;
-input int             MagicNumber   = 88888;
-input bool            UsePTDFilter  = true;   // فلتر اتجاه PTD
-input int             PTDFast       = 5;       // PTD فترة سريعة
-input int             PTDSlow       = 10;      // PTD فترة بطيئة
+//--- inputs — قابلة للتغيير من Expert Properties مباشرة
+input double   BaseLot        = 0.11;   // حجم اللوت الأساسي
+input double   RiskPct        = 1.0;    // نسبة المخاطرة % (0=تعطيل)
+input int      BasketCount    = 5;      // عدد صفقات الباسكت
+input double   BasketTP       = 15.0;   // TP الباسكت بالدولار
+input double   MaxDrawdown    = 80.0;   // أقصى خسارة قبل الإغلاق
+input double   MaxSpread      = 350.0;  // أقصى سبريد
+input double   LotBoost       = 2.0;    // مضاعف اللوت
+input int      CooldownBars   = 3;      // بارات الانتظار بعد الإغلاق
+input double   ADXMax         = 25.0;   // حد ADX (فلتر الترند)
+input bool     UseADXFilter   = true;   // تفعيل فلتر ADX
+input double   SLMult         = 1.0;    // مضاعف SL الأمان
+input int      MagicNumber    = 88888;  // Magic Number
+input bool     UsePTDFilter   = true;   // فلتر اتجاه PTD
+input int      PTDFast        = 5;      // PTD فترة سريعة
+input int      PTDSlow        = 10;     // PTD فترة بطيئة
 
 //--- EA identity
 #define EA_NAME        "GoldRangeX"
@@ -90,17 +100,17 @@ void WriteDefaultSettings()
 
 void LoadSettings()
   {
-   double bLot  = ReadSetting("BaseLot",      0.11);
-   double rPct  = ReadSetting("RiskPct",      1.0);
-   int    bCnt  = (int)ReadSetting("BasketCount",  5.0);
-   double bTP   = ReadSetting("BasketTP",    15.0);
-   double mDD   = ReadSetting("MaxDrawdown", 80.0);
-   double mSprd = ReadSetting("MaxSpread",  350.0);
-   double lBst  = ReadSetting("LotBoost",    2.0);
-   int    cool  = (int)ReadSetting("CooldownBars", 3.0);
-   double adxMx = ReadSetting("ADXMax",     25.0);
-   bool   useAdx= (ReadSetting("UseADXFilter", 1.0) > 0.5);
-   double slM   = ReadSetting("SLMult",      1.0);
+   double bLot  = ReadSetting("BaseLot",      BaseLot);
+   double rPct  = ReadSetting("RiskPct",      RiskPct);
+   int    bCnt  = (int)ReadSetting("BasketCount",  (double)BasketCount);
+   double bTP   = ReadSetting("BasketTP",    BasketTP);
+   double mDD   = ReadSetting("MaxDrawdown", MaxDrawdown);
+   double mSprd = ReadSetting("MaxSpread",  MaxSpread);
+   double lBst  = ReadSetting("LotBoost",    LotBoost);
+   int    cool  = (int)ReadSetting("CooldownBars", (double)CooldownBars);
+   double adxMx = ReadSetting("ADXMax",     ADXMax);
+   bool   useAdx= (ReadSetting("UseADXFilter", UseADXFilter?1.0:0.0) > 0.5);
+   double slM   = ReadSetting("SLMult",      SLMult);
    bool   botOn = (ReadSetting("BotRunning", 1.0) > 0.5);
 
    string hash = DoubleToString(bLot,3)+DoubleToString(rPct,2)+IntegerToString(bCnt)
