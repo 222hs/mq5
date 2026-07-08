@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.42';
+const DASH_VERSION = 'v3.43';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -119,6 +119,7 @@ export default function Dashboard() {
   const [tradeSnapshot, setTradeSnapshot] = useState(null); // entry snapshot
   const seenTickets = useRef(null);
   const prevPositions = useRef(null);
+  const skipCloseDetect = useRef(true); // تجاهل أول payload بعد الاتصال
   const popupTimer = useRef(null);
   const [connState, setConnState] = useState('connecting');
   const socketRef = useRef(null);
@@ -213,22 +214,25 @@ export default function Dashboard() {
     });
     socketRef.current = socket;
 
-    socket.on('connect',    () => setConnState('connected'));
+    socket.on('connect',    () => { setConnState('connected'); skipCloseDetect.current = true; });
     socket.on('disconnect', () => setConnState('disconnected'));
     socket.on('connect_error', () => setConnState('connecting'));
 
     const handleDashboard = (d) => {
       const curPos = Array.isArray(d.positions) ? d.positions : [];
       let hadClose = false;
-      if (prevPositions.current !== null && prevPositions.current.length > 0) {
+      if (!skipCloseDetect.current && prevPositions.current !== null && prevPositions.current.length > 0) {
         const curTickets = new Set(curPos.map(p => p.ticket));
         const closed = prevPositions.current.filter(p => !curTickets.has(p.ticket));
         if (closed.length > 0) {
           hadClose = true;
           const totalNet = closed.reduce((sum, p) => sum + (p.profit || 0), 0);
-          // popup disabled
+          setPopup({ profit: totalNet, count: closed.length });
+          clearTimeout(popupTimer.current);
+          popupTimer.current = setTimeout(() => setPopup(null), 3500);
         }
       }
+      skipCloseDetect.current = false;
       prevPositions.current = curPos;
       if (hadClose) fetchHistory(false);
       const hist = Array.isArray(d.history) && d.history.length > 0
