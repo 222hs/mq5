@@ -247,21 +247,6 @@ def init_db():
                 value TEXT
             )
         """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS ml_features (
-                ticket      INTEGER PRIMARY KEY,
-                symbol      TEXT,
-                direction   TEXT,
-                hour        INTEGER,
-                day_of_week INTEGER,
-                rsi         REAL,
-                bb_pct      REAL,
-                spread      REAL,
-                magic       INTEGER,
-                open_time   TEXT,
-                result      INTEGER DEFAULT -1
-            )
-        """)
         # استعادة إعدادات BTC من الـ backup
         _btc_backup = os.path.join(_db_dir if _db_dir else ".", "btc_settings_backup.json")
         saved_btc = {}
@@ -1403,95 +1388,6 @@ def bot_control():
         pass
 
     return jsonify({"status": "ok", "BotRunning": 1 if action == "start" else 0})
-
-
-# ============================================================
-#  ML — جمع البيانات
-# ============================================================
-
-@app.route("/api/ml/features", methods=["POST"])
-def ml_save_features():
-    """يستقبل features لحظة الدخول من الـ Agent"""
-    if not check_api_key():
-        return jsonify({"error": "Unauthorized"}), 401
-    body = request.get_json(silent=True) or {}
-    ticket = body.get("ticket")
-    if not ticket:
-        return jsonify({"error": "ticket required"}), 400
-    try:
-        with get_db() as conn:
-            conn.execute("""
-                INSERT OR IGNORE INTO ml_features
-                (ticket, symbol, direction, hour, day_of_week, rsi, bb_pct, spread, magic, open_time)
-                VALUES (?,?,?,?,?,?,?,?,?,?)
-            """, (
-                ticket,
-                body.get("symbol", ""),
-                body.get("direction", ""),
-                body.get("hour", 0),
-                body.get("day_of_week", 0),
-                body.get("rsi", 50.0),
-                body.get("bb_pct", 0.5),
-                body.get("spread", 0.0),
-                body.get("magic", 0),
-                body.get("open_time", datetime.now().isoformat()),
-            ))
-            conn.commit()
-        return jsonify({"status": "ok"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/ml/link_results", methods=["POST"])
-def ml_link_results():
-    """يربط نتائج الصفقات المغلقة بـ features المحفوظة"""
-    if not check_api_key():
-        return jsonify({"error": "Unauthorized"}), 401
-    try:
-        with get_db() as conn:
-            rows = conn.execute(
-                "SELECT ticket FROM ml_features WHERE result = -1"
-            ).fetchall()
-            updated = 0
-            for row in rows:
-                tk = row[0]
-                h = conn.execute(
-                    "SELECT profit FROM trade_history WHERE ticket = ?", (tk,)
-                ).fetchone()
-                if h:
-                    result = 1 if h[0] > 0 else 0
-                    conn.execute(
-                        "UPDATE ml_features SET result = ? WHERE ticket = ?", (result, tk)
-                    )
-                    updated += 1
-            conn.commit()
-            labeled = conn.execute(
-                "SELECT COUNT(*) FROM ml_features WHERE result != -1"
-            ).fetchone()[0]
-        return jsonify({"status": "ok", "updated": updated, "total_labeled": labeled})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/ml/stats", methods=["GET"])
-def ml_stats():
-    """إحصائيات البيانات المجموعة"""
-    if not check_api_key():
-        return jsonify({"error": "Unauthorized"}), 401
-    try:
-        with get_db() as conn:
-            total   = conn.execute("SELECT COUNT(*) FROM ml_features").fetchone()[0]
-            labeled = conn.execute("SELECT COUNT(*) FROM ml_features WHERE result != -1").fetchone()[0]
-            wins    = conn.execute("SELECT COUNT(*) FROM ml_features WHERE result = 1").fetchone()[0]
-        return jsonify({
-            "total": total,
-            "labeled": labeled,
-            "wins": wins,
-            "losses": labeled - wins,
-            "ready_to_train": labeled >= 50,
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/history", methods=["GET"])
