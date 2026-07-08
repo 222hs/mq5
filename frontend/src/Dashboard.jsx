@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.45';
+const DASH_VERSION = 'v3.46';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -88,22 +88,8 @@ export default function Dashboard() {
   const [data, setData] = useState(null);
   const [now, setNow] = useState(new Date());
   const [popup, setPopup] = useState(null);
-  const [showSettings, setShowSettings] = useState(false);
-  const [settingsDraft, setSettingsDraft] = useState(null);
-  const settingsDirty = useRef(new Set());
-  const [btcSettings, setBtcSettings] = useState({});
-  const [btcSettingsDraft, setBtcSettingsDraft] = useState({});
-  const btcSettingsDirty = useRef(new Set());
-  const [hedgeSettingsDraft, setHedgeSettingsDraft] = useState({});
-  const hedgeSettingsDirty = useRef(new Set());
-  const [saveMsg, setSaveMsg] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [hedgeSaveMsg, setHedgeSaveMsg] = useState('');
-  const [hedgeBusy, setHedgeBusy] = useState(false);
   const [grxSettingsDraft, setGrxSettingsDraft] = useState({});
   const grxSettingsDirty = useRef(new Set());
-  // دمج إعدادات السيرفر مع أي حقول عُدّلت محلياً ولم تُحفظ بعد —
-  // يمنع أي POST لحقل واحد من دهس تعديلات حقول أخرى لم تُحفظ بعد
   const mergeKeepDirty = (server, dirtyRef, prevDraft) => {
     const merged = { ...server };
     dirtyRef.current.forEach((k) => {
@@ -161,11 +147,6 @@ export default function Dashboard() {
             ? d.history.slice().sort((a,b) => new Date(b.time) - new Date(a.time))
             : null;
           setData(prev => ({ ...d, history: hist || prev?.history || [] }));
-          if (d.settings) setSettingsDraft(prev => mergeKeepDirty(d.settings, settingsDirty, prev));
-          if (d.btc_settings) {
-            setBtcSettings({ ...d.btc_settings });
-            setBtcSettingsDraft(prev => mergeKeepDirty(d.btc_settings, btcSettingsDirty, prev));
-          }
           if (Array.isArray(d.candles) && d.candles.length > 0)
             setCandleData({ candles: d.candles, sessions: d.sessions || {} });
         }
@@ -247,23 +228,12 @@ export default function Dashboard() {
         ? d.history.slice().sort((a,b) => new Date(b.time) - new Date(a.time))
         : null;
       setData(prev => ({ ...d, history: histSorted || prev?.history || [] }));
-      if (d.settings) setSettingsDraft(prev => mergeKeepDirty(d.settings, settingsDirty, prev));
       if (Array.isArray(d.candles) && d.candles.length > 0)
         setCandleData({ candles: d.candles, sessions: d.sessions || {} });
     };
 
     socket.on('dashboard', handleDashboard);
     socket.on('candles', (d) => setCandleData(d));
-    socket.on('settings', (s) => {
-      setSettingsDraft(prev => mergeKeepDirty(s, settingsDirty, prev));
-    });
-    socket.on('btc_settings', (s) => {
-      setBtcSettings({ ...s });
-      setBtcSettingsDraft(prev => mergeKeepDirty(s, btcSettingsDirty, prev));
-    });
-    socket.on('hedge_settings', (s) => {
-      setHedgeSettingsDraft(prev => mergeKeepDirty(s, hedgeSettingsDirty, prev));
-    });
     socket.on('grx_settings', (s) => {
       setGrxSettingsDraft(prev => mergeKeepDirty(s, grxSettingsDirty, prev));
     });
@@ -283,9 +253,6 @@ export default function Dashboard() {
     return () => {
       socket.off('dashboard', handleDashboard);
       socket.off('candles');
-      socket.off('settings');
-      socket.off('btc_settings');
-      socket.off('hedge_settings');
       socket.off('grx_settings');
       socket.off('log');
       socket.off('log_history');
@@ -330,7 +297,7 @@ export default function Dashboard() {
   const openAnalysis = () => { setShowAnalysis(true); loadSnapshots(); };
 
   const botControl = async (action) => {
-    setBusy(true);
+    setGrxBusy(true);
     try {
       await fetch(`${API_URL}/api/bot/control`, {
         method: 'POST',
@@ -338,7 +305,7 @@ export default function Dashboard() {
         body: JSON.stringify({ action }),
       });
     } catch (e) {}
-    setBusy(false);
+    setGrxBusy(false);
   };
 
   const openTradeDetail = async (trade) => {
@@ -349,38 +316,6 @@ export default function Dashboard() {
       const r = await fetch(`${API_URL}/api/trade_snapshot/${trade.ticket}`, { headers: {'X-API-Key': API_KEY} });
       if (r.ok) setTradeSnapshot(await r.json());
     } catch (e) {}
-  };
-
-  const saveSingle = async (key, value) => {
-    setBusy(true);
-    setSaveMsg(`SAVING ${key}...`);
-    try {
-      const r = await fetch(`${API_URL}/api/settings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
-        body: JSON.stringify({ [key]: value }),
-      });
-      if (r.ok) settingsDirty.current.delete(key);
-      setSaveMsg(r.ok ? `✓ ${key} SAVED` : 'ERROR');
-    } catch (e) { setSaveMsg('ERROR'); }
-    setBusy(false);
-    setTimeout(() => setSaveMsg(''), 2500);
-  };
-
-  const saveBtcSingle = async (key, value) => {
-    setBusy(true);
-    setSaveMsg(`SAVING BTC ${key}...`);
-    try {
-      const r = await fetch(`${API_URL}/api/settings/btc`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
-        body: JSON.stringify({ [key]: value }),
-      });
-      if (r.ok) btcSettingsDirty.current.delete(key);
-      setSaveMsg(r.ok ? `✓ BTC ${key} SAVED` : 'ERROR');
-    } catch (e) { setSaveMsg('ERROR'); }
-    setBusy(false);
-    setTimeout(() => setSaveMsg(''), 2500);
   };
 
   const saveGrxSingle = async (key, value) => {
@@ -401,51 +336,6 @@ export default function Dashboard() {
     } catch (e) { setGrxSaveMsg('ERROR'); }
     setGrxBusy(false);
     setTimeout(() => setGrxSaveMsg(''), 2500);
-  };
-
-  const saveHedgeSingle = async (key, value) => {
-    setHedgeBusy(true);
-    setHedgeSaveMsg(`SAVING ${key}...`);
-    try {
-      const r = await fetch(`${API_URL}/api/settings/hedge`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
-        body: JSON.stringify({ [key]: value }),
-      });
-      if (r.ok) {
-        hedgeSettingsDirty.current.delete(key);
-        const updated = await r.json();
-        if (updated.settings) setHedgeSettingsDraft(prev => mergeKeepDirty(updated.settings, hedgeSettingsDirty, prev));
-      }
-      setHedgeSaveMsg(r.ok ? `✓ ${key} SAVED` : 'ERROR');
-    } catch (e) { setHedgeSaveMsg('ERROR'); }
-    setHedgeBusy(false);
-    setTimeout(() => setHedgeSaveMsg(''), 2500);
-  };
-
-  // ── presets ────────────────────────────────────────────────────
-  const HFT_PRESET  = { TP_USD:2, SL_USD:5, CooldownSecs:10, MaxPositions:10, UseH1Filter:0, MaxSpread:80  };
-  const NORM_PRESET = { TP_USD:4, SL_USD:10, CooldownSecs:60, MaxPositions:5,  UseH1Filter:1, MaxSpread:350 };
-
-  const applyPreset = async (preset, isBtc=false) => {
-    setBusy(true);
-    const url = isBtc ? `${API_URL}/api/settings/btc` : `${API_URL}/api/settings`;
-    const label = isBtc ? 'BTC' : 'GOLD';
-    setSaveMsg(`APPLYING ${label} PRESET...`);
-    try {
-      const r = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
-        body: JSON.stringify(preset),
-      });
-      if (r.ok) {
-        if (isBtc) setBtcSettingsDraft(d => ({ ...d, ...preset }));
-        else setSettingsDraft(d => ({ ...d, ...preset }));
-        setSaveMsg(`✓ ${label} PRESET APPLIED`);
-      } else { setSaveMsg('ERROR'); }
-    } catch(e) { setSaveMsg('ERROR'); }
-    setBusy(false);
-    setTimeout(() => setSaveMsg(''), 3000);
   };
 
   const [histLoading, setHistLoading] = useState(false);
@@ -489,42 +379,13 @@ export default function Dashboard() {
     return () => clearInterval(t);
   }, []);
 
-  // Pull hedge settings on mount
+  // Pull GRX settings on mount
   useEffect(() => {
-    fetch(`${API_URL}/api/settings/hedge`, { headers: {'X-API-Key': API_KEY} })
-      .then(r => r.ok ? r.json() : null)
-      .then(s => { if(s) setHedgeSettingsDraft(s); })
-      .catch(()=>{});
     fetch(`${API_URL}/api/settings/grx`, { headers: {'X-API-Key': API_KEY} })
       .then(r => r.ok ? r.json() : null)
       .then(s => { if(s) setGrxSettingsDraft(s); })
       .catch(()=>{});
   }, []);
-
-  const exportSettings = (isBtc=false) => {
-    const data = isBtc ? btcSettingsDraft : settingsDraft;
-    const name = isBtc ? 'btc_settings' : 'gold_settings';
-    const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `${name}_${new Date().toISOString().slice(0,10)}.json`; a.click();
-  };
-
-  const importSettings = (isBtc=false) => {
-    const input = document.createElement('input'); input.type='file'; input.accept='.json';
-    input.onchange = async e => {
-      const file = e.target.files[0]; if(!file) return;
-      try {
-        const text = await file.text();
-        const data = JSON.parse(text);
-        const url = isBtc ? `${API_URL}/api/settings/btc` : `${API_URL}/api/settings`;
-        const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json','X-API-Key':API_KEY}, body: JSON.stringify(data) });
-        if(r.ok) { if(isBtc) setBtcSettingsDraft(d=>({...d,...data})); else setSettingsDraft(d=>({...d,...data})); setSaveMsg('✓ IMPORTED'); }
-        else setSaveMsg('IMPORT ERROR');
-      } catch(err) { setSaveMsg('IMPORT ERROR'); }
-      setTimeout(()=>setSaveMsg(''),3000);
-    };
-    input.click();
-  };
 
   // ── symbol branding ────────────────────────────────────────────
   const symInfo = (sym='') => {
@@ -546,10 +407,8 @@ export default function Dashboard() {
   const account        = data?.account || null;
   const positions      = Array.isArray(data?.positions) ? data.positions : [];
   const pendingOrders  = Array.isArray(data?.pending_orders) ? data.pending_orders : [];
-  const newsFilter     = data?.news_filter || { blocked: false, title: '' };
   const history   = historyData.length > 0 ? historyData : (Array.isArray(data?.history) ? data.history : []);
   const stats     = data?.stats || { total_trades: 0, wins: 0, losses: 0, win_rate: 0, total_profit: 0 };
-  const settings  = data?.settings || {};
   const isOnline  = !!data?.is_online;
   const botRunning= !!data?.bot_running;
   const candles   = candleData.candles || [];
@@ -604,15 +463,13 @@ export default function Dashboard() {
   const patternAdvice = data?.pattern_advice || null;
   const patternTime   = data?.pattern_time   || null;
 
-  const settingKeys = ['LotSize','TP_USD','SL_USD','MaxSpread','MaxPositions','CooldownSecs','TrailUSD','MaxLossPerDay','MaxProfitPerDay','TradeHoursStart','TradeHoursEnd','RSIBuyMax','RSISellMin','BaseLot'];
-
   const pipeline = [
-    { n:'01', t:'SCAN',   s:'candle dir',            ok: botRunning },
-    { n:'02', t:'FILTER', s:`spread<${settings.MaxSpread??'--'}`, ok: botRunning },
-    { n:'03', t:'SIZE',   s:`lot ${settings.LotSize??'--'}`,      ok: botRunning },
-    { n:'04', t:'ENTRY',  s:'market ord',             ok: botRunning },
-    { n:'05', t:'MANAGE', s:'TP/SL mon',              ok: positions.length > 0, active: positions.length > 0 },
-    { n:'06', t:'CLOSE',  s:'settle',                 ok: !!lastTrade, last: lastProfit },
+    { n:'01', t:'HFT GRID', s:'BUY+SELL/bar',         ok: botRunning },
+    { n:'02', t:'RSI FILTER', s:'<30 sell / >70 buy', ok: botRunning },
+    { n:'03', t:'SPREAD',   s:`max ${grxSettingsDraft.MaxSpread??'--'}`, ok: botRunning },
+    { n:'04', t:'ENTRY',    s:`lot ${grxSettingsDraft.BaseLot??'--'}`, ok: botRunning },
+    { n:'05', t:'MONITOR',  s:`TP$${grxSettingsDraft.TradeTP??'--'} SL$${grxSettingsDraft.TradeSL??'--'}`, ok: positions.length > 0, active: positions.length > 0 },
+    { n:'06', t:'CLOSE',    s:'per-trade',             ok: !!lastTrade, last: lastProfit },
   ];
 
   return (
@@ -693,22 +550,10 @@ export default function Dashboard() {
           }}>
             WS: {connState==='connected'?'●':connState==='connecting'?'◌':'✕'} {connState.toUpperCase()}
           </div>
-          {newsFilter.blocked && (
-            <div style={{
-              fontFamily: C.mono, fontSize: 10, fontWeight: 'bold',
-              letterSpacing: '1px', padding: '3px 10px',
-              border: `2px solid ${C.red}`,
-              color: C.red, background: 'rgba(255,69,96,0.12)',
-              boxShadow: '0 0 8px rgba(255,69,96,0.4)',
-              animation: 'blink 1s infinite',
-            }}>
-              🚫 NEWS: {newsFilter.title}
-            </div>
-          )}
           <button
             className={botRunning ? 'bbtn-red' : 'bbtn'}
             onClick={() => botControl(botRunning?'stop':'start')}
-            disabled={busy}
+            disabled={grxBusy}
             style={bBtn(true, botRunning
               ? { background:C.red, color:'#000', border:'2px solid #ff0040', padding:'5px 14px', fontSize:11 }
               : { padding:'5px 14px', fontSize:11 })}
@@ -1075,32 +920,14 @@ export default function Dashboard() {
               <div style={bLabel({color:C.ink, marginBottom:8})}>&gt; SIGNAL FILTERS</div>
               <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
                 {[
-                  { label:'H1 BIAS', value: data?.h1_bias_up == null ? '--' : data.h1_bias_up ? '↑ BUY' : '↓ SELL',
-                    color: data?.h1_bias_up == null ? C.muted : data.h1_bias_up ? C.neon : C.red },
-                  { label:'RSI', value: data?.last_rsi != null ? `${data.last_rsi}` : '--',
-                    color: data?.last_rsi > 65 ? C.red : data?.last_rsi < 35 ? C.red : C.neon },
-                  { label:'SPREAD', value: (() => {
-                      const sp = data?.account?.spread || 0;
-                      const sl = settings.SL_USD || 0;
-                      const tickVal = data?.account?.tick_value || 0;
-                      const tickSz  = data?.account?.tick_size  || 1;
-                      const lot     = settings.LotSize || 0;
-                      const spCost  = tickVal > 0 ? (sp * tickSz * (tickVal / tickSz) * lot) : 0;
-                      const pct     = sl > 0 && spCost > 0 ? Math.round(spCost / sl * 100) : null;
-                      return pct != null ? `${Math.round(sp)} (${pct}%SL)` : `${Math.round(sp)}`;
-                    })(),
-                    color: (() => {
-                      const sp = data?.account?.spread || 0;
-                      const sl = settings.SL_USD || 0;
-                      const tickVal = data?.account?.tick_value || 0;
-                      const tickSz  = data?.account?.tick_size  || 1;
-                      const lot     = settings.LotSize || 0;
-                      const spCost  = tickVal > 0 ? (sp * tickSz * (tickVal / tickSz) * lot) : 0;
-                      const pct     = sl > 0 && spCost > 0 ? spCost / sl * 100 : 0;
-                      return pct > 30 ? C.red : pct > 15 ? C.yellow : C.muted;
-                    })() },
-                  { label:'NEWS', value: newsFilter.blocked ? '🚫 BLOCK' : '✓ CLEAR',
-                    color: newsFilter.blocked ? C.red : C.neon },
+                  { label:'RSI', value: data?.last_rsi != null ? `${Number(data.last_rsi).toFixed(1)}` : '--',
+                    color: data?.last_rsi > 70 ? C.red : data?.last_rsi < 30 ? C.red : C.neon },
+                  { label:'RSI RULE', value: data?.last_rsi > 70 ? 'SELL ONLY' : data?.last_rsi < 30 ? 'BUY ONLY' : 'FREE',
+                    color: data?.last_rsi > 70 ? C.yellow : data?.last_rsi < 30 ? C.yellow : C.neon },
+                  { label:'SPREAD', value: `${Math.round(data?.account?.spread || 0)}`,
+                    color: (data?.account?.spread || 0) > (grxSettingsDraft.MaxSpread || 350) ? C.red : C.muted },
+                  { label:'MAX SPREAD', value: `${grxSettingsDraft.MaxSpread ?? '--'}`,
+                    color: C.muted },
                 ].map(f => (
                   <div key={f.label} style={{flex:1, minWidth:60, textAlign:'center', padding:'6px 4px', background:C.faint}}>
                     <div style={{fontSize:8, color:C.muted, letterSpacing:'2px', marginBottom:2}}>{f.label}</div>
@@ -1133,15 +960,6 @@ export default function Dashboard() {
                 <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
                   <span style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#ff9900'}}>◆ PATTERN_AI</span>
                   {patternTime && <span style={{fontSize:9, color:C.muted}}>updated {new Date(patternTime).toLocaleTimeString()}</span>}
-                  {(settings.RSIBuyMax || settings.RSISellMin) && (
-                    <span title="Claude auto-adjusted RSI thresholds" style={{
-                      fontSize:9, fontFamily:C.mono, padding:'2px 7px',
-                      background:'rgba(255,153,0,0.12)', border:'1px solid rgba(255,153,0,0.4)',
-                      color:'#ff9900', borderRadius:2
-                    }}>
-                      RSI ≤{settings.RSIBuyMax??65} / ≥{settings.RSISellMin??35}
-                    </span>
-                  )}
                 </div>
                 <button className="bbtn"
                   style={{fontSize:9, padding:'4px 10px', letterSpacing:'1px',
@@ -1200,119 +1018,6 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Direction + Order Type */}
-            <div className="bcard" style={bCard()}>
-              {settingsDraft && (
-                <div style={{display:'flex', flexDirection:'column', gap:14}}>
-                  {/* Direction */}
-                  <div>
-                    <div style={bLabel({marginBottom:6, color:C.ink})}>&gt; DIRECTION FILTER</div>
-                    <div style={{display:'flex', flexDirection:'column', gap:6}}>
-                      <select
-                        value={settingsDraft.Direction??0}
-                        onChange={e=>setSettingsDraft(d=>({...d,Direction:Number(e.target.value)}))}
-                        style={{fontFamily:C.mono,fontSize:12,fontWeight:'bold',padding:'8px 10px',background:C.bg,border:C.border,color:C.ink,cursor:'pointer',letterSpacing:'1px'}}
-                      >
-                        <option value={0}>FREE (BUY + SELL)</option>
-                        <option value={1}>BUY ONLY ▲</option>
-                        <option value={-1}>SELL ONLY ▼</option>
-                      </select>
-                      <button className="bbtn" onClick={()=>saveSingle('Direction',settingsDraft.Direction??0)} disabled={busy} style={bBtn(true)}>SAVE DIRECTION</button>
-                    </div>
-                  </div>
-                  {/* Order Type */}
-                  <div style={{borderTop:C.border, paddingTop:12}}>
-                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:6}}>
-                      <div style={bLabel({color:C.ink})}>&gt; ORDER TYPE</div>
-                      <div style={{fontSize:9, fontWeight:'bold', letterSpacing:'1px',
-                        color: [C.neon,'dodgerblue',C.yellow,'#ff9900'][(settingsDraft?.OrderType??0)] || C.neon
-                      }}>
-                        ACTIVE: {['MARKET','LIMIT','STOP','BASKET'][(settingsDraft?.OrderType??0)]||'MARKET'}
-                      </div>
-                    </div>
-                    <div style={{display:'flex', flexDirection:'column', gap:6}}>
-                      <select
-                        value={settingsDraft?.OrderType??0}
-                        onChange={e=>{ settingsDirty.current.add('OrderType'); setSettingsDraft(d=>({...d,OrderType:Number(e.target.value)})); }}
-                        style={{fontFamily:C.mono,fontSize:12,fontWeight:'bold',padding:'8px 10px',background:C.bg,border:C.border,color:C.ink,cursor:'pointer',letterSpacing:'1px'}}
-                      >
-                        <option value={0}>⚡ MARKET — دخول فوري</option>
-                        <option value={1}>↩ LIMIT — ينتظر pullback</option>
-                        <option value={2}>🚀 STOP — كسر High/Low</option>
-                        <option value={3}>🎯 BASKET — 3 أوردرات دفعة</option>
-                      </select>
-                      <div style={{fontSize:9, color:C.muted, letterSpacing:'1px', lineHeight:1.5}}>
-                        {(settingsDraft?.OrderType??0)===0 && 'يفتح الصفقة فوراً بسعر السوق'}
-                        {(settingsDraft?.OrderType??0)===1 && 'يضع LIMIT عند close الشمعة · ينتظر رجوع السعر'}
-                        {(settingsDraft?.OrderType??0)===2 && 'يضع STOP فوق HIGH / تحت LOW · يدخل عند الكسر'}
-                        {(settingsDraft?.OrderType??0)===3 && 'MARKET + STOP + LIMIT دفعة واحدة · أسرع للحركات القوية'}
-                      </div>
-                      <button className="bbtn"
-                        onClick={()=>saveSingle('OrderType', settingsDraft?.OrderType??0)}
-                        disabled={busy}
-                        style={bBtn(true)}>
-                        {busy ? 'SAVING...' : 'SAVE ORDER TYPE'}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* LOT SIZE MODE */}
-                  <div style={{borderTop:C.border, paddingTop:12}}>
-                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
-                      <div style={bLabel({color:C.ink})}>&gt; LOT SIZE MODE</div>
-                      <div style={{
-                        fontSize:9, fontWeight:'bold', letterSpacing:'1px',
-                        padding:'2px 8px',
-                        border:`1px solid ${(settingsDraft?.RiskMode??0)===1?C.yellow:C.neon}`,
-                        color: (settingsDraft?.RiskMode??0)===1?C.yellow:C.neon,
-                      }}>
-                        {(settingsDraft?.RiskMode??0)===1?'DYNAMIC':'FIXED'}
-                      </div>
-                    </div>
-                    <div style={{display:'flex', gap:8, marginBottom:8}}>
-                      {[{v:0,label:'🔒 FIXED'},{v:1,label:'📈 DYNAMIC'}].map(opt=>(
-                        <button key={opt.v} className="bbtn"
-                          onClick={()=>{settingsDirty.current.add('RiskMode'); setSettingsDraft(d=>({...d,RiskMode:opt.v}));}}
-                          style={{...bBtn((settingsDraft?.RiskMode??0)===opt.v,{flex:1,fontSize:10,padding:'6px 4px'})}}>
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                    {(settingsDraft?.RiskMode??0)===1 && (
-                      <div style={{display:'flex', flexDirection:'column', gap:6}}>
-                        <div style={{display:'flex', alignItems:'center', gap:8}}>
-                          <div style={bLabel({color:C.muted})}>RISK PER TRADE</div>
-                          <div style={{fontSize:13, fontWeight:'bold', color:C.yellow, fontFamily:C.mono}}>
-                            {(settingsDraft?.RiskPercent??1).toFixed(1)}%
-                          </div>
-                        </div>
-                        <input type="range" min="0.1" max="5" step="0.1"
-                          value={settingsDraft?.RiskPercent??1}
-                          onChange={e=>{settingsDirty.current.add('RiskPercent'); setSettingsDraft(d=>({...d,RiskPercent:Number(e.target.value)}));}}
-                          style={{width:'100%', accentColor:C.yellow}}
-                        />
-                        <div style={{display:'flex', justifyContent:'space-between', fontSize:9, color:C.muted}}>
-                          <span>0.1% آمن</span><span>1% متوازن</span><span>5% خطر</span>
-                        </div>
-                        <div style={{fontSize:10, color:C.muted, lineHeight:1.5}}>
-                          لوت = (رصيدك × {(settingsDraft?.RiskPercent??1).toFixed(1)}%) ÷ SL$
-                        </div>
-                      </div>
-                    )}
-                    <button className="bbtn"
-                      onClick={()=>{
-                        saveSingle('RiskMode', settingsDraft?.RiskMode??0);
-                        if((settingsDraft?.RiskMode??0)===1)
-                          saveSingle('RiskPercent', settingsDraft?.RiskPercent??1);
-                      }}
-                      disabled={busy}
-                      style={bBtn(false,{marginTop:8,width:'100%',borderColor:C.yellow,color:C.yellow})}>
-                      {busy?'SAVING...':'SAVE LOT MODE'}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
         </div>
 
@@ -1419,413 +1124,36 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* ═══ SETTINGS ═══════════════════════════════════════ */}
-        <div className="bcard" style={bCard({marginBottom:'1.25rem'})}>
-          <div
-            onClick={()=>setShowSettings(s=>!s)}
-            style={{cursor:'pointer', fontSize:12, fontWeight:'bold', letterSpacing:'2px', userSelect:'none', display:'flex', alignItems:'center', gap:12, color:C.ink}}
-          >
-            &gt; SETTINGS {showSettings?'[-]':'[+]'}
-            {saveMsg && (
-              <span style={{
-                fontSize:10, fontWeight:'bold',
-                color: saveMsg.includes('ERROR')?C.red:C.neon,
-                letterSpacing:'2px',
-              }}>{saveMsg}</span>
-            )}
-          </div>
-          {showSettings && (
-            <div style={{display:'flex', gap:'1.25rem', marginTop:14, flexWrap:'wrap', alignItems:'flex-start'}}>
-              {/* ── GOLD SETTINGS PANEL ── */}
-              {settingsDraft && (
-                <div style={{flex:'1 1 340px', minWidth:300, background:C.bg, border:'1px solid rgba(255,204,0,0.4)', padding:'1rem'}}>
-                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
-                  <div style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#ffd700'}}>⚙ GOLD SETTINGS</div>
-                  <div style={{display:'flex', gap:6}}>
-                    <button className="bbtn" disabled={busy} onClick={()=>applyPreset(HFT_PRESET,false)}
-                      style={{fontSize:9,padding:'3px 10px',letterSpacing:'1px',border:'1px solid #ff6b35',color:'#ff6b35',background:'transparent',fontFamily:'monospace',cursor:'pointer'}}>
-                      ⚡ HFT
-                    </button>
-                    <button className="bbtn" disabled={busy} onClick={()=>applyPreset(NORM_PRESET,false)}
-                      style={{fontSize:9,padding:'3px 10px',letterSpacing:'1px',border:'1px solid #ffd700',color:'#ffd700',background:'transparent',fontFamily:'monospace',cursor:'pointer'}}>
-                      🔄 NORMAL
-                    </button>
-                    <button className="bbtn" onClick={()=>exportSettings(false)}
-                      style={{fontSize:9,padding:'3px 8px',letterSpacing:'1px',border:'1px solid #555',color:'#aaa',background:'transparent',fontFamily:'monospace',cursor:'pointer'}}
-                      title="تحميل الإعدادات كملف JSON">💾</button>
-                    <button className="bbtn" onClick={()=>importSettings(false)}
-                      style={{fontSize:9,padding:'3px 8px',letterSpacing:'1px',border:'1px solid #555',color:'#aaa',background:'transparent',fontFamily:'monospace',cursor:'pointer'}}
-                      title="تحميل إعدادات من ملف JSON">📂</button>
-                  </div>
-                </div>
-                  <div style={{display:'flex', gap:10, flexWrap:'wrap', alignItems:'flex-end'}}>
-                    {settingKeys.map(k=>(
-                      <div key={k} style={{display:'flex', flexDirection:'column', gap:4}}>
-                        <div style={bLabel({fontSize:9, color:C.yellow})}>{k}</div>
-                        <input
-                          type="number" step="any"
-                          value={settingsDraft[k]??''}
-                          onChange={e=>{settingsDirty.current.add(k);setSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}));}}
-                          style={{fontFamily:C.mono, fontSize:12, width:88, padding:'6px 8px', background:'#0d1117', border:'1px solid rgba(255,204,0,0.4)', color:C.neon}}
-                        />
-                        <button className="bbtn" onClick={()=>saveSingle(k,settingsDraft[k])} disabled={busy}
-                          style={bBtn(false,{fontSize:9,padding:'4px 6px',letterSpacing:'1px'})}>SAVE</button>
-                      </div>
-                    ))}
-                    {/* Gold Claude toggle */}
-                    <div style={{display:'flex', flexDirection:'column', gap:4}}>
-                      <div style={bLabel({fontSize:9, color:C.yellow})}>CLAUDE AI</div>
-                      <button className="bbtn"
-                        onClick={()=>{ const v=(settingsDraft.ClaudeEnabled??1)===1?0:1; setSettingsDraft(d=>({...d,ClaudeEnabled:v})); saveSingle('ClaudeEnabled',v); }}
-                        style={bBtn((settingsDraft.ClaudeEnabled??1)===1,{padding:'6px 14px'})}>
-                        {(settingsDraft.ClaudeEnabled??1)===1?'ON':'OFF'}
-                      </button>
-                    </div>
-                    {/* Gold BotRunning toggle */}
-                    <div style={{display:'flex', flexDirection:'column', gap:4}}>
-                      <div style={bLabel({fontSize:9, color:C.yellow})}>BOT ON/OFF</div>
-                      <button className="bbtn"
-                        onClick={()=>{ const v=(settingsDraft.BotRunning??1)===1?0:1; setSettingsDraft(d=>({...d,BotRunning:v})); saveSingle('BotRunning',v); }}
-                        style={bBtn((settingsDraft.BotRunning??1)===1,{padding:'6px 14px'})}>
-                        {(settingsDraft.BotRunning??1)===1?'ON':'OFF'}
-                      </button>
-                    </div>
-                    {/* Gold H1 Filter toggle */}
-                    <div style={{display:'flex', flexDirection:'column', gap:4}}>
-                      <div style={bLabel({fontSize:9, color:'#f0a500'})}>H1 BIAS FILTER</div>
-                      <button className="bbtn"
-                        onClick={()=>{ const v=(settingsDraft.UseH1Filter??1)===1?0:1; setSettingsDraft(d=>({...d,UseH1Filter:v})); saveSingle('UseH1Filter',v); }}
-                        style={bBtn((settingsDraft.UseH1Filter??1)===1,{padding:'6px 14px', borderColor:'#f0a500', color:(settingsDraft.UseH1Filter??1)===1?'#000':'#f0a500'})}>
-                        {(settingsDraft.UseH1Filter??1)===1?'ON':'OFF'}
-                      </button>
-                      <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>H1 EMA21</div>
-                    </div>
-                    {/* Gold RSI Filter toggle */}
-                    <div style={{display:'flex', flexDirection:'column', gap:4}}>
-                      <div style={bLabel({fontSize:9, color:'#f0a500'})}>RSI FILTER</div>
-                      <button className="bbtn"
-                        onClick={()=>{ const v=(settingsDraft.UseRSIFilter??1)===1?0:1; setSettingsDraft(d=>({...d,UseRSIFilter:v})); saveSingle('UseRSIFilter',v); }}
-                        style={bBtn((settingsDraft.UseRSIFilter??1)===1,{padding:'6px 14px', borderColor:'#f0a500', color:(settingsDraft.UseRSIFilter??1)===1?'#000':'#f0a500'})}>
-                        {(settingsDraft.UseRSIFilter??1)===1?'ON':'OFF'}
-                      </button>
-                      <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>RSI BUY/SELL</div>
-                    </div>
-                  </div>
-
-                  {/* ── STRATEGY SECTION ── */}
-                  <div style={{borderTop:'1px solid rgba(255,153,0,0.3)', paddingTop:12, marginTop:4}}>
-                    <div style={{fontSize:10, fontWeight:'bold', letterSpacing:'2px', color:'#ff9900', marginBottom:10}}>⚡ STRATEGY</div>
-                    <div style={{display:'flex', gap:6, marginBottom:10}}>
-                      {[
-                        {bit:1, label:'GRID',  sub:'مستويات'},
-                        {bit:2, label:'HEDGE', sub:'تحوط'},
-                        {bit:4, label:'SCALE', sub:'تضاعف'},
-                      ].map(s => {
-                        const active = ((settingsDraft.StrategyMode??0) & s.bit) !== 0;
-                        return (
-                          <button key={s.bit} className="bbtn"
-                            onClick={()=>{
-                              const v=(settingsDraft.StrategyMode??0)^s.bit;
-                              setSettingsDraft(d=>({...d,StrategyMode:v}));
-                              saveSingle('StrategyMode',v);
-                            }}
-                            style={{...bBtn(active,{flex:1,padding:'8px 4px',borderColor:'#ff9900',color:active?'#000':'#ff9900'})}}>
-                            <div style={{fontSize:10,fontWeight:'bold'}}>{s.label}</div>
-                            <div style={{fontSize:8,opacity:0.8}}>{s.sub}</div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {/* Grid params */}
-                    {((settingsDraft.StrategyMode??0) & 1) ? (
-                      <div style={{padding:'8px',background:C.faint,marginBottom:6}}>
-                        <div style={{fontSize:9,color:'#ff9900',letterSpacing:'2px',marginBottom:6}}>GRID — مستويات الدخول</div>
-                        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                          {[{k:'GridLevels',label:'LEVELS',step:'1'},{k:'GridStep',label:'STEP (pts)',step:'10'}].map(f=>(
-                            <div key={f.k} style={{display:'flex',flexDirection:'column',gap:3}}>
-                              <div style={bLabel({fontSize:8})}>{f.label}</div>
-                              <input type="number" step={f.step} value={settingsDraft[f.k]??''} onChange={e=>{settingsDirty.current.add(f.k);setSettingsDraft(d=>({...d,[f.k]:Number(e.target.value)}));}}
-                                style={{fontFamily:C.mono,fontSize:12,width:72,padding:'4px 6px',background:'#0d1117',border:'1px solid rgba(255,153,0,0.4)',color:'#ff9900'}}
-                              />
-                              <button className="bbtn" onClick={()=>saveSingle(f.k,settingsDraft[f.k])} disabled={busy}
-                                style={bBtn(false,{fontSize:8,padding:'3px 6px',borderColor:'rgba(255,153,0,0.5)',color:'#ff9900'})}>SAVE</button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    {/* Hedge params */}
-                    {((settingsDraft.StrategyMode??0) & 2) ? (
-                      <div style={{padding:'8px',background:C.faint,marginBottom:6}}>
-                        <div style={{fontSize:9,color:'#ff9900',letterSpacing:'2px',marginBottom:6}}>HEDGE — صفقة معاكسة</div>
-                        <div style={{display:'flex',gap:8}}>
-                          <div style={{display:'flex',flexDirection:'column',gap:3}}>
-                            <div style={bLabel({fontSize:8})}>HEDGE LOT ×</div>
-                            <input type="number" step="0.1" min="0.1" max="2" value={settingsDraft.HedgeLotMult??0.5} onChange={e=>{settingsDirty.current.add('HedgeLotMult');setSettingsDraft(d=>({...d,HedgeLotMult:Number(e.target.value)}));}}
-                              style={{fontFamily:C.mono,fontSize:12,width:72,padding:'4px 6px',background:'#0d1117',border:'1px solid rgba(255,153,0,0.4)',color:'#ff9900'}}
-                            />
-                            <button className="bbtn" onClick={()=>saveSingle('HedgeLotMult',settingsDraft.HedgeLotMult)} disabled={busy}
-                              style={bBtn(false,{fontSize:8,padding:'3px 6px',borderColor:'rgba(255,153,0,0.5)',color:'#ff9900'})}>SAVE</button>
-                          </div>
-                          <div style={{fontSize:9,color:C.muted,alignSelf:'center',lineHeight:1.5}}>
-                            مثال: 0.5 = نص اللوت<br/>في الاتجاه الثاني
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-                    {/* Scale params */}
-                    {((settingsDraft.StrategyMode??0) & 4) ? (
-                      <div style={{padding:'8px',background:C.faint,marginBottom:6}}>
-                        <div style={{fontSize:9,color:'#ff9900',letterSpacing:'2px',marginBottom:6}}>SCALE — تضاعف عند الخسارة</div>
-                        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                          {[{k:'ScaleStep',label:'STEP (pts)',step:'10'},{k:'ScaleMult',label:'LOT ×',step:'0.1'},{k:'MaxScales',label:'MAX',step:'1'}].map(f=>(
-                            <div key={f.k} style={{display:'flex',flexDirection:'column',gap:3}}>
-                              <div style={bLabel({fontSize:8})}>{f.label}</div>
-                              <input type="number" step={f.step} value={settingsDraft[f.k]??''} onChange={e=>{settingsDirty.current.add(f.k);setSettingsDraft(d=>({...d,[f.k]:Number(e.target.value)}));}}
-                                style={{fontFamily:C.mono,fontSize:12,width:72,padding:'4px 6px',background:'#0d1117',border:'1px solid rgba(255,153,0,0.4)',color:'#ff9900'}}
-                              />
-                              <button className="bbtn" onClick={()=>saveSingle(f.k,settingsDraft[f.k])} disabled={busy}
-                                style={bBtn(false,{fontSize:8,padding:'3px 6px',borderColor:'rgba(255,153,0,0.5)',color:'#ff9900'})}>SAVE</button>
-                            </div>
-                          ))}
-                        </div>
-                        <div style={{fontSize:8,color:C.red,marginTop:6,letterSpacing:'1px'}}>⚠ SCALE يزيد المخاطرة — استخدم بحذر</div>
-                      </div>
-                    ) : null}
-                    {(settingsDraft.StrategyMode??0)===0 && (
-                      <div style={{fontSize:9,color:C.muted,textAlign:'center',padding:'4px 0'}}>
-                        NORMAL MODE — اضغط استراتيجية لتفعيلها
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* ── BTC SETTINGS PANEL ── */}
-              <div style={{flex:'1 1 340px', minWidth:300, background:C.bg, border:'1px solid rgba(0,170,255,0.4)', padding:'1rem'}}>
-                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
-                  <div style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#00aaff'}}>₿ BTC SETTINGS</div>
-                  <div style={{display:'flex', gap:6}}>
-                    <button className="bbtn" disabled={busy} onClick={()=>applyPreset(HFT_PRESET,true)}
-                      style={{fontSize:9,padding:'3px 10px',letterSpacing:'1px',border:'1px solid #ff6b35',color:'#ff6b35',background:'transparent',fontFamily:'monospace',cursor:'pointer'}}>
-                      ⚡ HFT
-                    </button>
-                    <button className="bbtn" disabled={busy} onClick={()=>applyPreset(NORM_PRESET,true)}
-                      style={{fontSize:9,padding:'3px 10px',letterSpacing:'1px',border:'1px solid #00aaff',color:'#00aaff',background:'transparent',fontFamily:'monospace',cursor:'pointer'}}>
-                      🔄 NORMAL
-                    </button>
-                    <button className="bbtn" onClick={()=>exportSettings(true)}
-                      style={{fontSize:9,padding:'3px 8px',letterSpacing:'1px',border:'1px solid #555',color:'#aaa',background:'transparent',fontFamily:'monospace',cursor:'pointer'}}
-                      title="تحميل الإعدادات كملف JSON">💾</button>
-                    <button className="bbtn" onClick={()=>importSettings(true)}
-                      style={{fontSize:9,padding:'3px 8px',letterSpacing:'1px',border:'1px solid #555',color:'#aaa',background:'transparent',fontFamily:'monospace',cursor:'pointer'}}
-                      title="تحميل إعدادات من ملف JSON">📂</button>
-                  </div>
-                </div>
-                <div style={{display:'flex', gap:10, flexWrap:'wrap', alignItems:'flex-end'}}>
-                  {['LotSize','TP_USD','SL_USD','MaxSpread','MaxPositions','CooldownSecs','MaxLossPerDay','MaxProfitPerDay','TradeHoursStart','TradeHoursEnd','RSIBuyMax','RSISellMin'].map(k=>(
-                    <div key={k} style={{display:'flex', flexDirection:'column', gap:4}}>
-                      <div style={bLabel({fontSize:9, color:'#00aaff'})}>{k}</div>
-                      <input
-                        type="number" step="any"
-                        value={btcSettingsDraft[k]??''}
-                        onChange={e=>{btcSettingsDirty.current.add(k);setBtcSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}));}}
-                        style={{fontFamily:C.mono, fontSize:12, width:88, padding:'6px 8px', background:'#0d1117', border:'1px solid rgba(0,170,255,0.4)', color:'#00aaff'}}
-                      />
-                      <button className="bbtn" onClick={()=>saveBtcSingle(k,btcSettingsDraft[k])} disabled={busy}
-                        style={bBtn(false,{fontSize:9,padding:'4px 6px',letterSpacing:'1px',borderColor:'rgba(0,170,255,0.5)',color:'#00aaff'})}>SAVE</button>
-                    </div>
-                  ))}
-                  {/* BTC BotRunning toggle */}
-                  <div style={{display:'flex', flexDirection:'column', gap:4}}>
-                    <div style={bLabel({fontSize:9, color:'#00aaff'})}>BOT ON/OFF</div>
-                    <button className="bbtn"
-                      onClick={()=>{ const v=(btcSettingsDraft.BotRunning??1)===1?0:1; setBtcSettingsDraft(d=>({...d,BotRunning:v})); saveBtcSingle('BotRunning',v); }}
-                      style={bBtn((btcSettingsDraft.BotRunning??1)===1,{padding:'6px 14px', borderColor:'#00aaff', color:(btcSettingsDraft.BotRunning??1)===1?'#000':'#00aaff'})}>
-                      {(btcSettingsDraft.BotRunning??1)===1?'ON':'OFF'}
-                    </button>
-                  </div>
-                  {/* BTC H1 Filter toggle */}
-                  <div style={{display:'flex', flexDirection:'column', gap:4}}>
-                    <div style={bLabel({fontSize:9, color:'#f0a500'})}>H1 BIAS FILTER</div>
-                    <button className="bbtn"
-                      onClick={()=>{ const v=(btcSettingsDraft.UseH1Filter??1)===1?0:1; setBtcSettingsDraft(d=>({...d,UseH1Filter:v})); saveBtcSingle('UseH1Filter',v); }}
-                      style={bBtn((btcSettingsDraft.UseH1Filter??1)===1,{padding:'6px 14px', borderColor:'#f0a500', color:(btcSettingsDraft.UseH1Filter??1)===1?'#000':'#f0a500'})}>
-                      {(btcSettingsDraft.UseH1Filter??1)===1?'ON':'OFF'}
-                    </button>
-                    <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>H1 EMA21</div>
-                  </div>
-                  {/* BTC RSI Filter toggle */}
-                  <div style={{display:'flex', flexDirection:'column', gap:4}}>
-                    <div style={bLabel({fontSize:9, color:'#f0a500'})}>RSI FILTER</div>
-                    <button className="bbtn"
-                      onClick={()=>{ const v=(btcSettingsDraft.UseRSIFilter??1)===1?0:1; setBtcSettingsDraft(d=>({...d,UseRSIFilter:v})); saveBtcSingle('UseRSIFilter',v); }}
-                      style={bBtn((btcSettingsDraft.UseRSIFilter??1)===1,{padding:'6px 14px', borderColor:'#f0a500', color:(btcSettingsDraft.UseRSIFilter??1)===1?'#000':'#f0a500'})}>
-                      {(btcSettingsDraft.UseRSIFilter??1)===1?'ON':'OFF'}
-                    </button>
-                    <div style={{fontSize:8, color:C.muted, textAlign:'center'}}>RSI BUY/SELL</div>
-                  </div>
-                </div>
-                {/* BTC LOT SIZE MODE */}
-                <div style={{borderTop:'1px solid rgba(0,170,255,0.3)', marginTop:12, paddingTop:12}}>
-                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
-                    <div style={bLabel({color:'#00aaff'})}>&gt; LOT SIZE MODE</div>
-                    <div style={{
-                      fontSize:9, fontWeight:'bold', letterSpacing:'1px',
-                      padding:'2px 8px',
-                      border:`1px solid ${(btcSettingsDraft?.RiskMode??0)===1?C.yellow:'#00aaff'}`,
-                      color: (btcSettingsDraft?.RiskMode??0)===1?C.yellow:'#00aaff',
-                    }}>
-                      {(btcSettingsDraft?.RiskMode??0)===1?'DYNAMIC':'FIXED'}
-                    </div>
-                  </div>
-                  <div style={{display:'flex', gap:8, marginBottom:8}}>
-                    {[{v:0,label:'🔒 FIXED'},{v:1,label:'📈 DYNAMIC'}].map(opt=>(
-                      <button key={opt.v} className="bbtn"
-                        onClick={()=>{btcSettingsDirty.current.add('RiskMode'); setBtcSettingsDraft(d=>({...d,RiskMode:opt.v}));}}
-                        style={{...bBtn((btcSettingsDraft?.RiskMode??0)===opt.v,{flex:1,fontSize:10,padding:'6px 4px',borderColor:'#00aaff',color:(btcSettingsDraft?.RiskMode??0)===opt.v?'#000':'#00aaff'})}}>
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                  {(btcSettingsDraft?.RiskMode??0)===0 && (
-                    <div style={{display:'flex', flexDirection:'column', gap:4, marginBottom:8}}>
-                      <div style={bLabel({fontSize:9, color:'#00aaff'})}>BASE LOT</div>
-                      <input
-                        type="number" step="0.01" min="0.01"
-                        value={btcSettingsDraft.BaseLot??0.01}
-                        onChange={e=>{btcSettingsDirty.current.add('BaseLot'); setBtcSettingsDraft(d=>({...d,BaseLot:e.target.value===''?'':Number(e.target.value)}));}}
-                        style={{fontFamily:C.mono, fontSize:12, width:88, padding:'6px 8px', background:'#0d1117', border:'1px solid rgba(0,170,255,0.4)', color:'#00aaff'}}
-                      />
-                    </div>
-                  )}
-                  {(btcSettingsDraft?.RiskMode??0)===1 && (
-                    <div style={{display:'flex', flexDirection:'column', gap:6, marginBottom:8}}>
-                      <div style={{display:'flex', alignItems:'center', gap:8}}>
-                        <div style={bLabel({color:C.muted})}>RISK PER TRADE</div>
-                        <div style={{fontSize:13, fontWeight:'bold', color:C.yellow, fontFamily:C.mono}}>
-                          {(btcSettingsDraft?.RiskPercent??1).toFixed(1)}%
-                        </div>
-                      </div>
-                      <input type="range" min="0.1" max="5" step="0.1"
-                        value={btcSettingsDraft?.RiskPercent??1}
-                        onChange={e=>{btcSettingsDirty.current.add('RiskPercent'); setBtcSettingsDraft(d=>({...d,RiskPercent:Number(e.target.value)}));}}
-                        style={{width:'100%', accentColor:C.yellow}}
-                      />
-                      <div style={{display:'flex', justifyContent:'space-between', fontSize:9, color:C.muted}}>
-                        <span>0.1% آمن</span><span>1% متوازن</span><span>5% خطر</span>
-                      </div>
-                      <div style={{fontSize:10, color:C.muted, lineHeight:1.5}}>
-                        لوت = (رصيدك × {(btcSettingsDraft?.RiskPercent??1).toFixed(1)}%) ÷ SL$
-                      </div>
-                    </div>
-                  )}
-                  <button className="bbtn"
-                    onClick={()=>{
-                      saveBtcSingle('RiskMode', btcSettingsDraft?.RiskMode??0);
-                      if((btcSettingsDraft?.RiskMode??0)===0)
-                        saveBtcSingle('BaseLot', btcSettingsDraft?.BaseLot??0.01);
-                      if((btcSettingsDraft?.RiskMode??0)===1)
-                        saveBtcSingle('RiskPercent', btcSettingsDraft?.RiskPercent??1);
-                    }}
-                    disabled={busy}
-                    style={bBtn(false,{marginTop:4,width:'100%',borderColor:'#00aaff',color:'#00aaff'})}>
-                    {busy?'SAVING...':'SAVE LOT MODE'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ═══ HEDGE BOT SETTINGS ════════════════════════════ */}
-        <div className="bcard" style={bCard()}>
-          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
-            <div style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#ff4444'}}>⚔ GOLD HEDGE SCALPER</div>
-            <div style={{display:'flex', gap:10, alignItems:'center'}}>
-              {hedgeSaveMsg && <span style={{fontSize:9, color: hedgeSaveMsg.includes('ERROR')?C.red:'#ff8888', fontFamily:C.mono}}>{hedgeSaveMsg}</span>}
-              <div style={{fontSize:9, color:C.muted}}>GSX_Hedge.json</div>
-            </div>
-          </div>
-          {/* BOT ON/OFF */}
-          <div style={{display:'flex', gap:10, alignItems:'center', marginBottom:12}}>
-            <div style={{fontSize:9, color:C.muted, letterSpacing:'1px'}}>BOT</div>
-            <button className="bbtn"
-              onClick={()=>{ const v=(hedgeSettingsDraft.BotRunning??1)===1?0:1; setHedgeSettingsDraft(d=>({...d,BotRunning:v})); saveHedgeSingle('BotRunning',v); }}
-              style={bBtn((hedgeSettingsDraft.BotRunning??1)===1,{padding:'5px 18px', borderColor:'#ff4444', color:(hedgeSettingsDraft.BotRunning??1)===1?'#000':'#ff4444'})}>
-              {(hedgeSettingsDraft.BotRunning??1)===1?'ON':'OFF'}
-            </button>
-          </div>
-          {/* fields */}
-          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))', gap:8}}>
-            {[
-              {k:'BaseLot',       label:'BASE LOT',         step:0.01, min:0.01},
-              {k:'LotMultiplier', label:'LOT MULTIPLIER',   step:0.1,  min:1.1},
-              {k:'HedgeDistUSD',  label:'HEDGE DIST $',     step:0.5,  min:0.5},
-              {k:'BasketTP',      label:'BASKET TP $',      step:0.5,  min:0.1},
-              {k:'TrailPct',      label:'TRAIL % (0=off)',  step:5,    min:0},
-              {k:'PartialPct',    label:'PARTIAL % (0=off)',step:10,   min:0},
-              {k:'MaxDrawdown',   label:'MAX DRAWDOWN $',   step:5,    min:5},
-              {k:'MaxLevels',     label:'MAX LEVELS',       step:1,    min:1},
-              {k:'MaxSpread',     label:'MAX SPREAD',       step:10,   min:10},
-            ].map(({k,label,step,min}) => (
-              <div key={k} style={{display:'flex',flexDirection:'column',gap:3}}>
-                <div style={bLabel({fontSize:9,color:'#ff8888'})}>{label}</div>
-                <div style={{display:'flex',gap:4}}>
-                  <input type="number" step={step} min={min}
-                    value={hedgeSettingsDraft[k]??''}
-                    onChange={e=>{hedgeSettingsDirty.current.add(k); setHedgeSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}));}}
-                    style={{width:80,background:C.bg,border:`1px solid #ff4444`,color:C.ink,fontFamily:C.mono,fontSize:10,padding:'4px 6px',borderRadius:3}}
-                  />
-                  <button className="bbtn" onClick={()=>saveHedgeSingle(k,hedgeSettingsDraft[k])} disabled={hedgeBusy}
-                    style={{fontSize:9,padding:'4px 8px',border:`1px solid #ff4444`,color:'#ff4444',background:'transparent',fontFamily:C.mono,cursor:'pointer'}}>✓</button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div style={{marginTop:10, fontSize:9, color:C.muted, lineHeight:1.6}}>
-            ⚡ منطق: دخول بزخم شمعة → إذا خسرت صفقة &gt; HEDGE DIST$ تفتح معاكسة بـ LOT×MULT → إغلاق الكل لما الربح الإجمالي &ge; BASKET TP$
-          </div>
-        </div>
-
         {/* ═══ GRX BOT SETTINGS ═══════════════════════════════ */}
-        <div className="bcard" style={bCard()}>
+        <div className="bcard" style={bCard({marginBottom:'1.25rem'})}>
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
-            <div style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#f0b429'}}>◆ GOLD RANGE SCALPER (GRX)</div>
+            <div style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#f0b429'}}>◆ GOLD HFT SCALPER v3.00 — GRX_Settings.json</div>
             <div style={{display:'flex', gap:10, alignItems:'center'}}>
               {grxSaveMsg && <span style={{fontSize:9, color: grxSaveMsg.includes('ERROR')?C.red:'#f0b429', fontFamily:C.mono}}>{grxSaveMsg}</span>}
-              <div style={{fontSize:9, color:C.muted}}>GRX_Settings.json</div>
             </div>
           </div>
           {/* BOT ON/OFF */}
-          <div style={{display:'flex', gap:10, alignItems:'center', marginBottom:12, flexWrap:'wrap'}}>
+          <div style={{display:'flex', gap:10, alignItems:'center', marginBottom:14, flexWrap:'wrap'}}>
             <div style={{fontSize:9, color:C.muted, letterSpacing:'1px'}}>BOT</div>
             <button className="bbtn"
               onClick={()=>{ const v=(grxSettingsDraft.BotRunning??1)===1?0:1; setGrxSettingsDraft(d=>({...d,BotRunning:v})); saveGrxSingle('BotRunning',v); }}
-              style={bBtn((grxSettingsDraft.BotRunning??1)===1,{padding:'5px 18px', borderColor:'#f0b429', color:(grxSettingsDraft.BotRunning??1)===1?'#000':'#f0b429'})}>
-              {(grxSettingsDraft.BotRunning??1)===1?'ON':'OFF'}
+              style={bBtn((grxSettingsDraft.BotRunning??1)===1,{padding:'5px 20px', borderColor:'#f0b429', color:(grxSettingsDraft.BotRunning??1)===1?'#000':'#f0b429'})}>
+              {(grxSettingsDraft.BotRunning??1)===1?'▶ ON':'■ OFF'}
             </button>
-            <div style={{fontSize:9, color:C.muted, letterSpacing:'1px', marginLeft:8}}>فلتر الترند (ADX)</div>
-            <button className="bbtn"
-              onClick={()=>{ const v=(grxSettingsDraft.UseADXFilter??1)===1?0:1; setGrxSettingsDraft(d=>({...d,UseADXFilter:v})); saveGrxSingle('UseADXFilter',v); }}
-              style={bBtn((grxSettingsDraft.UseADXFilter??1)===1,{padding:'5px 18px', borderColor:'#f0b429', color:(grxSettingsDraft.UseADXFilter??1)===1?'#000':'#f0b429'})}>
-              {(grxSettingsDraft.UseADXFilter??1)===1?'ON':'OFF'}
-            </button>
+            <div style={{fontSize:9, color:C.muted, marginLeft:12}}>
+              صفقات مفتوحة: <span style={{color:C.neon, fontWeight:'bold'}}>{positions.length}</span>
+              {' · '}MAX: <span style={{color:C.yellow}}>{grxSettingsDraft.MaxTrades??'--'}</span>
+            </div>
           </div>
           {/* fields */}
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))', gap:8}}>
             {[
-              {k:'BaseLot',      label:'BASE LOT (يدوي)', step:0.01, min:0.01},
-              {k:'RiskPct',      label:'RISK % (تلقائي)',step:0.1,  min:0},
-              {k:'BasketCount',    label:'BASKET COUNT',      step:1,   min:1},
-              {k:'BasketTP',       label:'BASKET TP $',       step:0.5, min:0.5},
-              {k:'ReverseStopUSD', label:'REVERSE STOP $ (0=off)', step:0.5, min:0},
-              {k:'LotBoost',       label:'LOT BOOST',         step:0.5, min:1},
-              {k:'SLMult',         label:'SL × ATR (أمان)',  step:0.5, min:0.1},
-              {k:'CooldownBars',   label:'COOLDOWN BARS',     step:1,   min:0},
-              {k:'ADXMax',         label:'ADX MAX (ترند)',    step:1,   min:10},
-              {k:'MaxDrawdown',    label:'MAX DRAWDOWN $',    step:5,   min:5},
-              {k:'MaxSpread',      label:'MAX SPREAD',        step:10,  min:10},
+              {k:'BaseLot',     label:'BASE LOT',       step:0.01, min:0.01},
+              {k:'TradeTP',     label:'TRADE TP $',     step:0.5,  min:0.5},
+              {k:'TradeSL',     label:'TRADE SL $',     step:0.5,  min:0.5},
+              {k:'MaxSpread',   label:'MAX SPREAD',     step:10,   min:10},
+              {k:'CooldownBars',label:'COOLDOWN BARS',  step:1,    min:0},
+              {k:'MaxTrades',   label:'MAX TRADES/DIR', step:1,    min:1},
             ].map(({k,label,step,min}) => (
               <div key={k} style={{display:'flex',flexDirection:'column',gap:3}}>
                 <div style={bLabel({fontSize:9,color:'#f0b429'})}>{label}</div>
@@ -1833,7 +1161,7 @@ export default function Dashboard() {
                   <input type="number" step={step} min={min}
                     value={grxSettingsDraft[k]??''}
                     onChange={e=>{grxSettingsDirty.current.add(k); setGrxSettingsDraft(d=>({...d,[k]:e.target.value===''?'':Number(e.target.value)}));}}
-                    style={{width:80,background:C.bg,border:`1px solid #f0b429`,color:C.ink,fontFamily:C.mono,fontSize:10,padding:'4px 6px',borderRadius:3}}
+                    style={{width:80,background:C.bg,border:`1px solid #f0b429`,color:C.ink,fontFamily:C.mono,fontSize:12,padding:'6px 8px'}}
                   />
                   <button className="bbtn" onClick={()=>saveGrxSingle(k,grxSettingsDraft[k])} disabled={grxBusy}
                     style={{fontSize:9,padding:'4px 8px',border:`1px solid #f0b429`,color:'#f0b429',background:'transparent',fontFamily:C.mono,cursor:'pointer'}}>✓</button>
@@ -1842,7 +1170,7 @@ export default function Dashboard() {
             ))}
           </div>
           <div style={{marginTop:10, fontSize:9, color:C.muted, lineHeight:1.6}}>
-            ⚡ RISK%&gt;0 = لوت تلقائي (رصيد × RISK% ÷ BASKET COUNT) — RISK%=0 = BASE LOT يدوي | الإغلاق بالدولار فقط (BASKET TP / MAX DD)
+            ⚡ HFT Grid — يفتح BUY+SELL كل بار M1 · كل صفقة مستقلة · تُسكر لما تربح TradeTP$ أو تخسر TradeSL$ · RSI فلتر ({"<"}30=BUY only, {">"}70=SELL only)
           </div>
         </div>
 
@@ -1975,8 +1303,8 @@ export default function Dashboard() {
         BAL {account?'$'+Number(account.balance??0).toLocaleString('en-US',{minimumFractionDigits:2}):'--'}
         {' · '}EQ {account?'$'+Number(account.equity??0).toLocaleString('en-US',{minimumFractionDigits:2}):'--'}
         {' · '}FREE {account?'$'+Number(account.margin_free??account.free_margin??0).toLocaleString('en-US',{minimumFractionDigits:2}):'--'}
-        {' · '}<span style={{color:C.yellow}}>TP ${settings.TP_USD??'--'} · SL ${settings.SL_USD??'--'}</span>
-        {' · '}MAX POS {settings.MaxPositions??'--'}
+        {' · '}<span style={{color:C.yellow}}>TP ${grxSettingsDraft.TradeTP??'--'} · SL ${grxSettingsDraft.TradeSL??'--'}</span>
+        {' · '}MAX {grxSettingsDraft.MaxTrades??'--'}/DIR
         {' · '}<span style={{color:isOnline?C.neon:C.red}}>{isOnline?'● LIVE':'○ STALE'}</span>
       </div>
 
