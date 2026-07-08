@@ -601,15 +601,11 @@ void OnTick()
    long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    if(spread > g_maxSpread) return;
 
-   int signal = GetCandleSignal(MathMax(g_buyLosses, g_sellLosses));
-   if(signal == 0) return;
-
-   // ── فتح سلة BUY لو إشارة صعود ─────────────────────────────────
-   if(signal == 1 && buyN == 0 && g_buyCooldown == 0)
+   // ── HFT Grid — يفتح الاثنين بالتوازي بدون شرط اتجاه ──────────
+   if(buyN == 0 && g_buyCooldown == 0)
       OpenBasket(1, g_magicBuy);
 
-   // ── فتح سلة SELL لو إشارة نزول ────────────────────────────────
-   if(signal == -1 && sellN == 0 && g_sellCooldown == 0)
+   if(sellN == 0 && g_sellCooldown == 0)
       OpenBasket(-1, g_magicSell);
   }
 //+------------------------------------------------------------------+
