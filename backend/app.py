@@ -436,9 +436,12 @@ def get_snapshots(limit=50):
 
 
 def get_history(limit=500):
+    from datetime import date
+    today = date.today().isoformat()  # "2026-07-08"
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM trade_history ORDER BY time DESC LIMIT ?", (limit,)
+            "SELECT * FROM trade_history WHERE time >= ? ORDER BY time DESC LIMIT ?",
+            (today, limit)
         ).fetchall()
         return [dict(r) for r in rows]
 
