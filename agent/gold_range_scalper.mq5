@@ -292,60 +292,43 @@ double NormLot(double lot)
 
 int GetCandleSignal(int losses)
   {
-   if(g_useADXFilter)
+   // ── 1. اقرأ آخر 5 شمعات مغلقة ─────────────────────────────────
+   double o[], c[];
+   ArraySetAsSeries(o, true);
+   ArraySetAsSeries(c, true);
+   if(CopyOpen (_Symbol, PERIOD_M1, 1, 5, o) < 5) return 0;
+   if(CopyClose(_Symbol, PERIOD_M1, 1, 5, c) < 5) return 0;
+
+   // ── 2. تحقق من 3 شمعات متتالية بنفس الاتجاه ──────────────────
+   // [0]=أحدث مغلقة، [1]=قبلها، [2]=قبل قبلها
+   bool bull3 = (c[0]>o[0]) && (c[1]>o[1]) && (c[2]>o[2]);
+   bool bear3 = (c[0]<o[0]) && (c[1]<o[1]) && (c[2]<o[2]);
+   if(!bull3 && !bear3)
+     { EALog("sig: لا 3 شمعات متتالية"); return 0; }
+
+   int rawSignal = bull3 ? 1 : -1;
+
+   // ── 3. تأكيد EMA5 فوق/تحت EMA20 ──────────────────────────────
+   int hFast = iMA(_Symbol, PERIOD_M1,  5, 0, MODE_EMA, PRICE_CLOSE);
+   int hSlow = iMA(_Symbol, PERIOD_M1, 20, 0, MODE_EMA, PRICE_CLOSE);
+   if(hFast == INVALID_HANDLE || hSlow == INVALID_HANDLE)
+     { IndicatorRelease(hFast); IndicatorRelease(hSlow); return 0; }
+   double fast[], slow[];
+   ArraySetAsSeries(fast, true);
+   ArraySetAsSeries(slow, true);
+   bool emaOk = false;
+   if(CopyBuffer(hFast, 0, 1, 1, fast) >= 1 &&
+      CopyBuffer(hSlow, 0, 1, 1, slow) >= 1)
      {
-      int hADX = iADX(_Symbol, PERIOD_M1, 14);
-      if(hADX == INVALID_HANDLE) return 0;
-      double adx[];
-      ArraySetAsSeries(adx, true);
-      if(CopyBuffer(hADX, 0, 0, 2, adx) < 2) { IndicatorRelease(hADX); return 0; }
-      IndicatorRelease(hADX);
-      if(adx[1] > g_adxMax)
-        { EALog("ADX skip: "+DoubleToString(adx[1],1)+" > "+DoubleToString(g_adxMax,1)); return 0; }
+      if(rawSignal ==  1 && fast[0] > slow[0]) emaOk = true;
+      if(rawSignal == -1 && fast[0] < slow[0]) emaOk = true;
+      if(!emaOk) EALog("sig: EMA يعاكس الإشارة (fast="+DoubleToString(fast[0],2)+" slow="+DoubleToString(slow[0],2)+")");
      }
+   IndicatorRelease(hFast);
+   IndicatorRelease(hSlow);
+   if(!emaOk) return 0;
 
-   int hATR = iATR(_Symbol, PERIOD_M1, 14);
-   if(hATR == INVALID_HANDLE) return 0;
-   double atr[];
-   ArraySetAsSeries(atr, true);
-   if(CopyBuffer(hATR, 0, 0, 3, atr) < 3) { IndicatorRelease(hATR); return 0; }
-   IndicatorRelease(hATR);
-
-   double o[], h[], l[], c[];
-   ArraySetAsSeries(o,true); ArraySetAsSeries(h,true);
-   ArraySetAsSeries(l,true); ArraySetAsSeries(c,true);
-   if(CopyOpen (_Symbol,PERIOD_M1,0,3,o)<3) return 0;
-   if(CopyHigh (_Symbol,PERIOD_M1,0,3,h)<3) return 0;
-   if(CopyLow  (_Symbol,PERIOD_M1,0,3,l)<3) return 0;
-   if(CopyClose(_Symbol,PERIOD_M1,0,3,c)<3) return 0;
-
-   double body  = MathAbs(c[1] - o[1]);
-   double range = h[1] - l[1] + 1e-10;
-   double atr1  = atr[1];
-
-   double minRatio = 0.30;
-   if(losses == 1)      minRatio = 0.45;
-   else if(losses == 2) minRatio = 0.55;
-   else if(losses >= 3) minRatio = 0.65;
-
-   if(body < 0.35*atr1 || body/range < minRatio) return 0;
-
-   int rawSignal = 0;
-   if(c[1] > o[1]) rawSignal =  1; // شمعة صعود → BUY
-   if(c[1] < o[1]) rawSignal = -1; // شمعة نزول → SELL
-   if(rawSignal == 0) return 0;
-
-   if(UsePTDFilter && g_hPTD != INVALID_HANDLE)
-     {
-      double ptdTrend[];
-      ArraySetAsSeries(ptdTrend, true);
-      if(CopyBuffer(g_hPTD, 6, 0, 2, ptdTrend) >= 2)
-        {
-         int trend = (int)ptdTrend[1];
-         if(trend == 0 && rawSignal == -1) { EALog("PTD block SELL"); return 0; }
-         if(trend == 1 && rawSignal ==  1) { EALog("PTD block BUY");  return 0; }
-        }
-     }
+   EALog("sig: ✅ "+(rawSignal==1?"BUY":"SELL")+" (3شمعات+EMA)");
    return rawSignal;
   }
 
