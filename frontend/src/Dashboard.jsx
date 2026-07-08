@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.41';
+const DASH_VERSION = 'v3.42';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -226,9 +226,7 @@ export default function Dashboard() {
         if (closed.length > 0) {
           hadClose = true;
           const totalNet = closed.reduce((sum, p) => sum + (p.profit || 0), 0);
-          setPopup({ profit: totalNet, count: closed.length });
-          clearTimeout(popupTimer.current);
-          popupTimer.current = setTimeout(() => setPopup(null), 3500);
+          // popup disabled
         }
       }
       prevPositions.current = curPos;
