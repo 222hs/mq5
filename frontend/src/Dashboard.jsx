@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.40';
+const DASH_VERSION = 'v3.41';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -1807,13 +1807,15 @@ export default function Dashboard() {
             {[
               {k:'BaseLot',      label:'BASE LOT (يدوي)', step:0.01, min:0.01},
               {k:'RiskPct',      label:'RISK % (تلقائي)',step:0.1,  min:0},
-              {k:'BasketCount',  label:'BASKET COUNT',   step:1,    min:1},
-              {k:'LotBoost',     label:'LOT BOOST',      step:0.5,  min:1},
-              {k:'SLMult',       label:'SL × ATR (أمان)',step:0.5,  min:0.1},
-              {k:'CooldownBars', label:'COOLDOWN BARS',  step:1,    min:0},
-              {k:'ADXMax',       label:'ADX MAX (ترند)', step:1,    min:10},
-              {k:'MaxDrawdown',  label:'MAX DRAWDOWN $', step:5,    min:5},
-              {k:'MaxSpread',    label:'MAX SPREAD',     step:10,   min:10},
+              {k:'BasketCount',    label:'BASKET COUNT',      step:1,   min:1},
+              {k:'BasketTP',       label:'BASKET TP $',       step:0.5, min:0.5},
+              {k:'ReverseStopUSD', label:'REVERSE STOP $ (0=off)', step:0.5, min:0},
+              {k:'LotBoost',       label:'LOT BOOST',         step:0.5, min:1},
+              {k:'SLMult',         label:'SL × ATR (أمان)',  step:0.5, min:0.1},
+              {k:'CooldownBars',   label:'COOLDOWN BARS',     step:1,   min:0},
+              {k:'ADXMax',         label:'ADX MAX (ترند)',    step:1,   min:10},
+              {k:'MaxDrawdown',    label:'MAX DRAWDOWN $',    step:5,   min:5},
+              {k:'MaxSpread',      label:'MAX SPREAD',        step:10,  min:10},
             ].map(({k,label,step,min}) => (
               <div key={k} style={{display:'flex',flexDirection:'column',gap:3}}>
                 <div style={bLabel({fontSize:9,color:'#f0b429'})}>{label}</div>

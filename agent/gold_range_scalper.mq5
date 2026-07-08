@@ -69,6 +69,7 @@ int      g_hPTD             = INVALID_HANDLE; // handle إنديكاتور PTD
 int      g_consecutiveWins  = 0;   // أرباح متتالية → يرفع الـ TP
 double   g_dynamicTP        = 0;   // الـ TP الديناميكي الفعلي
 int      g_pendingReverse   = 0;   // 1=BUY -1=SELL بعد إغلاق عكسي
+double   g_reverseStop     = 5.0; // ReverseStopUSD — محدّث من الملف
 
 //===================================================================
 //  SETTINGS FILE
@@ -95,7 +96,7 @@ void WriteDefaultSettings()
    if(fh != INVALID_HANDLE) { FileClose(fh); return; }
    fh = FileOpen(SETTINGS_FILE, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
    if(fh == INVALID_HANDLE) return;
-   string j = "{\"BaseLot\": 0.11, \"RiskPct\": 1.0, \"BasketCount\": 5, \"BasketTP\": 15.0, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"CooldownBars\": 3, \"ADXMax\": 25.0, \"UseADXFilter\": 1, \"SLMult\": 1.0, \"BotRunning\": 1}";
+   string j = "{\"BaseLot\": 0.11, \"RiskPct\": 1.0, \"BasketCount\": 5, \"BasketTP\": 15.0, \"MaxDrawdown\": 80.0, \"MaxSpread\": 350, \"LotBoost\": 2.0, \"CooldownBars\": 3, \"ADXMax\": 25.0, \"UseADXFilter\": 1, \"SLMult\": 1.0, \"ReverseStopUSD\": 5.0, \"BotRunning\": 1}";
    FileWriteString(fh, j);
    FileClose(fh);
   }
@@ -112,14 +113,15 @@ void LoadSettings()
    int    cool  = (int)ReadSetting("CooldownBars", (double)CooldownBars);
    double adxMx = ReadSetting("ADXMax",     ADXMax);
    bool   useAdx= (ReadSetting("UseADXFilter", UseADXFilter?1.0:0.0) > 0.5);
-   double slM   = ReadSetting("SLMult",      SLMult);
-   bool   botOn = (ReadSetting("BotRunning", 1.0) > 0.5);
+   double slM    = ReadSetting("SLMult",         SLMult);
+   double revStp = ReadSetting("ReverseStopUSD", ReverseStopUSD);
+   bool   botOn  = (ReadSetting("BotRunning", 1.0) > 0.5);
 
    string hash = DoubleToString(bLot,3)+DoubleToString(rPct,2)+IntegerToString(bCnt)
                + DoubleToString(bTP,2)+DoubleToString(mDD,1)
                + DoubleToString(mSprd,0)+DoubleToString(lBst,1)
                + IntegerToString(cool)+DoubleToString(adxMx,0)+(useAdx?"1":"0")
-               + DoubleToString(slM,1)+(botOn?"1":"0");
+               + DoubleToString(slM,1)+DoubleToString(revStp,2)+(botOn?"1":"0");
    if(hash == g_lastHash) return;
    g_lastHash = hash;
 
@@ -134,6 +136,7 @@ void LoadSettings()
    g_adxMax       = MathMax(10.0, adxMx);
    g_useADXFilter = useAdx;
    g_slMult       = MathMax(0.1,  slM);
+   g_reverseStop  = MathMax(0.0,  revStp);
    g_botRunning   = botOn;
 
    EALog("Settings — BaseLot="+DoubleToString(g_baseLot,2)
@@ -591,7 +594,7 @@ void OnTick()
      }
 
    // ── إغلاق عكسي: لو الخسارة تجاوزت ReverseStopUSD → سكّر وافتح عكسها ──
-   if(basket > 0 && ReverseStopUSD > 0 && net <= -ReverseStopUSD)
+   if(basket > 0 && g_reverseStop > 0 && net <= -g_reverseStop)
      {
       int revDir = (g_lastSignalDir == 1) ? -1 : 1;
       CloseBasket("REVERSE STOP $"+DoubleToString(net,2));

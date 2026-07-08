@@ -169,9 +169,10 @@ GRX_DEFAULT_SETTINGS = {
     "LotBoost":     2.0,
     "CooldownBars": 3,
     "ADXMax":       25.0,
-    "UseADXFilter": 1,
-    "SLMult":       1.0,
-    "BotRunning":   1,
+    "UseADXFilter":    1,
+    "SLMult":          1.0,
+    "ReverseStopUSD":  5.0,
+    "BotRunning":      1,
 }
 
 
