@@ -902,7 +902,7 @@ def bootstrap_snapshots():
         pass
 
     print("🔄 bootstrap: يبني snapshots من MT5 history ...")
-    history = get_recent_history(days=1, limit=50)
+    history = get_recent_history(days=1, limit=200)
     if not history:
         print("⚠️ bootstrap: لا يوجد history في MT5")
         return
@@ -1065,11 +1065,11 @@ def main():
             history = []
             if now - last_history_sync > 3:
                 # صفقات اليوم فقط — خفيف وسريع
-                history = get_recent_history(days=1, limit=50)
+                history = get_recent_history(days=1, limit=200)
                 last_history_sync = now
             # full sync كل دقيقة — يضمن وجود كل الهستوري القديم في الباكند
             if now - last_full_history_sync > 60:
-                full_h = get_recent_history(days=1, limit=100)
+                full_h = get_recent_history(days=1, limit=200)
                 if full_h:
                     try:
                         _session.post(f"{BACKEND_URL}/api/update", json={
