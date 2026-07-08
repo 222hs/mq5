@@ -53,8 +53,9 @@ BTC_CURRENT_FILE = os.path.join(_MT5_COMMON, "BSX_Current.json")
 
 # ── قاعدة بيانات محلية على جهاز Windows ─────────────────────────────
 _LOCAL_DIR       = os.path.dirname(os.path.abspath(__file__))
-_LOCAL_SNAPSHOTS = os.path.join(_LOCAL_DIR, "local_snapshots.json")
-_LOCAL_HISTORY   = os.path.join(_LOCAL_DIR, "local_history.json")
+_LOCAL_SNAPSHOTS    = os.path.join(_LOCAL_DIR, "local_snapshots.json")
+_LOCAL_HISTORY      = os.path.join(_LOCAL_DIR, "local_history.json")
+_LOCAL_GRX_SETTINGS = os.path.join(_LOCAL_DIR, "local_grx_settings.json")
 
 def _load_local_json(path):
     try:
@@ -803,21 +804,27 @@ def sync_settings():
 
 
 def push_grx_settings():
-    """يرفع GRX_Settings.json المحلي للـ backend عبر /seed (آمن — لا يطبق لو الداشبورد سبق وحفظت)."""
-    grx_file = os.path.join(_MT5_COMMON, "GRX_Settings.json")
-    if not os.path.exists(grx_file):
+    """يرفع آخر إعدادات GRX المحفوظة محلياً للـ backend — يُعيد إعدادات المستخدم بعد Railway redeploy."""
+    # أولوية: local_grx_settings.json (ما حفظه المستخدم من الداشبورد)
+    local = _load_local_json(_LOCAL_GRX_SETTINGS) or None
+    # fallback: GRX_Settings.json (ما كتبه البوت — إعدادات افتراضية)
+    if not local:
+        grx_file = os.path.join(_MT5_COMMON, "GRX_Settings.json")
+        if os.path.exists(grx_file):
+            try:
+                with open(grx_file, "r", encoding="utf-8") as f:
+                    local = json.load(f)
+            except Exception:
+                pass
+    if not local:
         return
     try:
-        with open(grx_file, "r", encoding="utf-8") as f:
-            local = json.load(f)
         r = _session.post(
-            f"{BACKEND_URL}/api/settings/grx/seed",
+            f"{BACKEND_URL}/api/settings/grx",
             json=local, timeout=(5, 10)
         )
         if r.status_code == 200:
-            d = r.json()
-            if d.get("applied"):
-                print(f"📤 GRX seed applied — backend كان فارغاً، رُفعت الإعدادات المحلية")
+            print(f"📤 {datetime.now().strftime('%H:%M:%S')} - GRX settings restored → backend (redeploy recovery)")
     except Exception as e:
         print(f"⚠️ push_grx_settings: {type(e).__name__}")
 
@@ -859,10 +866,13 @@ def sync_grx_settings():
         if not written:
             return
 
+        # حفظ محلي — يضمن استعادة إعدادات المستخدم بعد Railway redeploy
+        _save_local_json(_LOCAL_GRX_SETTINGS, settings)
+
         print(f"\n{'='*55}")
         print(f"📊 [{t}] إعدادات GRX جديدة — كُتبت للملف:")
-        print(f"   BaseLot={settings.get('BaseLot')}  BasketCount={settings.get('BasketCount')}  BasketTP=${settings.get('BasketTP')}")
-        print(f"   MaxDD=${settings.get('MaxDrawdown')}  LotBoost={settings.get('LotBoost')}x")
+        print(f"   BaseLot={settings.get('BaseLot')}  TradeTP={settings.get('TradeTP')}  TradeSL={settings.get('TradeSL')}")
+        print(f"   MaxSpread={settings.get('MaxSpread')}  CooldownBars={settings.get('CooldownBars')}  MaxTrades={settings.get('MaxTrades')}")
         print(f"   📁 {grx_file}")
         print(f"{'='*55}\n")
     except Exception as e:
@@ -1057,9 +1067,8 @@ def main():
             pass
 
     # ارفع الإعدادات المحلية للـ backend فوراً عند الإقلاع (Railway redeploy recovery)
-    # — وتتكرر لاحقاً كل SETTINGS_CHECK_INTERVAL داخل الحلقة الرئيسية
     push_local_settings()
-    # لا نرفع hedge settings من الملف المحلي — الـ backend هو مصدر الحقيقة
+    push_grx_settings()   # يُعيد آخر إعدادات GRX حفظها المستخدم
 
     # بناء snapshots من MT5 history مباشرة ثم رفعها
     threading.Thread(target=bootstrap_snapshots, daemon=True).start()
@@ -1072,7 +1081,6 @@ def main():
     last_full_history_sync = 0
     last_settings_sync = 0
     last_candles_sync  = 0
-    _grx_seed_done     = False  # push_grx_settings مرة وحدة فقط عند الإقلاع
     last_news_sync     = 0
     news_status        = {"blocked": False, "title": ""}
 
@@ -1091,9 +1099,6 @@ def main():
                 if btc_active:
                     sync_btc_settings()
                 sync_hedge_settings()    # Hedge settings — دائماً
-                if not _grx_seed_done:   # مرة وحدة عند الإقلاع — لو Railway صفّر القاعدة
-                    push_grx_settings()
-                    _grx_seed_done = True
                 sync_grx_settings()      # سحب إعدادات GRX من backend → GRX_Settings.json
                 last_settings_sync = now
 
