@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.38';
+const DASH_VERSION = 'v3.39';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -115,6 +115,7 @@ export default function Dashboard() {
   const [grxBusy, setGrxBusy] = useState(false);
   const [candleData, setCandleData] = useState({ candles: [], sessions: {} });
   const [tradePopup, setTradePopup] = useState(null); // trade detail popup
+  const [histFilter, setHistFilter] = useState('ALL'); // trade history symbol filter
   const [tradeSnapshot, setTradeSnapshot] = useState(null); // entry snapshot
   const seenTickets = useRef(null);
   const prevPositions = useRef(null);
@@ -1865,9 +1866,19 @@ export default function Dashboard() {
         <div className="bcard" style={bCard()}>
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
             <span style={{fontSize:12, fontWeight:'bold', letterSpacing:'2px', color:C.ink}}>
-              &gt; TRADE HISTORY · LAST {Math.min(history.length,20)}
+              &gt; TRADE HISTORY · LAST {Math.min(history.filter(t=>histFilter==='ALL'||(t.symbol||'').toUpperCase().includes(histFilter)).length,50)}
             </span>
-            <div style={{display:'flex',gap:6}}>
+            <div style={{display:'flex',gap:6,alignItems:'center'}}>
+              {[['ALL','ALL'],['XAU','XAU'],['BTC','BTC'],['JPY','JPY']].map(([k,lbl])=>(
+                <button key={k} className="bbtn" onClick={()=>setHistFilter(k)}
+                  style={{fontSize:9,padding:'3px 10px',letterSpacing:'1px',fontFamily:'monospace',cursor:'pointer',
+                    border:`1px solid ${histFilter===k?C.neon:'#30363d'}`,
+                    color:histFilter===k?'#0d1117':C.muted,
+                    background:histFilter===k?C.neon:'transparent',
+                    fontWeight:histFilter===k?'bold':'normal'}}>
+                  {lbl}
+                </button>
+              ))}
               <button className="bbtn" onClick={()=>fetchHistory(true)} disabled={histLoading}
                 style={{fontSize:9,padding:'3px 12px',letterSpacing:'1px',border:`1px solid ${C.neon}`,color:C.neon,background:'transparent',fontFamily:'monospace',cursor:'pointer'}}>
                 {histLoading ? 'LOADING...' : '↻ PULL'}
@@ -1883,7 +1894,7 @@ export default function Dashboard() {
               </button>
             </div>
           </div>
-          {history.length===0 ? (
+          {history.filter(t=>histFilter==='ALL'||(t.symbol||'').toUpperCase().includes(histFilter)).length===0 ? (
             <div style={bLabel({padding:'12px 0', color:C.yellow})}>NO CLOSED TRADES YET_</div>
           ) : (
             <div style={{overflowX:'auto'}}>
@@ -1896,7 +1907,7 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {history.slice(0,20).map((t,i)=>{
+                  {history.filter(t=>histFilter==='ALL'||(t.symbol||'').toUpperCase().includes(histFilter)).slice(0,50).map((t,i)=>{
                     const net=netOf(t);
                     const buy=t.type==='BUY';
                     const si=symInfo(t.symbol);
