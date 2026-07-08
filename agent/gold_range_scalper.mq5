@@ -292,43 +292,34 @@ double NormLot(double lot)
 
 int GetCandleSignal(int losses)
   {
-   // ── 1. اقرأ آخر 5 شمعات مغلقة ─────────────────────────────────
-   double o[], c[];
-   ArraySetAsSeries(o, true);
+   // ── Bollinger Bands (20, 2.0) ──────────────────────────────────
+   int hBB = iBands(_Symbol, PERIOD_M1, 20, 0, 2.0, PRICE_CLOSE);
+   if(hBB == INVALID_HANDLE) return 0;
+
+   double upper[], lower[];
+   ArraySetAsSeries(upper, true);
+   ArraySetAsSeries(lower, true);
+   bool ok = CopyBuffer(hBB, 1, 1, 1, upper) >= 1 &&
+             CopyBuffer(hBB, 2, 1, 1, lower) >= 1;
+   IndicatorRelease(hBB);
+   if(!ok) return 0;
+
+   // سعر الإغلاق للشمعة المغلقة
+   double c[];
    ArraySetAsSeries(c, true);
-   if(CopyOpen (_Symbol, PERIOD_M1, 1, 5, o) < 5) return 0;
-   if(CopyClose(_Symbol, PERIOD_M1, 1, 5, c) < 5) return 0;
+   if(CopyClose(_Symbol, PERIOD_M1, 1, 1, c) < 1) return 0;
+   double price = c[0];
 
-   // ── 2. تحقق من 3 شمعات متتالية بنفس الاتجاه ──────────────────
-   // [0]=أحدث مغلقة، [1]=قبلها، [2]=قبل قبلها
-   bool bull3 = (c[0]>o[0]) && (c[1]>o[1]) && (c[2]>o[2]);
-   bool bear3 = (c[0]<o[0]) && (c[1]<o[1]) && (c[2]<o[2]);
-   if(!bull3 && !bear3)
-     { EALog("sig: لا 3 شمعات متتالية"); return 0; }
+   int rawSignal = 0;
+   if(price <= lower[0]) rawSignal =  1; // لمس الخط السفلي → BUY
+   if(price >= upper[0]) rawSignal = -1; // لمس الخط العلوي → SELL
 
-   int rawSignal = bull3 ? 1 : -1;
+   if(rawSignal == 0)
+     { EALog("sig: السعر داخل البولنجر ("+DoubleToString(lower[0],2)+" - "+DoubleToString(upper[0],2)+")"); return 0; }
 
-   // ── 3. تأكيد EMA5 فوق/تحت EMA20 ──────────────────────────────
-   int hFast = iMA(_Symbol, PERIOD_M1,  5, 0, MODE_EMA, PRICE_CLOSE);
-   int hSlow = iMA(_Symbol, PERIOD_M1, 20, 0, MODE_EMA, PRICE_CLOSE);
-   if(hFast == INVALID_HANDLE || hSlow == INVALID_HANDLE)
-     { IndicatorRelease(hFast); IndicatorRelease(hSlow); return 0; }
-   double fast[], slow[];
-   ArraySetAsSeries(fast, true);
-   ArraySetAsSeries(slow, true);
-   bool emaOk = false;
-   if(CopyBuffer(hFast, 0, 1, 1, fast) >= 1 &&
-      CopyBuffer(hSlow, 0, 1, 1, slow) >= 1)
-     {
-      if(rawSignal ==  1 && fast[0] > slow[0]) emaOk = true;
-      if(rawSignal == -1 && fast[0] < slow[0]) emaOk = true;
-      if(!emaOk) EALog("sig: EMA يعاكس الإشارة (fast="+DoubleToString(fast[0],2)+" slow="+DoubleToString(slow[0],2)+")");
-     }
-   IndicatorRelease(hFast);
-   IndicatorRelease(hSlow);
-   if(!emaOk) return 0;
-
-   EALog("sig: ✅ "+(rawSignal==1?"BUY":"SELL")+" (3شمعات+EMA)");
+   EALog("sig: ✅ "+(rawSignal==1?"BUY":"SELL")
+         +" price="+DoubleToString(price,2)
+         +" band="+(rawSignal==1?DoubleToString(lower[0],2):DoubleToString(upper[0],2)));
    return rawSignal;
   }
 
