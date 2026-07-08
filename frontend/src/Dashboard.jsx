@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.36';
+const DASH_VERSION = 'v3.37';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -126,6 +126,7 @@ export default function Dashboard() {
   const [showAnalysis, setShowAnalysis] = useState(false);
   const [snapshots, setSnapshots] = useState([]);
   const [snapLoading, setSnapLoading] = useState(false);
+  const [historyData, setHistoryData] = useState([]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -177,6 +178,28 @@ export default function Dashboard() {
     ping();
     const t = setInterval(ping, 25000);
     return () => clearInterval(t);
+  }, []);
+
+  // poll هستوري مستقل كل 4 ثواني من /api/history مباشرة
+  useEffect(() => {
+    let active = true;
+    const fetchH = async () => {
+      try {
+        const r = await fetch(`${API_URL}/api/history?limit=50`, {
+          headers: { 'X-API-Key': API_KEY },
+          signal: AbortSignal.timeout(4000),
+        });
+        if (!active || !r.ok) return;
+        const raw = await r.json();
+        if (Array.isArray(raw) && raw.length > 0) {
+          const sorted = raw.slice().sort((a, b) => new Date(b.time) - new Date(a.time));
+          setHistoryData(sorted);
+        }
+      } catch (_) {}
+      if (active) setTimeout(fetchH, 4000);
+    };
+    fetchH();
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -513,7 +536,7 @@ export default function Dashboard() {
   const positions      = Array.isArray(data?.positions) ? data.positions : [];
   const pendingOrders  = Array.isArray(data?.pending_orders) ? data.pending_orders : [];
   const newsFilter     = data?.news_filter || { blocked: false, title: '' };
-  const history   = Array.isArray(data?.history)   ? data.history   : [];
+  const history   = historyData.length > 0 ? historyData : (Array.isArray(data?.history) ? data.history : []);
   const stats     = data?.stats || { total_trades: 0, wins: 0, losses: 0, win_rate: 0, total_profit: 0 };
   const settings  = data?.settings || {};
   const isOnline  = !!data?.is_online;
