@@ -223,14 +223,20 @@ void CloseBasketByMagic(int magic, string reason, int &wins, int &losses, double
    else
      { wins = 0; losses++; EALog("CLOSE "+side+" ["+reason+"] $"+DoubleToString(net,2)+" ❌"); }
    dynTP = CalcDynamicTP(wins);
-   for(int i = PositionsTotal()-1; i >= 0; i--)
+   // محاولتان لإغلاق كل الصفقات (في حال فشلت الأولى)
+   for(int attempt = 0; attempt < 2; attempt++)
      {
-      ulong t = PositionGetTicket(i);
-      if(t == 0) continue;
-      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
-      if((int)PositionGetInteger(POSITION_MAGIC) != magic) continue;
-      trade.PositionClose(t, (ulong)(g_maxSpread*2));
-      Sleep(80);
+      for(int i = PositionsTotal()-1; i >= 0; i--)
+        {
+         ulong t = PositionGetTicket(i);
+         if(t == 0) continue;
+         if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+         if((int)PositionGetInteger(POSITION_MAGIC) != magic) continue;
+         trade.PositionClose(t, 500);
+         Sleep(100);
+        }
+      if(CountBasketByMagic(magic) == 0) break;
+      Sleep(300);
      }
   }
 
@@ -240,24 +246,9 @@ void CloseBasketByMagic(int magic, string reason, int &wins, int &losses, double
 
 double CalcDynamicTP(int wins)
   {
-   int hATR = iATR(_Symbol, PERIOD_M1, 14);
-   double atrBase = g_basketTP;
-   if(hATR != INVALID_HANDLE)
-     {
-      double atr[];
-      ArraySetAsSeries(atr, true);
-      if(CopyBuffer(hATR, 0, 1, 1, atr) >= 1)
-        {
-         double atrDollar = atr[0] * SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE)
-                          / SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE)
-                          * g_baseLot * g_basketCount;
-         atrBase = MathMax(g_basketTP * 0.5, MathMin(g_basketTP * 2.0, atrDollar * 1.5));
-        }
-      IndicatorRelease(hATR);
-     }
-   double tp = MathMax(g_basketTP * 0.5,
-               MathMin(g_basketTP * 3.0, atrBase + wins * 2.0));
-   return tp;
+   // TP ثابت من الإعداد + مكافأة صغيرة على الانتصارات (max 50% زيادة)
+   double bonus = MathMin(wins * 1.0, g_basketTP * 0.5);
+   return g_basketTP + bonus;
   }
 
 //===================================================================
