@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.44';
+const DASH_VERSION = 'v3.45';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -120,7 +120,8 @@ export default function Dashboard() {
   const seenTickets = useRef(null);
   const prevPositions = useRef(null);
   const skipCloseDetect = useRef(true); // تجاهل أول payload بعد الاتصال
-  const seenHistoryTickets = useRef(new Set()); // تتبع تذاكر التاريخ لاكتشاف الإغلاق الحقيقي
+  const seenHistoryTickets = useRef(new Set());
+  const historyInitialized = useRef(false); // أول payload لود الـ tickets بدون popup
   const popupTimer = useRef(null);
   const [connState, setConnState] = useState('connecting');
   const socketRef = useRef(null);
@@ -215,16 +216,20 @@ export default function Dashboard() {
     });
     socketRef.current = socket;
 
-    socket.on('connect',    () => { setConnState('connected'); skipCloseDetect.current = true; });
+    socket.on('connect',    () => { setConnState('connected'); skipCloseDetect.current = true; historyInitialized.current = false; seenHistoryTickets.current = new Set(); });
     socket.on('disconnect', () => setConnState('disconnected'));
     socket.on('connect_error', () => setConnState('connecting'));
 
     const handleDashboard = (d) => {
       const curPos = Array.isArray(d.positions) ? d.positions : [];
       let hadClose = false;
-      // كشف الإغلاق من التاريخ فقط (مش من اختفاء الـ positions) — يمنع الـ popup الوهمي
+      // كشف الإغلاق من التاريخ — أول payload يُهيئ الـ set بدون popup
       const hist = Array.isArray(d.history) ? d.history : [];
-      if (seenHistoryTickets.current.size > 0 && hist.length > 0) {
+      if (!historyInitialized.current) {
+        // أول مرة: حفظ كل التذاكر الموجودة بدون popup
+        hist.forEach(h => seenHistoryTickets.current.add(h.ticket));
+        historyInitialized.current = true;
+      } else if (hist.length > 0) {
         const newClosed = hist.filter(h => !seenHistoryTickets.current.has(h.ticket));
         if (newClosed.length > 0) {
           hadClose = true;
@@ -232,9 +237,9 @@ export default function Dashboard() {
           setPopup({ profit: totalNet, count: newClosed.length });
           clearTimeout(popupTimer.current);
           popupTimer.current = setTimeout(() => setPopup(null), 3500);
+          newClosed.forEach(h => seenHistoryTickets.current.add(h.ticket));
         }
       }
-      hist.forEach(h => seenHistoryTickets.current.add(h.ticket));
       skipCloseDetect.current = false;
       prevPositions.current = curPos;
       if (hadClose) fetchHistory(false);
