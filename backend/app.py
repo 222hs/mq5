@@ -580,7 +580,7 @@ def build_dashboard_payload():
             last = datetime.fromisoformat(latest_data["last_update"])
             is_online = (datetime.now() - last).total_seconds() < 30
 
-        closed_trades = get_history(200)
+        closed_trades = get_history(1000)
         wins   = [t for t in closed_trades if t["profit"] > 0]
         losses = [t for t in closed_trades if t["profit"] <= 0]
         win_rate     = (len(wins) / len(closed_trades) * 100) if closed_trades else 0
@@ -597,7 +597,7 @@ def build_dashboard_payload():
             "news_filter":    latest_data["news_filter"],
             "h1_bias_up":     latest_data["h1_bias_up"],
             "last_rsi":       latest_data["last_rsi"],
-            "history":        closed_trades[:50],
+            "history":        closed_trades[:200],
             "is_online":    is_online,
             "last_update":  latest_data["last_update"],
             "stats": {

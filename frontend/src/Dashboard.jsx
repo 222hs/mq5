@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.37';
+const DASH_VERSION = 'v3.38';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -185,7 +185,7 @@ export default function Dashboard() {
     let active = true;
     const fetchH = async () => {
       try {
-        const r = await fetch(`${API_URL}/api/history?limit=50`, {
+        const r = await fetch(`${API_URL}/api/history?limit=1000`, {
           headers: { 'X-API-Key': API_KEY },
           signal: AbortSignal.timeout(4000),
         });
