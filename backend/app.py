@@ -1389,6 +1389,17 @@ def api_get_history():
     return jsonify(trades)
 
 
+@app.route("/api/debug/history", methods=["GET"])
+def api_debug_history():
+    """debug: أحدث 5 صفقات + إجمالي العدد"""
+    with get_db() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM trade_history").fetchone()[0]
+        rows  = conn.execute(
+            "SELECT ticket, symbol, time, profit FROM trade_history ORDER BY time DESC LIMIT 5"
+        ).fetchall()
+    return jsonify({"total": total, "latest5": [dict(r) for r in rows]})
+
+
 @app.route("/api/snapshots/count", methods=["GET"])
 def api_snapshots_count():
     with get_db() as conn:
