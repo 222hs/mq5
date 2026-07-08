@@ -1389,6 +1389,16 @@ def api_get_history():
     return jsonify(trades)
 
 
+@app.route("/api/history/clear", methods=["POST"])
+def api_clear_history():
+    if not check_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+    with get_db() as conn:
+        conn.execute("DELETE FROM trade_history")
+        conn.commit()
+    return jsonify({"status": "ok", "message": "history cleared"})
+
+
 @app.route("/api/debug/history", methods=["GET"])
 def api_debug_history():
     """debug: أحدث 5 صفقات + إجمالي العدد"""
