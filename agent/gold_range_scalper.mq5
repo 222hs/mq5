@@ -601,11 +601,28 @@ void OnTick()
    long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    if(spread > g_maxSpread) return;
 
-   // ── HFT Grid — يفتح الاثنين بالتوازي بدون شرط اتجاه ──────────
-   if(buyN == 0 && g_buyCooldown == 0)
-      OpenBasket(1, g_magicBuy);
+   // ── RSI فلتر الاتجاه ───────────────────────────────────────────
+   bool allowBuy  = true;
+   bool allowSell = true;
+   int hRSI = iRSI(_Symbol, PERIOD_M1, 14, PRICE_CLOSE);
+   if(hRSI != INVALID_HANDLE)
+     {
+      double rsi[];
+      ArraySetAsSeries(rsi, true);
+      if(CopyBuffer(hRSI, 0, 1, 1, rsi) >= 1)
+        {
+         double r = rsi[0];
+         if(r > 70) { allowBuy  = false; EALog("RSI="+DoubleToString(r,1)+" → SELL فقط"); }
+         if(r < 30) { allowSell = false; EALog("RSI="+DoubleToString(r,1)+" → BUY فقط");  }
+        }
+      IndicatorRelease(hRSI);
+     }
 
-   if(sellN == 0 && g_sellCooldown == 0)
+   // ── HFT Grid — يفتح الاثنين بالتوازي ─────────────────────────
+   if(allowBuy  && buyN  == 0 && g_buyCooldown  == 0)
+      OpenBasket(1,  g_magicBuy);
+
+   if(allowSell && sellN == 0 && g_sellCooldown == 0)
       OpenBasket(-1, g_magicSell);
   }
 //+------------------------------------------------------------------+
