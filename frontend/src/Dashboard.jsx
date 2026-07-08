@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.39';
+const DASH_VERSION = 'v3.40';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -1931,8 +1931,8 @@ export default function Dashboard() {
                         </td>
                         <td style={{padding:'7px 8px', fontWeight:'bold', color:buy?C.neon:C.red, letterSpacing:'2px'}}>{t.type??'--'}</td>
                         <td style={{padding:'7px 8px'}}>{t.volume??'--'}</td>
-                        <td style={{padding:'7px 8px', fontVariantNumeric:'tabular-nums'}}>{t.price_open??'--'}</td>
-                        <td style={{padding:'7px 8px', fontVariantNumeric:'tabular-nums'}}>{t.price_close??'--'}</td>
+                        <td style={{padding:'7px 8px', fontVariantNumeric:'tabular-nums'}}>{t.price_open!=null?parseFloat(t.price_open.toFixed(5)):'--'}</td>
+                        <td style={{padding:'7px 8px', fontVariantNumeric:'tabular-nums'}}>{t.price_close!=null?parseFloat(t.price_close.toFixed(5)):'--'}</td>
                         <td style={{padding:'7px 8px', fontVariantNumeric:'tabular-nums', color:(t.profit||0)>=0?C.neon:C.red}}>
                           {fmtMoney(t.profit,true)}
                         </td>

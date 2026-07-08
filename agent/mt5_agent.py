@@ -297,9 +297,14 @@ def get_h1_bias(symbol):
     return ema >= ema_prev
 
 
-def get_recent_history(days=3, limit=150):
-    from_date = datetime.now().timestamp() - (days * 24 * 60 * 60)
-    deals = mt5.history_deals_get(datetime.fromtimestamp(from_date), datetime.now())
+def get_recent_history(days=0, limit=1000):
+    now = datetime.now()
+    # من منتصف الليل اليوم فقط — لو days=0 وإلا آخر N أيام
+    if days == 0:
+        from_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        from_date = datetime.fromtimestamp(now.timestamp() - (days * 24 * 60 * 60))
+    deals = mt5.history_deals_get(from_date, now)
     if deals is None:
         err = mt5.last_error()
         print(f"⚠️ history_deals_get فشل: {err}")
@@ -900,7 +905,7 @@ def bootstrap_snapshots():
         pass
 
     print("🔄 bootstrap: يبني snapshots من MT5 history ...")
-    history = get_recent_history(days=1, limit=1000)
+    history = get_recent_history(days=0, limit=1000)
     if not history:
         print("⚠️ bootstrap: لا يوجد history في MT5")
         return
@@ -1063,11 +1068,11 @@ def main():
             history = []
             if now - last_history_sync > 3:
                 # صفقات اليوم فقط — خفيف وسريع
-                history = get_recent_history(days=1, limit=1000)
+                history = get_recent_history(days=0, limit=1000)
                 last_history_sync = now
             # full sync كل دقيقة — يضمن وجود كل الهستوري القديم في الباكند
             if now - last_full_history_sync > 60:
-                full_h = get_recent_history(days=1, limit=1000)
+                full_h = get_recent_history(days=0, limit=1000)
                 if full_h:
                     try:
                         _session.post(f"{BACKEND_URL}/api/update", json={
