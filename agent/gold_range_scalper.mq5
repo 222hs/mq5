@@ -63,6 +63,7 @@ string g_lastHash     = "";
 datetime g_lastBar   = 0;
 bool     g_inEntry   = false;
 int      g_hPTD      = INVALID_HANDLE;
+int      g_hBB       = INVALID_HANDLE; // Bollinger Bands على الشارت
 
 //--- BUY basket state
 double g_buyDynamicTP  = 0;
@@ -379,6 +380,98 @@ void OpenBasket(int signal, int magic)
   }
 
 //===================================================================
+//  BOLLINGER BANDS LINES ON CHART
+//===================================================================
+
+#define BB_BARS 120  // عدد البارات المرسومة
+#define BB_PFX  "GRX_BB_"
+
+void DrawBBLines()
+  {
+   if(g_hBB == INVALID_HANDLE) return;
+
+   int bars = BB_BARS;
+   double upper[], lower[], mid[];
+   ArraySetAsSeries(upper, true);
+   ArraySetAsSeries(lower, true);
+   ArraySetAsSeries(mid,   true);
+   datetime t[];
+   ArraySetAsSeries(t, true);
+
+   if(CopyBuffer(g_hBB, 1, 0, bars+1, upper) < bars+1) return;
+   if(CopyBuffer(g_hBB, 2, 0, bars+1, lower) < bars+1) return;
+   if(CopyBuffer(g_hBB, 0, 0, bars+1, mid)   < bars+1) return;
+   if(CopyTime(_Symbol, PERIOD_M1, 0, bars+1, t) < bars+1) return;
+
+   for(int i = bars-1; i >= 0; i--)
+     {
+      string su = BB_PFX+"U"+IntegerToString(i);
+      string sl = BB_PFX+"L"+IntegerToString(i);
+      string sm = BB_PFX+"M"+IntegerToString(i);
+
+      // Upper Band — أحمر
+      if(ObjectFind(0,su)<0) ObjectCreate(0,su,OBJ_TREND,0,0,0,0,0);
+      ObjectSetInteger(0,su,OBJPROP_TIME,0,t[i+1]);
+      ObjectSetDouble (0,su,OBJPROP_PRICE,0,upper[i+1]);
+      ObjectSetInteger(0,su,OBJPROP_TIME,1,t[i]);
+      ObjectSetDouble (0,su,OBJPROP_PRICE,1,upper[i]);
+      ObjectSetInteger(0,su,OBJPROP_COLOR,clrRed);
+      ObjectSetInteger(0,su,OBJPROP_WIDTH,2);
+      ObjectSetInteger(0,su,OBJPROP_RAY_RIGHT,false);
+      ObjectSetInteger(0,su,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,su,OBJPROP_HIDDEN,true);
+
+      // Lower Band — أخضر
+      if(ObjectFind(0,sl)<0) ObjectCreate(0,sl,OBJ_TREND,0,0,0,0,0);
+      ObjectSetInteger(0,sl,OBJPROP_TIME,0,t[i+1]);
+      ObjectSetDouble (0,sl,OBJPROP_PRICE,0,lower[i+1]);
+      ObjectSetInteger(0,sl,OBJPROP_TIME,1,t[i]);
+      ObjectSetDouble (0,sl,OBJPROP_PRICE,1,lower[i]);
+      ObjectSetInteger(0,sl,OBJPROP_COLOR,clrLime);
+      ObjectSetInteger(0,sl,OBJPROP_WIDTH,2);
+      ObjectSetInteger(0,sl,OBJPROP_RAY_RIGHT,false);
+      ObjectSetInteger(0,sl,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,sl,OBJPROP_HIDDEN,true);
+
+      // Middle Band — أزرق
+      if(ObjectFind(0,sm)<0) ObjectCreate(0,sm,OBJ_TREND,0,0,0,0,0);
+      ObjectSetInteger(0,sm,OBJPROP_TIME,0,t[i+1]);
+      ObjectSetDouble (0,sm,OBJPROP_PRICE,0,mid[i+1]);
+      ObjectSetInteger(0,sm,OBJPROP_TIME,1,t[i]);
+      ObjectSetDouble (0,sm,OBJPROP_PRICE,1,mid[i]);
+      ObjectSetInteger(0,sm,OBJPROP_COLOR,clrDodgerBlue);
+      ObjectSetInteger(0,sm,OBJPROP_WIDTH,1);
+      ObjectSetInteger(0,sm,OBJPROP_STYLE,STYLE_DOT);
+      ObjectSetInteger(0,sm,OBJPROP_RAY_RIGHT,false);
+      ObjectSetInteger(0,sm,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,sm,OBJPROP_HIDDEN,true);
+     }
+
+   // تسميات نصية زرقاء
+   double lastUpper = upper[0], lastLower = lower[0];
+   datetime lastT   = t[0];
+   string lU = BB_PFX+"LBL_U", lL = BB_PFX+"LBL_L";
+
+   if(ObjectFind(0,lU)<0) ObjectCreate(0,lU,OBJ_TEXT,0,0,0);
+   ObjectSetInteger(0,lU,OBJPROP_TIME,lastT);
+   ObjectSetDouble (0,lU,OBJPROP_PRICE,lastUpper);
+   ObjectSetString (0,lU,OBJPROP_TEXT," SELL "+DoubleToString(lastUpper,2));
+   ObjectSetInteger(0,lU,OBJPROP_COLOR,clrDodgerBlue);
+   ObjectSetInteger(0,lU,OBJPROP_FONTSIZE,8);
+   ObjectSetInteger(0,lU,OBJPROP_SELECTABLE,false);
+
+   if(ObjectFind(0,lL)<0) ObjectCreate(0,lL,OBJ_TEXT,0,0,0);
+   ObjectSetInteger(0,lL,OBJPROP_TIME,lastT);
+   ObjectSetDouble (0,lL,OBJPROP_PRICE,lastLower);
+   ObjectSetString (0,lL,OBJPROP_TEXT," BUY "+DoubleToString(lastLower,2));
+   ObjectSetInteger(0,lL,OBJPROP_COLOR,clrDodgerBlue);
+   ObjectSetInteger(0,lL,OBJPROP_FONTSIZE,8);
+   ObjectSetInteger(0,lL,OBJPROP_SELECTABLE,false);
+
+   ChartRedraw(0);
+  }
+
+//===================================================================
 //  DASHBOARD
 //===================================================================
 
@@ -429,6 +522,8 @@ int OnInit()
      }
    g_buyDynamicTP  = CalcDynamicTP(0);
    g_sellDynamicTP = CalcDynamicTP(0);
+
+   g_hBB = iBands(_Symbol, PERIOD_M1, 20, 0, 2.0, PRICE_CLOSE);
    EALog("Init — "+EA_NAME+" v"+EA_VERSION+" (Dual Basket)");
    return INIT_SUCCEEDED;
   }
@@ -437,7 +532,9 @@ void OnDeinit(const int reason)
   {
    EventKillTimer();
    if(g_hPTD != INVALID_HANDLE) IndicatorRelease(g_hPTD);
+   if(g_hBB  != INVALID_HANDLE) IndicatorRelease(g_hBB);
    ObjectsDeleteAll(0, DASH_PREFIX);
+   ObjectsDeleteAll(0, BB_PFX);
    EALog("Deinit reason="+IntegerToString(reason));
   }
 
@@ -499,6 +596,7 @@ void OnTick()
 
    if(g_buyCooldown  > 0) g_buyCooldown--;
    if(g_sellCooldown > 0) g_sellCooldown--;
+   DrawBBLines();
 
    long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    if(spread > g_maxSpread) return;
