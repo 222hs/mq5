@@ -362,8 +362,8 @@ int GetCandleSignal()
      }
 
    int rawSignal = 0;
-   if(c[1] > o[1]) rawSignal = -1; // شمعة صعود → SELL
-   if(c[1] < o[1]) rawSignal =  1; // شمعة نزول → BUY
+   if(c[1] > o[1]) rawSignal =  1; // شمعة صعود → BUY  (يتبع الشمعة)
+   if(c[1] < o[1]) rawSignal = -1; // شمعة نزول → SELL (يتبع الشمعة)
    if(rawSignal == 0) return 0;
 
    // ── فلتر PTD ─────────────────────────────────────────────────
