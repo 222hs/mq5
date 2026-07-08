@@ -951,6 +951,63 @@ def bootstrap_snapshots():
     print(f"✅ bootstrap: أرسل {sent}/{min(len(history),50)} snapshots")
 
 
+def _calc_bb_pct(closes, period=20):
+    """موقع السعر داخل Bollinger Bands — 0=عند السفلي، 1=عند العلوي، 0.5=وسط"""
+    if len(closes) < period:
+        return 0.5
+    window = closes[-period:]
+    mid    = sum(window) / period
+    std    = (sum((x - mid) ** 2 for x in window) / period) ** 0.5
+    if std == 0:
+        return 0.5
+    upper = mid + 2 * std
+    lower = mid - 2 * std
+    price = closes[-1]
+    pct   = (price - lower) / (upper - lower)
+    return round(max(0.0, min(1.0, pct)), 3)
+
+
+_ml_seen_tickets = set()  # tickets سبق وسجّلنا features لها
+
+def ml_log_entry(ticket, symbol, direction, magic, closes, spread):
+    """يرسل features لحظة فتح الصفقة للبكند"""
+    if ticket in _ml_seen_tickets:
+        return
+    _ml_seen_tickets.add(ticket)
+    now = datetime.now()
+    rsi    = _calc_rsi(closes)
+    bb_pct = _calc_bb_pct(closes)
+    payload = {
+        "ticket":      int(ticket),
+        "symbol":      symbol,
+        "direction":   direction,
+        "hour":        now.hour,
+        "day_of_week": now.weekday(),
+        "rsi":         rsi,
+        "bb_pct":      bb_pct,
+        "spread":      float(spread),
+        "magic":       int(magic),
+        "open_time":   now.isoformat(),
+    }
+    try:
+        _session.post(f"{BACKEND_URL}/api/ml/features", json=payload, timeout=(3, 5))
+        print(f"🧠 ML log: ticket={ticket} dir={direction} RSI={rsi} BB%={bb_pct}")
+    except Exception as e:
+        print(f"⚠️ ml_log_entry: {e}")
+
+
+def ml_link_results():
+    """يطلب من البكند ربط النتائج بالـ features"""
+    try:
+        r = _session.post(f"{BACKEND_URL}/api/ml/link_results", json={}, timeout=(5, 10))
+        if r.status_code == 200:
+            d = r.json()
+            if d.get("updated", 0) > 0:
+                print(f"🧠 ML: ربط {d['updated']} صفقة — إجمالي مُصنَّف: {d['total_labeled']}")
+    except Exception:
+        pass
+
+
 def _build_snapshot(ticket, position, candles_list, sessions):
     """يبني snapshot dict بدون إرسال"""
     closes = [c['c'] for c in candles_list]
@@ -1077,6 +1134,12 @@ def main():
                     sessions = get_trading_sessions()
                     send_trade_snapshot(pos['ticket'], pos, c_list, sessions)
                     _snapped_tickets.add(pos['ticket'])
+                    # ML: سجّل features لحظة الدخول
+                    if m1_rates is not None and len(m1_rates) >= 20:
+                        closes_ml = [float(r["close"]) for r in m1_rates]
+                        spread_ml = mt5.symbol_info_tick(sym).ask - mt5.symbol_info_tick(sym).bid if mt5.symbol_info_tick(sym) else 0
+                        magic_ml  = getattr(mt5.positions_get(ticket=pos['ticket'])[0], 'magic', 0) if mt5.positions_get(ticket=pos['ticket']) else 0
+                        ml_log_entry(pos['ticket'], sym, pos.get('type',''), magic_ml, closes_ml, spread_ml)
             _known_positions.clear()
             _known_positions.update({p['ticket']: p for p in positions})
 
@@ -1098,6 +1161,8 @@ def main():
                     except Exception:
                         pass
                 last_full_history_sync = now
+                # ML: اربط النتائج بالـ features كل دقيقة
+                ml_link_results()
                 # حفظ الـ history محلياً
                 save_local_history(history)
                 # snapshot للصفقات المغلقة الجديدة فقط
