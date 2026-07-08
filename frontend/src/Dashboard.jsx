@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.46';
+const DASH_VERSION = 'v3.47';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -458,8 +458,6 @@ export default function Dashboard() {
   const utc     = now.toISOString().slice(11, 19);
   const months  = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
   const dateStr = `${months[now.getUTCMonth()]} ${String(now.getUTCDate()).padStart(2,'0')} ${now.getUTCFullYear()}`;
-  const claudeAdvice  = data?.claude_advice  || null;
-  const claudeTime    = data?.claude_time    || null;
   const patternAdvice = data?.pattern_advice || null;
   const patternTime   = data?.pattern_time   || null;
 
@@ -937,86 +935,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Claude AI */}
-            <div className="bcard" style={bCard({border:'2px solid #00ff41', boxShadow:'4px 4px 0px #000000'})}>
-              <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:10}}>
-                <span style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:C.neon}}>◆ CLAUDE_AI</span>
-                {claudeTime && <span style={{fontSize:9, color:C.muted}}>{new Date(claudeTime).toLocaleTimeString()}</span>}
-              </div>
-              {claudeAdvice ? (
-                <div style={{fontSize:12, fontWeight:'bold', color:C.ink, lineHeight:1.6}}>
-                  "{claudeAdvice}"
-                </div>
-              ) : (
-                <div style={{fontSize:10, color:C.muted, letterSpacing:'1px', lineHeight:1.6, textTransform:'uppercase'}}>
-                  MONITORING · WILL ADVISE<br/>AFTER 5 CONSECUTIVE LOSSES
-                </div>
-              )}
-            </div>
-
-            {/* Pattern Analysis */}
-            <div className="bcard" style={bCard({border:'2px solid #ff9900', boxShadow:'4px 4px 0px #000000'})}>
-              <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:10, flexWrap:'wrap'}}>
-                <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
-                  <span style={{fontSize:11, fontWeight:'bold', letterSpacing:'2px', color:'#ff9900'}}>◆ PATTERN_AI</span>
-                  {patternTime && <span style={{fontSize:9, color:C.muted}}>updated {new Date(patternTime).toLocaleTimeString()}</span>}
-                </div>
-                <button className="bbtn"
-                  style={{fontSize:9, padding:'4px 10px', letterSpacing:'1px',
-                    border:`1px solid #ff9900`, color:'#ff9900', background:'transparent',
-                    fontFamily:C.mono, fontWeight:'bold', cursor:'pointer'}}
-                  onClick={async()=>{
-                    try{ await fetch(`${API_URL}/api/analyze/run`,{method:'POST',headers:{'X-API-Key':API_KEY}}); }catch(e){}
-                  }}>
-                  ⚡ RUN NOW
-                </button>
-              </div>
-              {patternAdvice ? (() => {
-                const lines = patternAdvice.split('\n').filter(l => l.trim());
-                const icons = {
-                  'BEST SESSION': { icon: '🕐', color: C.neon },
-                  'BEST RSI':     { icon: '📊', color: 'dodgerblue' },
-                  'EMA RULE':     { icon: '📈', color: C.yellow },
-                  'ACTION':       { icon: '⚡', color: C.red },
-                };
-                const parsed = lines.map(line => {
-                  const sep = line.indexOf(':');
-                  if (sep === -1) return { key: null, val: line };
-                  const key = line.slice(0, sep).trim().toUpperCase();
-                  const val = line.slice(sep + 1).trim();
-                  return { key, val, ...icons[key] };
-                });
-                return (
-                  <div style={{display:'flex', flexDirection:'column', gap:8}}>
-                    {parsed.map((p, i) => p.key ? (
-                      <div key={i} style={{
-                        display:'flex', gap:10, alignItems:'flex-start',
-                        padding:'8px 10px', background: C.faint,
-                        borderLeft: `3px solid ${p.color || C.muted}`,
-                      }}>
-                        <span style={{fontSize:14, minWidth:20}}>{p.icon}</span>
-                        <div>
-                          <div style={{fontSize:9, color: p.color || C.muted, letterSpacing:'2px', fontWeight:'bold', marginBottom:2}}>
-                            {p.key}
-                          </div>
-                          <div style={{fontSize:11, color: C.ink, lineHeight:1.5, fontWeight: p.key==='ACTION'?'bold':'normal'}}>
-                            {p.val}
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div key={i} style={{fontSize:10, color:C.muted, padding:'4px 0'}}>{p.val}</div>
-                    ))}
-                  </div>
-                );
-              })() : (
-                <div style={{fontSize:10, color:C.muted, letterSpacing:'1px', lineHeight:1.8, textTransform:'uppercase'}}>
-                  LEARNING MODE<br/>
-                  NEEDS 10 TRADES WITH SNAPSHOTS<br/>
-                  <span style={{color:C.yellow}}>ANALYSIS RUNS AUTOMATICALLY</span>
-                </div>
-              )}
-            </div>
 
           </div>
         </div>
