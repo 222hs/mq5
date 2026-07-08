@@ -836,19 +836,8 @@ def sync_grx_settings():
         _last_grx_settings_hash = new_hash
 
         grx_file = os.path.join(_MT5_COMMON, "GRX_Settings.json")
-        tmp = grx_file + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
+        with open(grx_file, "w", encoding="utf-8") as f:
             json.dump(settings, f, separators=(',', ':'))
-        try:
-            os.replace(tmp, grx_file)
-        except PermissionError:
-            # MT5 may have the file open; fall back to direct write
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
-            with open(grx_file, "w", encoding="utf-8") as f:
-                json.dump(settings, f, separators=(',', ':'))
 
         print(f"\n{'='*55}")
         print(f"📊 [{t}] إعدادات GRX جديدة — كُتبت للملف:")
