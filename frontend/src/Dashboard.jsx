@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.43';
+const DASH_VERSION = 'v3.44';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -120,6 +120,7 @@ export default function Dashboard() {
   const seenTickets = useRef(null);
   const prevPositions = useRef(null);
   const skipCloseDetect = useRef(true); // تجاهل أول payload بعد الاتصال
+  const seenHistoryTickets = useRef(new Set()); // تتبع تذاكر التاريخ لاكتشاف الإغلاق الحقيقي
   const popupTimer = useRef(null);
   const [connState, setConnState] = useState('connecting');
   const socketRef = useRef(null);
@@ -221,24 +222,26 @@ export default function Dashboard() {
     const handleDashboard = (d) => {
       const curPos = Array.isArray(d.positions) ? d.positions : [];
       let hadClose = false;
-      if (!skipCloseDetect.current && prevPositions.current !== null && prevPositions.current.length > 0) {
-        const curTickets = new Set(curPos.map(p => p.ticket));
-        const closed = prevPositions.current.filter(p => !curTickets.has(p.ticket));
-        if (closed.length > 0) {
+      // كشف الإغلاق من التاريخ فقط (مش من اختفاء الـ positions) — يمنع الـ popup الوهمي
+      const hist = Array.isArray(d.history) ? d.history : [];
+      if (seenHistoryTickets.current.size > 0 && hist.length > 0) {
+        const newClosed = hist.filter(h => !seenHistoryTickets.current.has(h.ticket));
+        if (newClosed.length > 0) {
           hadClose = true;
-          const totalNet = closed.reduce((sum, p) => sum + (p.profit || 0), 0);
-          setPopup({ profit: totalNet, count: closed.length });
+          const totalNet = newClosed.reduce((sum, h) => sum + (h.profit || 0), 0);
+          setPopup({ profit: totalNet, count: newClosed.length });
           clearTimeout(popupTimer.current);
           popupTimer.current = setTimeout(() => setPopup(null), 3500);
         }
       }
+      hist.forEach(h => seenHistoryTickets.current.add(h.ticket));
       skipCloseDetect.current = false;
       prevPositions.current = curPos;
       if (hadClose) fetchHistory(false);
-      const hist = Array.isArray(d.history) && d.history.length > 0
+      const histSorted = Array.isArray(d.history) && d.history.length > 0
         ? d.history.slice().sort((a,b) => new Date(b.time) - new Date(a.time))
         : null;
-      setData(prev => ({ ...d, history: hist || prev?.history || [] }));
+      setData(prev => ({ ...d, history: histSorted || prev?.history || [] }));
       if (d.settings) setSettingsDraft(prev => mergeKeepDirty(d.settings, settingsDirty, prev));
       if (Array.isArray(d.candles) && d.candles.length > 0)
         setCandleData({ candles: d.candles, sessions: d.sessions || {} });
