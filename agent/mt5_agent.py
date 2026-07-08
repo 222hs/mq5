@@ -327,7 +327,8 @@ def get_recent_history(days=3, limit=150):
             })
     # آخر N صفقة فقط — تجنب timeout من payload ضخم
     result = result[-limit:]
-    print(f"📋 {datetime.now().strftime('%H:%M:%S')} - history: {len(result)} صفقة (آخر {days} أيام)")
+    latest = result[-1]["time"] if result else "لا يوجد"
+    print(f"📋 {datetime.now().strftime('%H:%M:%S')} - history: {len(result)} صفقة (آخر {days} أيام) | أحدث: {latest}")
     return result
 
 
