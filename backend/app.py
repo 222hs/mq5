@@ -206,6 +206,10 @@ def init_db():
                 conn.execute(f"ALTER TABLE trade_history ADD COLUMN {col}")
             except Exception:
                 pass
+        # حذف صفقات أقدم من اليوم عند كل startup
+        from datetime import date
+        today = date.today().isoformat()
+        conn.execute("DELETE FROM trade_history WHERE time < ?", (today,))
         conn.commit()
         conn.execute("""
             CREATE TABLE IF NOT EXISTS account_snapshot (
