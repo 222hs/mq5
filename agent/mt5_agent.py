@@ -823,10 +823,11 @@ def push_grx_settings():
 
 
 _last_grx_settings_hash = None
+_grx_first_sync = True
 
 def sync_grx_settings():
     """يسحب إعدادات GRX من الـ backend ويكتبها لـ GRX_Settings.json في MT5 Common."""
-    global _last_grx_settings_hash
+    global _last_grx_settings_hash, _grx_first_sync
     try:
         r = _session.get(f"{BACKEND_URL}/api/settings/grx", timeout=(5, 10))
         if r.status_code != 200:
@@ -835,14 +836,28 @@ def sync_grx_settings():
         settings = r.json()
         new_hash = str(sorted(settings.items()))
         t = datetime.now().strftime('%H:%M:%S')
-        if new_hash == _last_grx_settings_hash:
+        if new_hash == _last_grx_settings_hash and not _grx_first_sync:
             print(f"[{t}] GRX sync — لا تغيير (BasketTP=${settings.get('BasketTP')} BaseLot={settings.get('BaseLot')})")
             return
         _last_grx_settings_hash = new_hash
+        _grx_first_sync = False
 
         grx_file = os.path.join(_MT5_COMMON, "GRX_Settings.json")
-        with open(grx_file, "w", encoding="utf-8") as f:
-            json.dump(settings, f, separators=(',', ':'))
+        os.makedirs(os.path.dirname(grx_file), exist_ok=True)
+        written = False
+        for w in range(3):
+            try:
+                with open(grx_file, "w", encoding="utf-8") as f:
+                    json.dump(settings, f, indent=2, ensure_ascii=False)
+                written = True
+                break
+            except Exception as we:
+                if w < 2:
+                    time.sleep(0.3)
+                else:
+                    print(f"⚠️ grx: فشل كتابة الملف بعد 3 محاولات: {we}")
+        if not written:
+            return
 
         print(f"\n{'='*55}")
         print(f"📊 [{t}] إعدادات GRX جديدة — كُتبت للملف:")
