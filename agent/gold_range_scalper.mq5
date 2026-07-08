@@ -20,6 +20,7 @@ input int      CooldownBars   = 3;      // بارات الانتظار بعد ا
 input double   ADXMax         = 25.0;   // حد ADX (فلتر الترند)
 input bool     UseADXFilter   = true;   // تفعيل فلتر ADX
 input double   SLMult         = 1.0;    // مضاعف SL الأمان
+input double   ReverseStopUSD = 5.0;   // خسارة تشغّل الإغلاق العكسي (0=معطّل)
 input int      MagicNumber    = 88888;  // Magic Number
 input bool     UsePTDFilter   = true;   // فلتر اتجاه PTD
 input int      PTDFast        = 5;      // PTD فترة سريعة
@@ -67,6 +68,7 @@ int      g_barsAfterLoss    = 0;   // عداد البارات منذ آخر خس
 int      g_hPTD             = INVALID_HANDLE; // handle إنديكاتور PTD
 int      g_consecutiveWins  = 0;   // أرباح متتالية → يرفع الـ TP
 double   g_dynamicTP        = 0;   // الـ TP الديناميكي الفعلي
+int      g_pendingReverse   = 0;   // 1=BUY -1=SELL بعد إغلاق عكسي
 
 //===================================================================
 //  SETTINGS FILE
@@ -498,6 +500,42 @@ void TryEntry()
   }
 
 //===================================================================
+//  REVERSE ENTRY — يفتح عكس الاتجاه فوراً بعد إغلاق الخسارة
+//===================================================================
+
+void OpenReverse(int signal)
+  {
+   if(g_inEntry) return;
+   long spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+   if(spread > g_maxSpread) { EALog("REVERSE skip: spread="+IntegerToString(spread)); return; }
+
+   string dir = (signal == 1) ? "BUY" : "SELL";
+   g_lastDir       = dir;
+   g_lastSignalDir = signal;
+   g_cooldownLeft  = 0;
+
+   double lot = CalcAutoLot();
+   double sl  = CalcSafetySL(signal);
+
+   g_inEntry = true;
+   int opened = 0;
+   for(int i = 0; i < g_basketCount; i++)
+     {
+      bool ok = false;
+      if(signal == 1)
+         ok = trade.Buy (lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_ASK), sl, 0, "GRX_REV_BUY");
+      else
+         ok = trade.Sell(lot, _Symbol, SymbolInfoDouble(_Symbol,SYMBOL_BID), sl, 0, "GRX_REV_SELL");
+      if(ok) opened++;
+      else { EALog("FAIL REVERSE "+dir+" #"+IntegerToString(i+1)); break; }
+      Sleep(50);
+     }
+   EALog("🔄 REVERSE OPENED "+IntegerToString(opened)+"/"+IntegerToString(g_basketCount)
+         +" "+dir+" lot="+DoubleToString(lot,3));
+   g_inEntry = false;
+  }
+
+//===================================================================
 //  EA EVENTS
 //===================================================================
 
@@ -549,6 +587,17 @@ void OnTick()
      {
       CloseBasket("TP $"+DoubleToString(net,2)+" (dTP=$"+DoubleToString(activeTP,2)+")");
       UpdateDashboard(0, 0);
+      return;
+     }
+
+   // ── إغلاق عكسي: لو الخسارة تجاوزت ReverseStopUSD → سكّر وافتح عكسها ──
+   if(basket > 0 && ReverseStopUSD > 0 && net <= -ReverseStopUSD)
+     {
+      int revDir = (g_lastSignalDir == 1) ? -1 : 1;
+      CloseBasket("REVERSE STOP $"+DoubleToString(net,2));
+      UpdateDashboard(0, 0);
+      Sleep(200);
+      OpenReverse(revDir);
       return;
      }
 
