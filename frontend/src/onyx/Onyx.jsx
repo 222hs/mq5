@@ -130,9 +130,9 @@ export default function Onyx() {
           </div>
           <div className="flex items-center gap-6">
             <div className="hidden md:flex items-center gap-3 px-3 py-1.5" style={{ border: '1px solid rgba(255,176,0,.12)' }}>
-              <Node label="MT5" status={connections.mt5} />
-              <Node label="BINANCE" status={connections.binance} />
-              <Node label="FIREBASE" status={connections.firebase} />
+              <Node label="MT5 AGENT" status={isOnline ? 'connected' : 'disconnected'} />
+              <Node label="SOCKET" status={connections.mt5} />
+              <Node label="API" status={latency != null ? 'connected' : 'connecting'} />
             </div>
             <span style={{ fontSize: 12, letterSpacing: 2, color: latency == null ? CRIMSON : latency < 20 ? EMERALD : latency > 50 ? AMBER : '#cdd3dc' }}>
               PING {latency == null ? '—' : latency + 'MS'}
