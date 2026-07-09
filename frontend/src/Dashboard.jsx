@@ -3,23 +3,24 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v3.47';
+const DASH_VERSION = 'v4.0';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
 const C = {
-  bg:      '#0d1117',
-  surface: '#161b22',
+  bg:      '#000000',
+  surface: '#0a1014',
   ink:     '#e6edf3',
-  muted:   '#8b949e',
-  faint:   '#21262d',
+  muted:   '#5f7078',
+  faint:   '#12191d',
   neon:    '#00ff41',
   neonDim: 'rgba(0,255,65,0.08)',
-  red:     '#ff4560',
+  cyan:    '#00F0FF',
+  red:     '#FF003C',
   yellow:  '#f0b429',
-  mono:    "'Courier New','Courier',monospace",
-  shadow:  'none',
-  border:  '1px solid rgba(0,255,65,0.25)',
+  mono:    "'JetBrains Mono','Fira Code','Courier New',monospace",
+  shadow:  '0 0 22px rgba(0,240,255,0.10)',
+  border:  '1px solid rgba(0,240,255,0.28)',
 };
 
 // ── helpers ────────────────────────────────────────────────────────
@@ -470,8 +471,22 @@ export default function Dashboard() {
     { n:'06', t:'CLOSE',    s:'per-trade',             ok: !!lastTrade, last: lastProfit },
   ];
 
+  // holographic 3D tilt — follows the cursor over any .bcard (event-delegated)
+  const handleTilt = (e) => {
+    const card = e.target.closest('.bcard');
+    if (!card) return;
+    const r = card.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width - 0.5;
+    const py = (e.clientY - r.top) / r.height - 0.5;
+    card.style.transform = `perspective(1100px) rotateX(${(-py * 4).toFixed(2)}deg) rotateY(${(px * 4).toFixed(2)}deg)`;
+  };
+  const clearTilt = (e) => {
+    const card = e.target.closest('.bcard');
+    if (card && !card.contains(e.relatedTarget)) card.style.transform = '';
+  };
+
   return (
-    <div style={{
+    <div onMouseMove={handleTilt} onMouseOut={clearTilt} style={{
       fontFamily: C.mono,
       background: C.bg,
       minHeight: '100vh',
@@ -481,11 +496,11 @@ export default function Dashboard() {
     }}>
       <style>{`
         * { box-sizing: border-box; border-radius: 2px !important; }
-        body { background: #0d1117; }
+        body { background: #000; }
         @keyframes popIn  { from { transform: scale(0.8) translateY(20px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
         @keyframes blink  { 0%,100%{opacity:1} 50%{opacity:0.15} }
         @keyframes slideUp{ from{transform:translateY(40px);opacity:0} to{transform:translateY(0);opacity:1} }
-        .bcard:hover { border-color: rgba(0,255,65,0.6) !important; }
+        .bcard:hover { border-color: rgba(0,240,255,0.6) !important; }
         .bbtn:hover  { background:#0d1117 !important; color:#00ff41 !important; border-color:#00ff41 !important; }
         .bbtn:active { opacity:0.8; }
         .bbtn-red:hover { background:#0d1117 !important; color:#ff4560 !important; border-color:#ff4560 !important; }
@@ -510,8 +525,29 @@ export default function Dashboard() {
         ::-webkit-scrollbar-track{background:#000}
         ::-webkit-scrollbar-thumb{background:#00ff41}
         tr.hrow:hover td { background: rgba(0,255,65,0.08); }
+        /* ── ALGORY sci-fi overlay ─────────────────────────── */
+        .scanlines { position:fixed; inset:0; z-index:9998; pointer-events:none;
+          background:repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px, rgba(0,0,0,0.22) 3px, rgba(0,0,0,0.22) 4px);
+          mix-blend-mode:multiply; animation:crtflk 4s steps(60) infinite; }
+        .scanlines::after { content:''; position:absolute; left:0; right:0; height:22vh;
+          background:linear-gradient(to bottom, transparent, rgba(0,240,255,0.05), transparent); animation:scansweep 7s linear infinite; }
+        .crt-vignette { position:fixed; inset:0; z-index:9997; pointer-events:none;
+          background:radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.7) 100%); }
+        @keyframes crtflk { 0%,100%{opacity:.5} 50%{opacity:.6} 52%{opacity:.4} 54%{opacity:.58} }
+        @keyframes scansweep { 0%{transform:translateY(-25vh)} 100%{transform:translateY(120vh)} }
+        .bcard { transition:transform .12s ease, border-color .15s, box-shadow .15s; transform-style:preserve-3d; will-change:transform; }
+        .bcard:hover { box-shadow:0 0 22px rgba(0,240,255,0.18) !important; }
+        .glx { position:relative; display:inline-block; }
+        .glx::before,.glx::after { content:attr(data-text); position:absolute; left:0; top:0; width:100%; overflow:hidden; clip-path:inset(0 0 100% 0); mix-blend-mode:screen; pointer-events:none; }
+        .glx::before { color:#FF003C; animation:glxa 3.2s steps(1) infinite; }
+        .glx::after  { color:#00F0FF; animation:glxb 2.6s steps(1) infinite; }
+        @keyframes glxa { 0%,88%,100%{clip-path:inset(0 0 100% 0); transform:translate(0,0)} 89%{clip-path:inset(8% 0 62% 0); transform:translate(-2px,-1px)} 92%{clip-path:inset(46% 0 24% 0); transform:translate(2px,1px)} 95%{clip-path:inset(74% 0 6% 0); transform:translate(-1px,0)} }
+        @keyframes glxb { 0%,82%,100%{clip-path:inset(0 0 100% 0); transform:translate(0,0)} 84%{clip-path:inset(20% 0 50% 0); transform:translate(2px,0)} 88%{clip-path:inset(60% 0 20% 0); transform:translate(-2px,1px)} 93%{clip-path:inset(34% 0 40% 0); transform:translate(1px,-1px)} }
+        .neon-pulse { animation:neonp 2.4s ease-in-out infinite; }
+        @keyframes neonp { 0%,100%{text-shadow:0 0 6px currentColor,0 0 14px currentColor} 50%{text-shadow:0 0 12px currentColor,0 0 30px currentColor,0 0 48px currentColor} }
       `}</style>
       <div className="scanlines" />
+      <div className="crt-vignette" />
 
       {/* ═══ TOP BAR ═════════════════════════════════════════════ */}
       <header style={{
@@ -523,8 +559,8 @@ export default function Dashboard() {
       }}>
         {/* Left: title + status pill + controls */}
         <div style={{display:'flex', alignItems:'center', gap:14, flexWrap:'wrap'}}>
-          <div style={{fontSize:14, fontWeight:'bold', letterSpacing:'2px', color:C.ink, textTransform:'uppercase'}}>
-            GOLD_SCALPER_X<span style={{color:C.neon}}>&gt;_</span>
+          <div style={{fontSize:16, fontWeight:'bold', letterSpacing:'3px', color:C.cyan, textTransform:'uppercase'}}>
+            <span className="glx neon-pulse" data-text="222s" style={{color:C.cyan}}>222s</span><span style={{color:C.neon}}>&gt;_</span>
             <span style={{fontSize:9, color:C.muted, marginLeft:8, letterSpacing:'1px'}}>{DASH_VERSION}</span>
           </div>
           <div style={{
