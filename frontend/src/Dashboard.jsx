@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
+import CommandCore from './CommandCore.jsx';
+import InvadersGame from './algory/InvadersGame.jsx';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v4.0';
+const DASH_VERSION = 'v5.0';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
@@ -115,6 +117,7 @@ export default function Dashboard() {
   const [logs, setLogs] = useState([]);
   const logBoxRef = useRef(null);
   const [showAnalysis, setShowAnalysis] = useState(false);
+  const [showGame, setShowGame] = useState(false);
   const [snapshots, setSnapshots] = useState([]);
   const [snapLoading, setSnapLoading] = useState(false);
   const [historyData, setHistoryData] = useState([]);
@@ -473,8 +476,9 @@ export default function Dashboard() {
 
   // holographic 3D tilt — follows the cursor over any .bcard (event-delegated)
   const handleTilt = (e) => {
+    if (e.target.closest('canvas')) return;
     const card = e.target.closest('.bcard');
-    if (!card) return;
+    if (!card || card.classList.contains('no-tilt')) return;
     const r = card.getBoundingClientRect();
     const px = (e.clientX - r.left) / r.width - 0.5;
     const py = (e.clientY - r.top) / r.height - 0.5;
@@ -549,6 +553,18 @@ export default function Dashboard() {
       <div className="scanlines" />
       <div className="crt-vignette" />
 
+      {showGame && (
+        <div onClick={() => setShowGame(false)} style={{position:'fixed', inset:0, zIndex:10000, background:'rgba(0,0,0,0.86)', display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
+          <div onClick={(e) => e.stopPropagation()} className="bcard no-tilt" style={bCard({padding:'1rem', width:'min(94vw,470px)', border:`1px solid ${C.cyan}`, boxShadow:'0 0 42px rgba(0,240,255,0.3)'})}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10}}>
+              <span className="glx" data-text="PROVING GROUNDS" style={{fontSize:12, fontWeight:'bold', letterSpacing:3, color:C.cyan, textTransform:'uppercase'}}>PROVING GROUNDS</span>
+              <button onClick={() => setShowGame(false)} style={{background:'transparent', border:`1px solid ${C.red}`, color:C.red, cursor:'pointer', padding:'3px 10px', fontFamily:C.mono, fontWeight:'bold', fontSize:11}}>✕ CLOSE</button>
+            </div>
+            <InvadersGame />
+          </div>
+        </div>
+      )}
+
       {/* ═══ TOP BAR ═════════════════════════════════════════════ */}
       <header style={{
         background:C.bg,
@@ -605,6 +621,11 @@ export default function Dashboard() {
             padding:'5px 14px', border:`2px solid #ff9900`, borderRadius:2,
             background:'transparent', color:'#ff9900', cursor:'pointer',
           }}>◆ ANALYSIS</button>
+          <button onClick={()=>setShowGame(true)} style={{
+            fontFamily:C.mono, fontWeight:'bold', fontSize:11, letterSpacing:'2px',
+            padding:'5px 14px', border:`2px solid ${C.cyan}`, borderRadius:2,
+            background:'transparent', color:C.cyan, cursor:'pointer',
+          }}>▶ ARCADE</button>
         </div>
         {/* Middle: symbol + account */}
         <div style={{display:'flex', gap:20, alignItems:'center', flexWrap:'wrap'}}>
@@ -628,24 +649,24 @@ export default function Dashboard() {
       <div style={{padding:'1.25rem'}}>
 
         {/* ═══ WIN STREAK + TOTAL PNL ══════════════════════════ */}
-        <div className="bcard" style={bCard({marginBottom:'1.25rem', display:'flex', alignItems:'center', justifyContent:'space-around', flexWrap:'wrap', gap:40, padding:'2.5rem 3rem'})}>
+        <div className="bcard no-tilt" style={bCard({marginBottom:'1.25rem', display:'flex', alignItems:'center', justifyContent:'space-around', flexWrap:'wrap', gap:40, padding:'2.5rem 3rem'})}>
 
           {/* دائرة WIN STREAK */}
           <div style={{display:'flex', flexDirection:'column', alignItems:'center', gap:16}}>
-            <svg width="320" height="320" viewBox="0 0 320 320">
-              <circle cx="160" cy="160" r={R} fill="none" stroke={C.faint} strokeWidth="14"/>
-              <circle cx="160" cy="160" r={R} fill="none"
-                stroke={streak>0 ? C.neon : C.faint} strokeWidth="14"
-                strokeDasharray={`${CIRC*streakPct} ${CIRC}`}
-                transform="rotate(-90 160 160)" strokeLinecap="butt"
-                style={{filter: streak>0 ? `drop-shadow(0 0 12px ${C.neon})` : 'none'}}/>
-              <text x="160" y="148" textAnchor="middle"
-                fontSize="90" fontWeight="bold" fontFamily={C.mono}
-                fill={streak>0 ? C.neon : C.muted}>{streak}</text>
-              <text x="160" y="196" textAnchor="middle"
-                fontSize="18" fontWeight="bold" fontFamily={C.mono}
-                fill={C.muted} letterSpacing="4">WIN STREAK</text>
-            </svg>
+            <div style={{width:320, height:320, position:'relative'}}>
+              <CommandCore
+                online={isOnline}
+                botRunning={botRunning}
+                profit={stats.total_profit}
+                equity={account?.equity}
+                winRate={stats.win_rate}
+                positions={positions.length}
+                velocity={tradesLastHour}
+              />
+              <div style={{position:'absolute', bottom:-4, left:0, right:0, textAlign:'center', fontSize:11, letterSpacing:4, color:C.muted, pointerEvents:'none'}}>
+                WIN STREAK <span style={{color: streak>0?C.neon:C.muted, fontWeight:'bold', textShadow: streak>0?`0 0 8px ${C.neon}`:'none'}}>{streak}</span>
+              </div>
+            </div>
             <div style={{display:'flex', gap:36}}>
               <div style={{textAlign:'center'}}>
                 <div style={bLabel({fontSize:10})}>WINS</div>
