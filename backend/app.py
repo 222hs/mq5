@@ -207,10 +207,7 @@ def init_db():
                 conn.execute(f"ALTER TABLE trade_history ADD COLUMN {col}")
             except Exception:
                 pass
-        # حذف صفقات أقدم من اليوم عند كل startup
-        from datetime import date
-        today = date.today().isoformat()
-        conn.execute("DELETE FROM trade_history WHERE time < ?", (today,))
+        # لا نحذف التاريخ — يتراكم عبر الأيام؛ يُستعاد محلياً من الويندوز بعد أي Railway redeploy
         conn.commit()
         conn.execute("""
             CREATE TABLE IF NOT EXISTS account_snapshot (
@@ -441,12 +438,11 @@ def get_snapshots(limit=50):
 
 
 def get_history(limit=500):
-    from datetime import date
-    today = date.today().isoformat()  # "2026-07-08"
+    # التاريخ الكامل (يتراكم عبر الأيام) — مرتّب من الأحدث
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM trade_history WHERE time >= ? ORDER BY time DESC LIMIT ?",
-            (today, limit)
+            "SELECT * FROM trade_history ORDER BY time DESC LIMIT ?",
+            (limit,)
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -1395,6 +1391,19 @@ def api_get_history():
     limit = int(request.args.get("limit", 200))
     trades = get_history(limit)
     return jsonify(trades)
+
+
+@app.route("/api/history/import", methods=["POST"])
+def api_import_history():
+    """يستقبل تاريخ الصفقات المحفوظ محلياً على الويندوز ويعيد إدخاله (redeploy recovery)."""
+    if not check_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    trades = body.get("trades") if isinstance(body, dict) else body
+    if not isinstance(trades, list):
+        return jsonify({"error": "trades must be a list"}), 400
+    upsert_history(trades)
+    return jsonify({"status": "ok", "imported": len(trades)})
 
 
 @app.route("/api/history/clear", methods=["POST"])

@@ -129,6 +129,33 @@ def upload_local_snapshots():
     print(f"✅ تم رفع {uploaded}/{len(db)} snapshots")
 
 
+def restore_history_if_wiped():
+    """
+    يعيد رفع تاريخ الصفقات المحفوظ محلياً على الويندوز إذا Railway مسح القاعدة —
+    فيتراكم التاريخ عبر الأيام ولا يضيع مع الديبلوي. idempotent (INSERT OR REPLACE).
+    """
+    try:
+        db = _load_local_json(_LOCAL_HISTORY)
+        trades = list(db.values())
+        local_count = len(trades)
+        if local_count == 0:
+            return
+        r = _session.get(f"{BACKEND_URL}/api/debug/history", timeout=(5, 8))
+        if r.status_code != 200:
+            return
+        backend_total = r.json().get("total", 0)
+        if backend_total < local_count:
+            print(f"♻️ {datetime.now().strftime('%H:%M:%S')} - history البكند {backend_total} / المحلي {local_count} → استعادة")
+            for i in range(0, local_count, 200):
+                try:
+                    _session.post(f"{BACKEND_URL}/api/history/import", json={"trades": trades[i:i + 200]}, timeout=(5, 15))
+                except Exception:
+                    pass
+            print(f"✅ استعادة history: {local_count} صفقة")
+    except Exception as e:
+        print(f"⚠️ restore_history: {type(e).__name__}")
+
+
 def restore_snapshots_if_wiped():
     """
     يكشف Railway redeploy (الذي يمسح قاعدة البكند) بينما الإيجنت شغّال،
@@ -1128,9 +1155,10 @@ def main():
 
             tail_ea_logs()  # إرسال لوق EA الجديدة للداشبورد
 
-            # استعادة snapshots التعلّم إذا Railway مسح القاعدة (فحص كل 60 ثانية)
+            # استعادة التعلّم والتاريخ إذا Railway مسح القاعدة (فحص كل 60 ثانية)
             if now - last_snap_restore >= 60:
                 threading.Thread(target=restore_snapshots_if_wiped, daemon=True).start()
+                threading.Thread(target=restore_history_if_wiped, daemon=True).start()
                 last_snap_restore = now
 
             # فلتر الأخبار كل دقيقة
