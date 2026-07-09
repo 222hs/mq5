@@ -1,14 +1,16 @@
 import { useState } from "react";
+import Onyx from "./onyx/Onyx.jsx";
 import Nexus from "./nexus/Nexus.jsx";
 import Dashboard from "./Dashboard.jsx";
 import Settings from "./Settings.jsx";
 import Analysis from "./Analysis.jsx";
 
 const TABS = [
-  { id: "dashboard", label: "COMMAND" },
+  { id: "onyx",      label: "ONYX"     },
+  { id: "nexus",     label: "NEXUS"    },
   { id: "analysis",  label: "ANALYSIS" },
   { id: "settings",  label: "SETTINGS" },
-  { id: "legacy",    label: "LEGACY"  },
+  { id: "legacy",    label: "LEGACY"   },
 ];
 
 const TABS_STYLE = {
@@ -27,7 +29,7 @@ const TABS_STYLE = {
 };
 
 export default function App() {
-  const [tab, setTab] = useState("dashboard");
+  const [tab, setTab] = useState("onyx");
 
   return (
     <div style={{ minHeight: "100vh", background: "#000", direction: "ltr" }}>
@@ -43,7 +45,7 @@ export default function App() {
         ))}
       </div>
       <div style={{ width: "100%" }}>
-        {tab === "dashboard" ? <Nexus /> : tab === "analysis" ? <Analysis /> : tab === "legacy" ? <Dashboard /> : <Settings />}
+        {tab === "onyx" ? <Onyx /> : tab === "nexus" ? <Nexus /> : tab === "analysis" ? <Analysis /> : tab === "legacy" ? <Dashboard /> : <Settings />}
       </div>
     </div>
   );

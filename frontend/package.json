@@ -10,14 +10,19 @@
     "@react-three/drei": "^9.122.0",
     "@react-three/fiber": "^8.18.0",
     "framer-motion": "^11.18.2",
+    "lightweight-charts": "^4.2.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "recharts": "^2.15.4",
     "socket.io-client": "^4.8.3",
-    "three": "^0.160.1"
+    "three": "^0.160.1",
+    "zustand": "^4.5.7"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.0",
+    "autoprefixer": "^10.5.2",
+    "postcss": "^8.5.16",
+    "tailwindcss": "^3.4.19",
     "vite": "^5.0.0"
   }
 }
