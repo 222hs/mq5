@@ -129,6 +129,29 @@ def upload_local_snapshots():
     print(f"✅ تم رفع {uploaded}/{len(db)} snapshots")
 
 
+def restore_snapshots_if_wiped():
+    """
+    يكشف Railway redeploy (الذي يمسح قاعدة البكند) بينما الإيجنت شغّال،
+    ويعيد رفع الـ snapshots المحفوظة محلياً على الويندوز — فلا يضيع التعلّم.
+    idempotent: البكند يستخدم INSERT OR IGNORE فلا تكرار.
+    """
+    try:
+        db = _load_local_json(_LOCAL_SNAPSHOTS)
+        local_count = len(db)
+        if local_count == 0:
+            return
+        r = _session.get(f"{BACKEND_URL}/api/snapshots/count", timeout=(5, 8))
+        if r.status_code != 200:
+            return
+        backend_count = r.json().get("count", 0)
+        # فجوة كبيرة = القاعدة انمسحت بعد redeploy → أعد الرفع
+        if backend_count < local_count:
+            print(f"♻️ {datetime.now().strftime('%H:%M:%S')} - البكند {backend_count} / المحلي {local_count} snapshots → استعادة (redeploy recovery)")
+            upload_local_snapshots()
+    except Exception as e:
+        print(f"⚠️ restore_snapshots: {type(e).__name__}")
+
+
 def connect_mt5():
     if not mt5.initialize():
         print(f"❌ فشل الاتصال بـ MT5: {mt5.last_error()}")
@@ -1082,6 +1105,7 @@ def main():
     last_settings_sync = 0
     last_candles_sync  = 0
     last_news_sync     = 0
+    last_snap_restore  = 0
     news_status        = {"blocked": False, "title": ""}
 
     try:
@@ -1103,6 +1127,11 @@ def main():
                 last_settings_sync = now
 
             tail_ea_logs()  # إرسال لوق EA الجديدة للداشبورد
+
+            # استعادة snapshots التعلّم إذا Railway مسح القاعدة (فحص كل 60 ثانية)
+            if now - last_snap_restore >= 60:
+                threading.Thread(target=restore_snapshots_if_wiped, daemon=True).start()
+                last_snap_restore = now
 
             # فلتر الأخبار كل دقيقة
             if now - last_news_sync >= 60:
