@@ -159,20 +159,15 @@ HEDGE_DEFAULT_SETTINGS = {
     "PartialPct":    50.0,
 }
 
+# مطابقة تماماً لمفاتيح إكسبرت GRX (gold_range_scalper.mq5) — لا تغيّر الأسماء
 GRX_DEFAULT_SETTINGS = {
     "BaseLot":      0.11,
-    "RiskPct":      1.0,
-    "BasketCount":  5,
-    "BasketTP":     15.0,
-    "MaxDrawdown":  80.0,
+    "TradeTP":      3.0,
+    "TradeSL":      5.0,
     "MaxSpread":    350,
-    "LotBoost":     2.0,
-    "CooldownBars": 3,
-    "ADXMax":       25.0,
-    "UseADXFilter":    1,
-    "SLMult":          1.0,
-    "ReverseStopUSD":  5.0,
-    "BotRunning":      1,
+    "CooldownBars": 1,
+    "MaxTrades":    20,
+    "BotRunning":   1,
 }
 
 

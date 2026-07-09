@@ -894,7 +894,7 @@ def sync_grx_settings():
         new_hash = str(sorted(settings.items()))
         t = datetime.now().strftime('%H:%M:%S')
         if new_hash == _last_grx_settings_hash and not _grx_first_sync:
-            print(f"[{t}] GRX sync — لا تغيير (BasketTP=${settings.get('BasketTP')} BaseLot={settings.get('BaseLot')})")
+            print(f"[{t}] GRX sync — لا تغيير | " + "  ".join(f"{k}={v}" for k, v in sorted(settings.items())))
             return
         _last_grx_settings_hash = new_hash
         _grx_first_sync = False
@@ -920,9 +920,9 @@ def sync_grx_settings():
         _save_local_json(_LOCAL_GRX_SETTINGS, settings)
 
         print(f"\n{'='*55}")
-        print(f"📊 [{t}] إعدادات GRX جديدة — كُتبت للملف:")
-        print(f"   BaseLot={settings.get('BaseLot')}  TradeTP={settings.get('TradeTP')}  TradeSL={settings.get('TradeSL')}")
-        print(f"   MaxSpread={settings.get('MaxSpread')}  CooldownBars={settings.get('CooldownBars')}  MaxTrades={settings.get('MaxTrades')}")
+        print(f"📊 [{t}] إعدادات GRX جديدة — كُتبت للبوت (كل الإعدادات):")
+        for _k, _v in settings.items():
+            print(f"   {_k:<14} = {_v}")
         print(f"   📁 {grx_file}")
         print(f"{'='*55}\n")
     except Exception as e:

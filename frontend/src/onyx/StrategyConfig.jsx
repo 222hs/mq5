@@ -7,20 +7,16 @@ const AMBER = '#FFB000', EMERALD = '#00E676', CRIMSON = '#FF3D00', MUTED = '#6b7
 
 /* Editable live GRX bot settings — POST /api/settings/grx. The Windows
    agent pulls these every 15s and writes GRX_Settings.json for the EA. */
+// exact keys read by the GRX EA (gold_range_scalper.mq5) — do not rename
 const FIELDS = [
   { k: 'BaseLot', label: 'Base Lot', step: 0.01 },
-  { k: 'RiskPct', label: 'Risk %', step: 0.1 },
-  { k: 'BasketCount', label: 'Basket Count', step: 1, int: true },
-  { k: 'BasketTP', label: 'Basket TP $', step: 0.5 },
-  { k: 'MaxDrawdown', label: 'Max Drawdown $', step: 1 },
+  { k: 'TradeTP', label: 'Take Profit $', step: 0.5 },
+  { k: 'TradeSL', label: 'Stop Loss $', step: 0.5 },
   { k: 'MaxSpread', label: 'Max Spread', step: 10, int: true },
-  { k: 'LotBoost', label: 'Lot Boost', step: 0.1 },
   { k: 'CooldownBars', label: 'Cooldown Bars', step: 1, int: true },
-  { k: 'ADXMax', label: 'ADX Max', step: 1 },
-  { k: 'SLMult', label: 'SL Mult', step: 0.1 },
-  { k: 'ReverseStopUSD', label: 'Reverse Stop $', step: 0.5 },
+  { k: 'MaxTrades', label: 'Max Trades', step: 1, int: true },
 ];
-const INT = new Set(FIELDS.filter((f) => f.int).map((f) => f.k).concat('UseADXFilter'));
+const INT = new Set(FIELDS.filter((f) => f.int).map((f) => f.k));
 
 // keep any field the user is still editing from being overwritten by the server echo
 const mergeKeepDirty = (server, dirty, prev) => {
@@ -80,8 +76,6 @@ export default function StrategyConfig() {
     setBusy(false); setTimeout(() => setMsg(''), 3000);
   };
 
-  const toggleADX = () => { const v = draft.UseADXFilter ? 0 : 1; dirty.current.add('UseADXFilter'); setDraft((d) => ({ ...d, UseADXFilter: v })); setTimeout(() => saveField('UseADXFilter'), 0); };
-
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between mb-3">
@@ -105,12 +99,6 @@ export default function StrategyConfig() {
             />
           </label>
         ))}
-        <div className="grx-field">
-          <span className="micro">ADX Filter</span>
-          <button disabled={!loaded} onClick={toggleADX} className="grx-input" style={{ textAlign: 'left', cursor: 'pointer', color: draft.UseADXFilter ? EMERALD : MUTED }}>
-            {draft.UseADXFilter ? 'ON ●' : 'OFF ○'}
-          </button>
-        </div>
       </div>
 
       <button onClick={saveAll} disabled={busy || !loaded} className="grx-apply mt-6" style={{ opacity: loaded ? 1 : 0.5 }}>
