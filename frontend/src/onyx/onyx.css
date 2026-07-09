@@ -40,6 +40,7 @@
 .node.connecting{ background:var(--amber); box-shadow:0 0 10px var(--amber); animation:nodepulse 1s infinite; }
 .node.disconnected,.node.offline{ background:#3a3d44; }
 @keyframes nodepulse{ 0%,100%{opacity:1} 50%{opacity:.3} }
+@keyframes blink{ 0%,100%{opacity:1} 50%{opacity:.15} }
 
 /* ── Ticker strip (top marquee) ──────────────────────────────── */
 .ticker-strip{ height:34px; display:flex; align-items:center; overflow:hidden; white-space:nowrap; }

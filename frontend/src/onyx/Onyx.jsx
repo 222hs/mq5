@@ -6,6 +6,7 @@ import { useTradingStore } from '../store/useTradingStore';
 import MeshGradient from './MeshGradient.jsx';
 import MomentumRadar from './MomentumRadar.jsx';
 import CoreStage from './CoreStage.jsx';
+import LedgerPulse from './LedgerPulse.jsx';
 import ExecutionTape from './ExecutionTape.jsx';
 import KillBox from './KillBox.jsx';
 import StrategyConfig from './StrategyConfig.jsx';
@@ -142,8 +143,8 @@ export default function Onyx() {
 
         {/* Z3 — the monument (full width) */}
         <motion.div style={{ x: px, y: py }} className="relative">
-          <div className="pointer-events-none hidden md:block" style={{ position: 'absolute', right: '12%', top: '50%', width: 520, height: 340, transform: 'translateY(-50%)', background: 'radial-gradient(ellipse, rgba(255,176,0,0.10), transparent 70%)' }} />
-          <div className="relative" style={{ padding: 'clamp(28px,5vw,72px)', paddingBottom: 34 }}>
+          <LedgerPulse />
+          <div className="relative" style={{ padding: 'clamp(28px,5vw,72px)', paddingBottom: 34, zIndex: 2 }}>
             <div className="rule" />
             <div className="eyebrow" style={{ marginBottom: 10 }}>Total Balance</div>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.8 }}>
