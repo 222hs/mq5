@@ -7,6 +7,7 @@ import MeshGradient from './MeshGradient.jsx';
 import MomentumRadar from './MomentumRadar.jsx';
 import CoreStage from './CoreStage.jsx';
 import LedgerPulse from './LedgerPulse.jsx';
+import EngineLog from './EngineLog.jsx';
 import ExecutionTape from './ExecutionTape.jsx';
 import KillBox from './KillBox.jsx';
 import StrategyConfig from './StrategyConfig.jsx';
@@ -174,8 +175,10 @@ export default function Onyx() {
           </div>
           <div className="flex">
             <div className="hair-v hidden lg:block" />
-            <div className="flex-1 min-w-0 px-4 py-5">
-              <ExecutionTape />
+            <div className="flex-1 min-w-0 px-4 py-5 flex flex-col gap-4" style={{ maxHeight: 560 }}>
+              <div style={{ flex: '1 1 0', minHeight: 0 }}><ExecutionTape /></div>
+              <div className="hair-h" />
+              <div style={{ flex: '1 1 0', minHeight: 0 }}><EngineLog /></div>
             </div>
           </div>
         </div>

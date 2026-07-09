@@ -83,6 +83,41 @@ function Tunnel({ data, pulse }) {
   return <group>{Array.from({ length: N }).map((_, i) => (<mesh key={i} ref={(el) => (rings.current[i] = el)} position={[0, 0, -i * 0.7 + 3]}><torusGeometry args={[1.7, 0.02, 8, 80]} /><meshBasicMaterial color="#FFB000" transparent opacity={0.6} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>))}</group>;
 }
 
+/* ── NEURAL — the Claude pattern engine; nodes light up with samples learned ── */
+function Neural({ data, pulse }) {
+  const grp = useRef(); const inst = useRef(); const dummy = useMemo(() => new THREE.Object3D(), []); const tmp = useMemo(() => new THREE.Color(), []);
+  const { nodes, lines } = useMemo(() => {
+    const layers = [7, 11, 11, 4]; const xs = [-2.1, -0.7, 0.7, 2.1]; const ns = [];
+    layers.forEach((cnt, li) => { for (let i = 0; i < cnt; i++) ns.push({ x: xs[li], y: (i - (cnt - 1) / 2) * 0.5, z: (Math.random() - 0.5) * 0.3 }); });
+    const start = []; let acc = 0; layers.forEach((c) => { start.push(acc); acc += c; });
+    const lp = [];
+    for (let li = 0; li < layers.length - 1; li++) for (let a = 0; a < layers[li]; a++) for (let b = 0; b < layers[li + 1]; b++) if (Math.random() < 0.5) { const na = ns[start[li] + a], nb = ns[start[li + 1] + b]; lp.push(na.x, na.y, na.z, nb.x, nb.y, nb.z); }
+    return { nodes: ns, lines: new Float32Array(lp) };
+  }, []);
+  useFrame((s, dt) => {
+    const d = data.current; const t = s.clock.elapsedTime; const k = env(pulse.current, t);
+    const learn = clamp((d.snapshots || 0) / 60, 0, 1); const active = Math.round(nodes.length * learn);
+    if (grp.current) grp.current.rotation.y = Math.sin(t * 0.18) * 0.5;
+    if (inst.current) {
+      inst.current.count = nodes.length;
+      for (let i = 0; i < nodes.length; i++) {
+        const n = nodes[i]; const lit = i < active;
+        dummy.position.set(n.x, n.y, n.z);
+        dummy.scale.setScalar((lit ? 0.12 * (0.9 + 0.25 * Math.sin(t * 3 + i)) : 0.06) * (1 + 0.4 * k));
+        dummy.updateMatrix(); inst.current.setMatrixAt(i, dummy.matrix);
+        inst.current.setColorAt(i, lit ? EMERALD : AMBER);
+      }
+      inst.current.instanceMatrix.needsUpdate = true; if (inst.current.instanceColor) inst.current.instanceColor.needsUpdate = true;
+    }
+  });
+  return (
+    <group ref={grp}>
+      <lineSegments><bufferGeometry><bufferAttribute attach="attributes-position" args={[lines, 3]} /></bufferGeometry><lineBasicMaterial color="#FFB000" transparent opacity={0.1} /></lineSegments>
+      <instancedMesh ref={inst} args={[undefined, undefined, 40]}><sphereGeometry args={[1, 10, 10]} /><meshBasicMaterial toneMapped={false} /></instancedMesh>
+    </group>
+  );
+}
+
 function RimLight({ data }) {
   const ref = useRef(); const tmp = useMemo(() => new THREE.Color(), []);
   useFrame(() => {
@@ -95,19 +130,28 @@ function RimLight({ data }) {
 
 const MODES = [
   { k: 'supernova', label: 'SUPERNOVA' }, { k: 'aurora', label: 'AURORA' },
-  { k: 'helix', label: 'HELIX' }, { k: 'tunnel', label: 'TUNNEL' }, { k: 'arcade', label: 'ARCADE' },
+  { k: 'helix', label: 'HELIX' }, { k: 'tunnel', label: 'TUNNEL' },
+  { k: 'neural', label: 'NEURAL' }, { k: 'arcade', label: 'ARCADE' },
 ];
 
 export default function CoreStage() {
   const [mode, setMode] = useState('supernova');
-  const data = useRef({ positions: [], balance: null, pnlOpen: 0, lat: null });
+  const data = useRef({ positions: [], balance: null, pnlOpen: 0, lat: null, snapshots: 0, patternTime: null, trades: 0 });
   const pulse = useRef({ trigger: false, at: -99 });
+  const learnPulse = useRef({ trigger: false, at: -99 });
   const lastLen = useRef(useTradingStore.getState().positions.length);
+  const lastPattern = useRef(useTradingStore.getState().patternTime);
+  const snap = (s) => ({ positions: s.positions, balance: s.balance, pnlOpen: s.pnlOpen, lat: s.latencyMs, snapshots: s.snapshots, patternTime: s.patternTime, trades: s.stats.total_trades });
   useEffect(() => useTradingStore.subscribe((s) => {
-    data.current = { positions: s.positions, balance: s.balance, pnlOpen: s.pnlOpen, lat: s.latencyMs };
+    data.current = snap(s);
     if (s.positions.length !== lastLen.current) { lastLen.current = s.positions.length; pulse.current.trigger = true; }
+    if (s.patternTime !== lastPattern.current) { lastPattern.current = s.patternTime; learnPulse.current.trigger = true; }
   }), []);
-  data.current = { positions: useTradingStore.getState().positions, balance: useTradingStore.getState().balance, pnlOpen: useTradingStore.getState().pnlOpen, lat: useTradingStore.getState().latencyMs };
+  data.current = snap(useTradingStore.getState());
+
+  const patternAdvice = useTradingStore((s) => s.patternAdvice);
+  const snapshots = useTradingStore((s) => s.snapshots);
+  const trades = useTradingStore((s) => s.stats.total_trades);
 
   return (
     <div className="flex flex-col h-full">
@@ -130,7 +174,18 @@ export default function CoreStage() {
             {mode === 'aurora' && <Aurora data={data} pulse={pulse} />}
             {mode === 'helix' && <Helix data={data} pulse={pulse} />}
             {mode === 'tunnel' && <Tunnel data={data} pulse={pulse} />}
+            {mode === 'neural' && <Neural data={data} pulse={learnPulse} />}
           </Canvas>
+        )}
+
+        {mode === 'neural' && (
+          <div className="absolute left-4 bottom-4 right-4 pointer-events-none" style={{ zIndex: 3 }}>
+            <div className="micro" style={{ color: '#FFB000' }}>COGNITION · CLAUDE PATTERN ENGINE</div>
+            <div style={{ fontSize: 13, color: '#e7d7b0', marginTop: 3, fontVariantNumeric: 'tabular-nums' }}>
+              LEARNED <b style={{ color: '#00E676' }}>{snapshots}</b> SAMPLES · {trades || 0} TRADES · CYCLE {Math.floor((trades || 0) / 10)} · NEXT IN {10 - ((trades || 0) % 10)}
+            </div>
+            {patternAdvice && <div className="micro" style={{ marginTop: 4, color: 'rgba(255,255,255,.5)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>▸ {String(patternAdvice).replace(/\n/g, ' · ').slice(0, 96)}</div>}
+          </div>
         )}
       </div>
     </div>

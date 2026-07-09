@@ -38,6 +38,12 @@ export const useTradingStore = create((set) => ({
   connections: { mt5: 'connecting', binance: 'offline', firebase: 'offline' },
   logs: [],
 
+  // ── AI / learning (Claude pattern engine) ──
+  patternAdvice: null,
+  patternTime: null,
+  claudeAdvice: null,
+  snapshots: 0,
+
   // ── ingest actions (called by the live layer) ──
   ingestDashboard: (d) => set((s) => {
     const positions = Array.isArray(d.positions) ? d.positions : s.positions;
@@ -60,8 +66,12 @@ export const useTradingStore = create((set) => ({
       candles,
       sessions: d.sessions || s.sessions,
       price: lastClose(candles) ?? s.price,
+      patternAdvice: d.pattern_advice ?? s.patternAdvice,
+      patternTime: d.pattern_time ?? s.patternTime,
+      claudeAdvice: d.claude_advice ?? s.claudeAdvice,
     };
   }),
+  setSnapshots: (n) => set({ snapshots: n }),
   ingestCandles: (d) => set((s) => {
     const candles = d.candles || [];
     return { candles, sessions: d.sessions || s.sessions, price: lastClose(candles) ?? s.price };

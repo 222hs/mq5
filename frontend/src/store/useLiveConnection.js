@@ -62,6 +62,13 @@ export function useLiveConnection() {
     };
     pollLogs();
 
+    // ── learning: stored training snapshots (15s) ──
+    const pollSnaps = async () => {
+      try { const r = await fetch(`${API_URL}/api/snapshots/count`); if (r.ok) { const d = await r.json(); if (typeof d.count === 'number') st().setSnapshots(d.count); } } catch { /* ignore */ }
+      later(pollSnaps, 15000);
+    };
+    pollSnaps();
+
     // ── REAL execution latency via ping round-trip (2s) ──
     const pingLoop = async () => {
       const t0 = performance.now();
