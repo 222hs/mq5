@@ -89,6 +89,12 @@
   font-family:inherit; font-weight:800; letter-spacing:3px; font-size:13px; cursor:pointer; transition:.15s; }
 .grx-apply:hover{ background:var(--amber); color:#000; }
 
+/* ── Reactor core switcher tabs ──────────────────────────────── */
+.core-tab{ font-family:inherit; font-size:10px; letter-spacing:2px; font-weight:700; padding:6px 12px; cursor:pointer;
+  color:rgba(255,255,255,.4); background:transparent; border:1px solid rgba(255,255,255,.08); transition:.15s; }
+.core-tab:hover{ color:#f0e6cf; border-color:rgba(255,176,0,.3); }
+.core-tab[data-on="true"]{ color:#000; background:var(--amber); border-color:var(--amber); box-shadow:0 0 14px rgba(255,176,0,.4); }
+
 .grain{ position:fixed; inset:0; z-index:1; pointer-events:none; opacity:.3;
   background:repeating-linear-gradient(0deg, transparent 0 2px, rgba(0,0,0,.16) 3px 3px); mix-blend-mode:overlay; }
 .vignette{ position:fixed; inset:0; z-index:2; pointer-events:none;

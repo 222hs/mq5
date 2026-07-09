@@ -4,8 +4,8 @@ import './onyx.css';
 import { useLiveConnection } from '../store/useLiveConnection';
 import { useTradingStore } from '../store/useTradingStore';
 import MeshGradient from './MeshGradient.jsx';
-import LatencyCore from './LatencyCore.jsx';
 import MomentumRadar from './MomentumRadar.jsx';
+import CoreStage from './CoreStage.jsx';
 import ExecutionTape from './ExecutionTape.jsx';
 import KillBox from './KillBox.jsx';
 import StrategyConfig from './StrategyConfig.jsx';
@@ -140,42 +140,40 @@ export default function Onyx() {
         </motion.header>
         <div className="hair-h" />
 
-        {/* Z3 + Z4 — the monument + execution tape */}
+        {/* Z3 — the monument (full width) */}
+        <motion.div style={{ x: px, y: py }} className="relative">
+          <div className="pointer-events-none hidden md:block" style={{ position: 'absolute', right: '12%', top: '50%', width: 520, height: 340, transform: 'translateY(-50%)', background: 'radial-gradient(ellipse, rgba(255,176,0,0.10), transparent 70%)' }} />
+          <div className="relative" style={{ padding: 'clamp(28px,5vw,72px)', paddingBottom: 34 }}>
+            <div className="rule" />
+            <div className="eyebrow" style={{ marginBottom: 10 }}>Total Balance</div>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.8 }}>
+              <BigBalance value={balance} />
+            </motion.div>
+            <div style={{ fontSize: 12, letterSpacing: 2, color: MUTED, marginTop: 14 }}>
+              {(stats.total_trades || 0).toLocaleString()} TRADES · EQUITY{' '}
+              <b style={{ color: EMERALD }}>{equity != null ? '$' + Number(equity).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '--'}</b>
+              {' · '}OPEN <b style={{ color: pnlOpen >= 0 ? EMERALD : CRIMSON }}>{pnlOpen >= 0 ? '+' : ''}${Math.abs(pnlOpen).toFixed(2)}</b>
+            </div>
+            <div className="flex items-end gap-6 md:gap-9 mt-8 flex-wrap">
+              <Stat label="Total P&L" value={typeof totalPnl === 'number' ? Math.abs(totalPnl) : 0} color={totalPnl >= 0 ? EMERALD : CRIMSON}
+                sub={`${totalPnl >= 0 ? '+' : '−'} · avg ${stats.total_trades ? (totalPnl / stats.total_trades).toFixed(2) : '--'}`} />
+              <div className="hair-v" style={{ height: 42 }} />
+              <Stat label="Today Net" value={Math.abs(todayNet)} color={todayNet >= 0 ? EMERALD : CRIMSON} sub={`${todayNet >= 0 ? '+' : '−'} · ${positions.length} open`} />
+              <div className="hair-v" style={{ height: 42 }} />
+              <Stat label="Win Rate" value={`${winRate}%`} color="#f0e6cf" progress={winRate} sub={`${stats.wins || 0}w / ${stats.losses || 0}l`} />
+            </div>
+          </div>
+        </motion.div>
+        <div className="hair-h" />
+
+        {/* Z4 — switchable reactor core + execution tape */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px]">
-          {/* MONUMENT */}
-          <motion.div style={{ x: px, y: py }} className="relative" >
-            {/* latency core behind the digits */}
-            <div style={{ position: 'absolute', right: '8%', top: '46%', width: 460, height: 460, transform: 'translateY(-50%)', opacity: 0.35, mixBlendMode: 'screen', pointerEvents: 'none' }} className="hidden md:block">
-              <LatencyCore />
-            </div>
-            <div className="relative" style={{ padding: 'clamp(28px,5vw,72px)', paddingBottom: 40 }}>
-              <div className="rule" />
-              <div className="eyebrow" style={{ marginBottom: 10 }}>Total Balance</div>
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.8 }}>
-                <BigBalance value={balance} />
-              </motion.div>
-              <div style={{ fontSize: 12, letterSpacing: 2, color: MUTED, marginTop: 14 }}>
-                {(stats.total_trades || 0).toLocaleString()} TRADES · EQUITY{' '}
-                <b style={{ color: EMERALD }}>{equity != null ? '$' + Number(equity).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '--'}</b>
-                {' · '}OPEN <b style={{ color: pnlOpen >= 0 ? EMERALD : CRIMSON }}>{pnlOpen >= 0 ? '+' : ''}${Math.abs(pnlOpen).toFixed(2)}</b>
-              </div>
-
-              {/* constellation */}
-              <div className="flex items-end gap-6 md:gap-9 mt-10 flex-wrap">
-                <Stat label="Total P&L" value={typeof totalPnl === 'number' ? Math.abs(totalPnl) : 0} color={totalPnl >= 0 ? EMERALD : CRIMSON}
-                  sub={`${totalPnl >= 0 ? '+' : '−'} · avg ${stats.total_trades ? (totalPnl / stats.total_trades).toFixed(2) : '--'}`} />
-                <div className="hair-v" style={{ height: 42 }} />
-                <Stat label="Today Net" value={Math.abs(todayNet)} color={todayNet >= 0 ? EMERALD : CRIMSON} sub={`${todayNet >= 0 ? '+' : '−'} · ${positions.length} open`} />
-                <div className="hair-v" style={{ height: 42 }} />
-                <Stat label="Win Rate" value={`${winRate}%`} color="#f0e6cf" progress={winRate} sub={`${stats.wins || 0}w / ${stats.losses || 0}l`} />
-              </div>
-            </div>
-          </motion.div>
-
-          {/* EXECUTION TAPE rail */}
+          <div className="px-6 py-5" style={{ minHeight: 400 }}>
+            <CoreStage />
+          </div>
           <div className="flex">
             <div className="hair-v hidden lg:block" />
-            <div className="flex-1 min-w-0 px-4 py-4">
+            <div className="flex-1 min-w-0 px-4 py-5">
               <ExecutionTape />
             </div>
           </div>
