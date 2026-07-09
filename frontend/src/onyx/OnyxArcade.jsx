@@ -192,8 +192,8 @@ export default function OnyxArcade() {
   }
 
   return (
-    <div className="absolute inset-0 grid place-items-center">
-      <canvas ref={canvas} style={{ aspectRatio: '16 / 9', width: '100%', maxHeight: '100%', display: 'block', imageRendering: 'pixelated', border: '1px solid rgba(255,176,0,.12)' }} />
+    <div className="absolute inset-0">
+      <canvas ref={canvas} style={{ width: '100%', height: '100%', display: 'block', imageRendering: 'pixelated' }} />
       {!ui.playing && (
         <div className="absolute inset-0 grid place-items-center cursor-pointer" style={{ background: 'rgba(7,8,10,.78)' }} onClick={start}>
           <div className="text-center px-8 py-6" style={{ border: '1px solid rgba(255,176,0,.25)' }}>

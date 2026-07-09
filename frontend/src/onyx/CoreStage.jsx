@@ -1,151 +1,86 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
+import { MeshDistortMaterial } from '@react-three/drei';
 import * as THREE from 'three';
-import Custodian from './Custodian.jsx';
+import OnyxArcade from './OnyxArcade.jsx';
 import { useTradingStore } from '../store/useTradingStore';
 
-/* ── Shared signal layer — one organism; amber idle, green/red = money ── */
+/* ── Signal layer — amber idle, green/red = money ── */
 const AMBER = new THREE.Color('#FFB000'), EMERALD = new THREE.Color('#00E676'), CRIMSON = new THREE.Color('#FF3D00');
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const bal01 = (b) => clamp((Math.log10(Math.max(b || 1, 1)) - 2) / 3, 0, 1);
 const sysTf = (pnl, bal) => clamp((pnl || 0) / (0.01 * Math.max(bal || 1, 1)), -1, 1);
-const posTf = (p, bal) => clamp((p || 0) / (0.005 * Math.max(bal || 1, 1)), -1, 1);
 const ddf = (pnl, bal) => clamp(Math.max(0, -(pnl || 0)) / (0.02 * Math.max(bal || 1, 1)), 0, 1);
 const colFor = (t, out) => (t < 0 ? out.copy(AMBER).lerp(CRIMSON, -t) : t > 0 ? out.copy(AMBER).lerp(EMERALD, t) : out.copy(AMBER));
-const hash01 = (s) => { let h = 0; const str = s || ''; for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0; return (h % 1000) / 1000; };
 const env = (pulse, t) => { if (pulse.trigger) { pulse.at = t; pulse.trigger = false; } return Math.exp(-(t - pulse.at) / 0.22); };
-const X_AXIS = new THREE.Vector3(1, 0, 0);
 
-/* ── FORM 1 · SENTINEL — one orbiting satellite per open position ── */
-function Sentinel({ data, pulse }) {
-  const grp = useRef(); const nucleus = useRef(); const nmat = useRef(); const shell = useRef();
-  const inst = useRef(); const dummy = useMemo(() => new THREE.Object3D(), []); const tmp = useMemo(() => new THREE.Color(), []);
+/* ── SUPERNOVA — glowing distorted core in a vast particle halo ── */
+function Supernova({ data, pulse }) {
+  const core = useRef(); const cmat = useRef(); const halo = useRef(); const hmat = useRef(); const tmp = useMemo(() => new THREE.Color(), []);
+  const pos = useMemo(() => { const N = 1800; const a = new Float32Array(N * 3); for (let i = 0; i < N; i++) { const r = 2.2 + Math.random() * 2.4; const th = Math.acos(2 * Math.random() - 1); const ph = Math.random() * Math.PI * 2; a[i * 3] = r * Math.sin(th) * Math.cos(ph); a[i * 3 + 1] = r * Math.sin(th) * Math.sin(ph); a[i * 3 + 2] = r * Math.cos(th); } return a; }, []);
   useFrame((s, dt) => {
     const d = data.current; const t = s.clock.elapsedTime; const k = env(pulse.current, t);
-    const b01 = bal01(d.balance); const sysT = sysTf(d.pnlOpen, d.balance); const dd = ddf(d.pnlOpen, d.balance);
-    const idle = d.positions.length === 0;
-    if (nucleus.current) nucleus.current.scale.setScalar(0.8 + 0.5 * b01 + 0.06 * Math.sin(t * 1.2) + 0.35 * k);
-    if (nmat.current) { nmat.current.emissive.lerp(colFor(sysT, tmp), 0.08); nmat.current.emissiveIntensity = (0.35 + 0.9 * Math.abs(sysT) + 1.5 * k) * (1 - 0.3 * dd * Math.random()); }
-    if (shell.current) shell.current.rotation.y -= 0.15 * dt;
-    if (inst.current) {
-      const n = Math.min(d.positions.length, 32); inst.current.count = n;
-      for (let i = 0; i < n; i++) {
-        const p = d.positions[i]; const pt = posTf(p.profit, d.balance);
-        const r = 1.35 + 0.22 * i; const tilt = i * 0.42; const phase = hash01(p.symbol) * Math.PI * 2;
-        const dir = pt < 0 ? -1 : 1; const a = phase + dir * (0.5 + 0.9 * Math.abs(pt)) * t;
-        dummy.position.set(Math.cos(a) * r, 0, Math.sin(a) * r).applyAxisAngle(X_AXIS, tilt);
-        dummy.position.x += (Math.random() - 0.5) * 0.1 * dd; dummy.position.y += (Math.random() - 0.5) * 0.1 * dd;
-        const sc = 0.7 + 0.6 * Math.abs(pt) + 0.3 * b01; dummy.scale.setScalar(sc); dummy.updateMatrix();
-        inst.current.setMatrixAt(i, dummy.matrix); inst.current.setColorAt(i, colFor(pt, tmp));
-      }
-      inst.current.instanceMatrix.needsUpdate = true; if (inst.current.instanceColor) inst.current.instanceColor.needsUpdate = true;
-    }
-    if (grp.current) grp.current.rotation.y += (idle ? 0.05 : 0.12) * dt;
-  });
-  return (
-    <group ref={grp}>
-      <mesh ref={nucleus}><icosahedronGeometry args={[0.55, 1]} /><meshStandardMaterial ref={nmat} flatShading color="#0B0C0F" emissive="#FFB000" emissiveIntensity={0.5} /></mesh>
-      <mesh ref={shell} scale={1.18}><icosahedronGeometry args={[0.55, 1]} /><meshBasicMaterial wireframe transparent opacity={0.22} color="#FFB000" /></mesh>
-      <instancedMesh ref={inst} args={[undefined, undefined, 32]}><octahedronGeometry args={[0.09, 0]} /><meshBasicMaterial toneMapped={false} /></instancedMesh>
-    </group>
-  );
-}
-
-/* ── FORM 2 · ARMILLARY — one gyro ring per open position ── */
-function Armillary({ data, pulse }) {
-  const rings = useRef([]); const core = useRef(); const cmat = useRef(); const tmp = useMemo(() => new THREE.Color(), []);
-  useFrame((s, dt) => {
-    const d = data.current; const t = s.clock.elapsedTime; const k = env(pulse.current, t);
-    const b01 = bal01(d.balance); const sysT = sysTf(d.pnlOpen, d.balance); const dd = ddf(d.pnlOpen, d.balance);
-    const n = Math.min(d.positions.length, 12);
-    if (core.current) core.current.scale.setScalar(0.22 + 0.3 * b01 + 0.5 * k);
-    if (cmat.current) cmat.current.color.lerp(colFor(sysT, tmp), 0.08);
-    rings.current.forEach((ring, i) => {
-      if (!ring) return;
-      if (i < n || (n === 0 && i === 0)) {
-        ring.visible = true; const p = d.positions[i]; const pt = p ? posTf(p.profit, d.balance) : 0;
-        const dir = pt < 0 ? -1 : 1; ring.rotation.y += (0.6 + 1.4 * Math.abs(pt)) * dir * dt;
-        const tx = pt >= 0 ? 0.15 * i : 0.15 * i - pt * 0.9; ring.rotation.x += (tx - ring.rotation.x) * Math.min(1, dt * 4);
-        ring.rotation.z = 0.4 * Math.sin(t * 2 + i) * (dd + (pt < 0 ? 0.3 : 0));
-        ring.scale.setScalar((1 + 0.15 * b01) * (1 + 0.06 * k));
-        ring.material.color.lerp(p ? colFor(pt, tmp) : AMBER, 0.08); ring.material.opacity = 0.85 - 0.25 * dd * (Math.sin(t * 18 + i) * 0.5 + 0.5);
-      } else ring.visible = false;
-    });
+    const b01 = bal01(d.balance); const sysT = sysTf(d.pnlOpen, d.balance); const dd = ddf(d.pnlOpen, d.balance); const n = d.positions.length;
+    if (core.current) { core.current.rotation.y += 0.16 * dt; core.current.rotation.x += 0.08 * dt; core.current.scale.setScalar(1.5 + 0.5 * b01 + 0.25 * k); }
+    if (cmat.current) { cmat.current.color.lerp(colFor(sysT, tmp), 0.06); cmat.current.emissive.lerp(colFor(sysT, tmp), 0.06); cmat.current.distort = 0.3 + 0.55 * dd; cmat.current.speed = 1.5 + 2.5 * dd; cmat.current.emissiveIntensity = 1.0 + 0.7 * Math.abs(sysT); }
+    if (halo.current) { halo.current.rotation.y -= 0.03 * dt; halo.current.geometry.setDrawRange(0, Math.floor(500 + 1300 * clamp(n / 8 * 0.5 + b01 * 0.5, 0, 1))); }
+    if (hmat.current) { hmat.current.color.lerp(colFor(sysT, tmp), 0.05); hmat.current.size = 0.024 + 0.02 * b01; }
   });
   return (
     <group>
-      <mesh ref={core}><sphereGeometry args={[1, 16, 16]} /><meshBasicMaterial ref={cmat} color="#FFB000" /></mesh>
-      {Array.from({ length: 12 }).map((_, i) => (
-        <mesh key={i} ref={(el) => (rings.current[i] = el)}><torusGeometry args={[0.7 + 0.28 * i, 0.018, 8, 96]} /><meshBasicMaterial transparent color="#FFB000" opacity={0.85} /></mesh>
-      ))}
+      <mesh ref={core}><icosahedronGeometry args={[1, 5]} /><MeshDistortMaterial ref={cmat} wireframe color="#FFB000" emissive="#FFB000" emissiveIntensity={1.1} distort={0.35} speed={1.8} roughness={0.3} metalness={0.5} /></mesh>
+      <points ref={halo}><bufferGeometry><bufferAttribute attach="attributes-position" args={[pos, 3]} /></bufferGeometry><pointsMaterial ref={hmat} size={0.03} color="#FFB000" transparent opacity={0.8} sizeAttenuation depthWrite={false} blending={THREE.AdditiveBlending} /></points>
     </group>
   );
 }
 
-/* ── FORM 3 · SPIRES — one skyline spire per open position ── */
-function Spires({ data, pulse }) {
-  const inst = useRef(); const dummy = useMemo(() => new THREE.Object3D(), []); const tmp = useMemo(() => new THREE.Color(), []); const scan = useRef();
+/* ── AURORA — a wide undulating particle sheet filling the frame ── */
+function Aurora({ data, pulse }) {
+  const ref = useRef(); const mat = useRef(); const tmp = useMemo(() => new THREE.Color(), []); const G = 52;
+  const pos = useMemo(() => { const p = new Float32Array(G * G * 3); let n = 0; for (let i = 0; i < G; i++) for (let j = 0; j < G; j++) { p[n * 3] = (i / (G - 1) - 0.5) * 8; p[n * 3 + 1] = 0; p[n * 3 + 2] = (j / (G - 1) - 0.5) * 8; n++; } return p; }, []);
+  useFrame((s) => {
+    const d = data.current; const t = s.clock.elapsedTime; const k = env(pulse.current, t);
+    const dd = ddf(d.pnlOpen, d.balance); const sysT = sysTf(d.pnlOpen, d.balance); const b01 = bal01(d.balance);
+    const amp = 0.28 + 0.7 * dd + 0.4 * k; const freq = 0.85 + 0.6 * dd;
+    if (ref.current) { const arr = ref.current.geometry.attributes.position.array; for (let idx = 0; idx < G * G; idx++) { const x = arr[idx * 3], z = arr[idx * 3 + 2]; arr[idx * 3 + 1] = (Math.sin(x * freq + t) + Math.cos(z * freq + t * 0.8)) * amp; } ref.current.geometry.attributes.position.needsUpdate = true; ref.current.rotation.y = t * 0.05; }
+    if (mat.current) { mat.current.color.lerp(colFor(sysT, tmp), 0.05); mat.current.size = 0.04 + 0.02 * b01; }
+  });
+  return <points ref={ref} rotation={[-0.72, 0, 0]} position={[0, -0.4, 0]}><bufferGeometry><bufferAttribute attach="attributes-position" args={[pos, 3]} /></bufferGeometry><pointsMaterial ref={mat} size={0.045} color="#FFB000" transparent opacity={0.9} sizeAttenuation depthWrite={false} blending={THREE.AdditiveBlending} /></points>;
+}
+
+/* ── HELIX — tall glowing double helix filling the frame ── */
+function Helix({ data, pulse }) {
+  const grp = useRef(); const m1 = useRef(); const m2 = useRef(); const tmp = useMemo(() => new THREE.Color(), []);
+  const strands = useMemo(() => { const N = 260; const a = new Float32Array(N * 3), b = new Float32Array(N * 3); for (let i = 0; i < N; i++) { const tt = i / N; const y = (tt - 0.5) * 6.4; const ang = tt * Math.PI * 2 * 5; a[i * 3] = Math.cos(ang) * 1.1; a[i * 3 + 1] = y; a[i * 3 + 2] = Math.sin(ang) * 1.1; b[i * 3] = Math.cos(ang + Math.PI) * 1.1; b[i * 3 + 1] = y; b[i * 3 + 2] = Math.sin(ang + Math.PI) * 1.1; } return { a, b }; }, []);
   useFrame((s, dt) => {
     const d = data.current; const t = s.clock.elapsedTime; const k = env(pulse.current, t);
-    const b01 = bal01(d.balance); const dd = ddf(d.pnlOpen, d.balance); const flick = (Math.floor(t * 12) % 2) === 0;
-    const n = Math.min(d.positions.length, 32);
-    if (inst.current) {
-      inst.current.count = n; const cross = 0.09 * (0.8 + 0.6 * b01);
-      for (let i = 0; i < n; i++) {
-        const p = d.positions[i]; const pt = posTf(p.profit, d.balance);
-        let h = 0.15 + 1.3 * Math.abs(pt); if (dd > 0 && flick) h *= 1 + (Math.random() - 0.5) * 0.2 * dd;
-        h *= (i === n - 1 ? (1 + 0.5 * k) : 1);
-        const x = (i - (n - 1) / 2) * 0.28; const y = pt >= 0 ? h / 2 : -h / 2;
-        dummy.position.set(x, y, 0); dummy.scale.set(cross / 0.09, h, cross / 0.09); dummy.updateMatrix();
-        inst.current.setMatrixAt(i, dummy.matrix); inst.current.setColorAt(i, colFor(pt, tmp));
-      }
-      inst.current.instanceMatrix.needsUpdate = true; if (inst.current.instanceColor) inst.current.instanceColor.needsUpdate = true;
-    }
-    if (scan.current) { scan.current.visible = n === 0; scan.current.position.x = ((t % 3) / 3 - 0.5) * 4; }
+    const sysT = sysTf(d.pnlOpen, d.balance); const b01 = bal01(d.balance); const dd = ddf(d.pnlOpen, d.balance);
+    if (grp.current) { grp.current.rotation.y += (0.3 + 0.9 * dd) * dt; grp.current.scale.setScalar(1 + 0.18 * b01 + 0.1 * k); }
+    [m1, m2].forEach((m) => { if (m.current) { m.current.color.lerp(colFor(sysT, tmp), 0.05); m.current.size = 0.07 + 0.03 * b01 + 0.05 * k; } });
   });
   return (
-    <group rotation={[0.35, 0.5, 0]}>
-      <gridHelper args={[4, 16, '#FFB000', '#1A1C20']} />
-      <instancedMesh ref={inst} args={[undefined, undefined, 32]}><boxGeometry args={[0.09, 1, 0.09]} /><meshBasicMaterial toneMapped={false} /></instancedMesh>
-      <mesh ref={scan} rotation={[-Math.PI / 2, 0, 0]}><planeGeometry args={[0.02, 4]} /><meshBasicMaterial color="#FFB000" transparent opacity={0.25} /></mesh>
+    <group ref={grp}>
+      <points><bufferGeometry><bufferAttribute attach="attributes-position" args={[strands.a, 3]} /></bufferGeometry><pointsMaterial ref={m1} size={0.09} color="#FFB000" transparent opacity={0.95} sizeAttenuation depthWrite={false} blending={THREE.AdditiveBlending} /></points>
+      <points><bufferGeometry><bufferAttribute attach="attributes-position" args={[strands.b, 3]} /></bufferGeometry><pointsMaterial ref={m2} size={0.09} color="#FFB000" transparent opacity={0.6} sizeAttenuation depthWrite={false} blending={THREE.AdditiveBlending} /></points>
     </group>
   );
 }
 
-/* ── FORM 4 · DEEPSCAN — sonar disc, one blip per open position ── */
-function Deepscan({ data, pulse }) {
-  const sweep = useRef(); const blips = useRef([]); const tmp = useMemo(() => new THREE.Color(), []); const grp = useRef();
+/* ── TUNNEL — glowing rings rushing toward you, fills the frame ── */
+function Tunnel({ data, pulse }) {
+  const rings = useRef([]); const tmp = useMemo(() => new THREE.Color(), []); const N = 22;
   useFrame((s, dt) => {
-    const d = data.current; const t = s.clock.elapsedTime;
-    const b01 = bal01(d.balance); const sysT = sysTf(d.pnlOpen, d.balance); const dd = ddf(d.pnlOpen, d.balance);
-    const n = Math.min(d.positions.length, 24);
-    if (grp.current) grp.current.scale.setScalar(0.8 + 0.5 * b01);
-    if (sweep.current) sweep.current.rotation.z += (0.8 + 0.6 * Math.abs(sysT) + 1.2 * dd) * dt;
-    const sa = sweep.current ? sweep.current.rotation.z : 0;
-    blips.current.forEach((pin, i) => {
-      if (!pin) return;
-      if (i < n) {
-        pin.visible = true; const p = d.positions[i]; const pt = posTf(p.profit, d.balance);
-        const th = hash01(p.symbol) * Math.PI * 2; const rho = 0.4 + 1.0 * Math.abs(pt);
-        const h = 0.12 + 0.5 * Math.abs(pt);
-        pin.position.set(Math.cos(th) * rho, Math.sin(th) * rho, pt >= 0 ? h / 2 : -h / 2);
-        pin.scale.set(1, 1, h / 0.5);
-        const ignite = 0.35 + 0.65 * Math.pow(Math.max(0, Math.cos(th - sa)), 8);
-        pin.material.color.lerp(colFor(pt, tmp), 0.1); pin.material.opacity = ignite;
-      } else pin.visible = false;
+    const d = data.current; const t = s.clock.elapsedTime; const sysT = sysTf(d.pnlOpen, d.balance); const dd = ddf(d.pnlOpen, d.balance);
+    const speed = 1.4 + 3.2 * dd;
+    rings.current.forEach((r, i) => {
+      if (!r) return;
+      r.position.z += speed * dt; if (r.position.z > 3.5) r.position.z -= N * 0.7;
+      r.rotation.z = t * 0.25 + i * 0.3;
+      r.material.color.lerp(colFor(sysT, tmp), 0.05);
+      r.material.opacity = Math.max(0, 0.7 * (1 - Math.abs(r.position.z - 1) / 6));
     });
   });
-  return (
-    <group ref={grp} rotation={[-0.96, 0, 0]}>
-      {[0.4, 0.8, 1.2, 1.6].map((r, i) => (
-        <mesh key={i}><torusGeometry args={[r, 0.006, 6, 96]} /><meshBasicMaterial color="#FFB000" transparent opacity={0.22} /></mesh>
-      ))}
-      <group ref={sweep}><mesh position={[0.8, 0, 0]}><boxGeometry args={[1.6, 0.012, 0.012]} /><meshBasicMaterial color="#FFB000" transparent opacity={0.55} /></mesh></group>
-      {Array.from({ length: 24 }).map((_, i) => (
-        <mesh key={i} ref={(el) => (blips.current[i] = el)}><cylinderGeometry args={[0.02, 0.02, 0.5, 6]} /><meshBasicMaterial transparent color="#FFB000" opacity={0.6} /></mesh>
-      ))}
-    </group>
-  );
+  return <group>{Array.from({ length: N }).map((_, i) => (<mesh key={i} ref={(el) => (rings.current[i] = el)} position={[0, 0, -i * 0.7 + 3]}><torusGeometry args={[1.7, 0.02, 8, 80]} /><meshBasicMaterial color="#FFB000" transparent opacity={0.6} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>))}</group>;
 }
 
 function RimLight({ data }) {
@@ -159,12 +94,12 @@ function RimLight({ data }) {
 }
 
 const MODES = [
-  { k: 'sentinel', label: 'SENTINEL' }, { k: 'armillary', label: 'ARMILLARY' },
-  { k: 'spires', label: 'SPIRES' }, { k: 'deepscan', label: 'DEEPSCAN' }, { k: 'arcade', label: 'ARCADE' },
+  { k: 'supernova', label: 'SUPERNOVA' }, { k: 'aurora', label: 'AURORA' },
+  { k: 'helix', label: 'HELIX' }, { k: 'tunnel', label: 'TUNNEL' }, { k: 'arcade', label: 'ARCADE' },
 ];
 
 export default function CoreStage() {
-  const [mode, setMode] = useState('sentinel');
+  const [mode, setMode] = useState('supernova');
   const data = useRef({ positions: [], balance: null, pnlOpen: 0, lat: null });
   const pulse = useRef({ trigger: false, at: -99 });
   const lastLen = useRef(useTradingStore.getState().positions.length);
@@ -172,7 +107,6 @@ export default function CoreStage() {
     data.current = { positions: s.positions, balance: s.balance, pnlOpen: s.pnlOpen, lat: s.latencyMs };
     if (s.positions.length !== lastLen.current) { lastLen.current = s.positions.length; pulse.current.trigger = true; }
   }), []);
-  // seed initial
   data.current = { positions: useTradingStore.getState().positions, balance: useTradingStore.getState().balance, pnlOpen: useTradingStore.getState().pnlOpen, lat: useTradingStore.getState().latencyMs };
 
   return (
@@ -184,18 +118,18 @@ export default function CoreStage() {
         </div>
       </div>
 
-      <div className="relative flex-1 overflow-hidden" style={{ minHeight: 320 }}>
+      <div className="relative flex-1 overflow-hidden" style={{ minHeight: 460 }}>
         {mode === 'arcade' ? (
-          <Custodian />
+          <OnyxArcade />
         ) : (
-          <Canvas camera={{ position: [0, 0, 4.6], fov: 55 }} dpr={[1, 2]} style={{ width: '100%', height: '100%' }}>
+          <Canvas camera={{ position: [0, 0, 3.4], fov: 62 }} dpr={[1, 2]} style={{ width: '100%', height: '100%' }}>
             <ambientLight intensity={0.5} />
             <RimLight data={data} />
             <pointLight position={[-3, -2, -3]} intensity={1.0} color="#00E676" />
-            {mode === 'sentinel' && <Sentinel data={data} pulse={pulse} />}
-            {mode === 'armillary' && <Armillary data={data} pulse={pulse} />}
-            {mode === 'spires' && <Spires data={data} pulse={pulse} />}
-            {mode === 'deepscan' && <Deepscan data={data} pulse={pulse} />}
+            {mode === 'supernova' && <Supernova data={data} pulse={pulse} />}
+            {mode === 'aurora' && <Aurora data={data} pulse={pulse} />}
+            {mode === 'helix' && <Helix data={data} pulse={pulse} />}
+            {mode === 'tunnel' && <Tunnel data={data} pulse={pulse} />}
           </Canvas>
         )}
       </div>

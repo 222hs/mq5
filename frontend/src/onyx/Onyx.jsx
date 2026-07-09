@@ -169,7 +169,7 @@ export default function Onyx() {
 
         {/* Z4 — switchable reactor core + execution tape */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px]">
-          <div className="px-6 py-5" style={{ minHeight: 400 }}>
+          <div className="px-6 py-5" style={{ minHeight: 560 }}>
             <CoreStage />
           </div>
           <div className="flex">
