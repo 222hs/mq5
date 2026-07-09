@@ -3,71 +3,93 @@
 @tailwind utilities;
 
 /* ═══════════════════════════════════════════════════════════════
-   ONYX & AMBER — Institutional Spatial UI
+   ONYX — "Terminal as Monument"  (Fable 5 art direction)
+   Void · Amber structure · Emerald/Crimson semantics · hairlines
    ═══════════════════════════════════════════════════════════════ */
 .onyx-root {
-  --amber:#FFB000; --emerald:#00E676; --crimson:#FF3D00; --onyx:#07080A;
-  --ink:#c8ccd4; --muted:#6b7280;
+  --amber:#FFB000; --emerald:#00E676; --crimson:#FF3D00; --void:#07080A;
+  --bone:#F5F5F0; --ink:rgba(255,255,255,.8); --muted:rgba(255,255,255,.35);
   font-family:'JetBrains Mono','Fira Code',ui-monospace,SFMono-Regular,monospace;
   background:#07080A; color:var(--ink); min-height:100vh; position:relative; overflow-x:hidden;
   letter-spacing:.2px; direction:ltr;
 }
 .onyx-root ::-webkit-scrollbar{ width:5px; height:5px; }
-.onyx-root ::-webkit-scrollbar-thumb{ background:rgba(255,176,0,.4); border-radius:4px; }
+.onyx-root ::-webkit-scrollbar-thumb{ background:rgba(255,176,0,.35); }
 
-/* Deep glassmorphism panel */
-.glass{
-  background:rgba(20,22,28,.4);
-  backdrop-filter:blur(24px) saturate(1.2); -webkit-backdrop-filter:blur(24px) saturate(1.2);
-  border:1px solid rgba(255,176,0,.15); border-radius:22px;
-  box-shadow:0 34px 90px -24px rgba(0,0,0,.85), inset 0 1px 0 rgba(255,255,255,.04);
-  transition:transform .35s cubic-bezier(.22,1,.36,1), box-shadow .35s, border-color .35s;
-}
-.glass-hover:hover{
-  border-color:rgba(255,176,0,.38);
-  box-shadow:0 46px 120px -24px rgba(0,0,0,.9), 0 0 46px rgba(255,176,0,.07);
-}
+/* ── Hairline system (replaces ALL card borders) ─────────────── */
+.hair-h{ height:1px; width:100%; background:linear-gradient(to right, transparent, rgba(255,255,255,.12), transparent); }
+.hair-h-amber{ height:1px; width:100%; background:linear-gradient(to right, transparent, rgba(255,176,0,.42), transparent); }
+.hair-v{ width:1px; align-self:stretch; background:rgba(255,255,255,.10); }
 
-.panel-label{ font-size:10px; letter-spacing:3px; text-transform:uppercase; color:var(--muted); }
-.panel-title{ font-size:12px; letter-spacing:2px; text-transform:uppercase; color:#e7d7b0; }
+/* ── Typography roles ────────────────────────────────────────── */
+.eyebrow{ font-size:11px; font-weight:500; letter-spacing:.5em; text-transform:uppercase; color:rgba(255,176,0,.9); }
+.section-label{ font-size:10px; font-weight:600; letter-spacing:.4em; text-transform:uppercase; color:var(--muted); }
+.micro{ font-size:9px; font-weight:500; letter-spacing:.3em; text-transform:uppercase; color:rgba(255,255,255,.28); }
+.rule{ width:120px; height:2px; background:var(--amber); opacity:.75; margin-bottom:14px; }
 .tick-num{ font-variant-numeric:tabular-nums; }
 
-/* Connection nodes */
-.node{ width:8px; height:8px; border-radius:50%; display:inline-block; }
-.node.connected{ background:var(--emerald); box-shadow:0 0 12px var(--emerald); animation:nodepulse 2s infinite; }
-.node.connecting{ background:var(--amber); box-shadow:0 0 12px var(--amber); animation:nodepulse 1s infinite; }
+.balance-num{ font-weight:300; letter-spacing:-.02em; color:var(--bone); line-height:.9;
+  font-variant-numeric:tabular-nums; font-size:clamp(72px,11vw,168px); display:inline-flex; align-items:flex-start; }
+.balance-cur{ font-size:.34em; color:rgba(255,176,0,.6); font-weight:400; margin-top:.18em; }
+.balance-cents{ font-size:.42em; color:rgba(255,255,255,.4); margin-top:.14em; }
+.stat-num{ font-size:clamp(24px,2.6vw,40px); font-weight:400; line-height:1; font-variant-numeric:tabular-nums; }
+
+/* ── Connection nodes ────────────────────────────────────────── */
+.node{ width:7px; height:7px; border-radius:50%; display:inline-block; }
+.node.connected{ background:var(--emerald); box-shadow:0 0 10px var(--emerald); animation:nodepulse 1.8s infinite; }
+.node.connecting{ background:var(--amber); box-shadow:0 0 10px var(--amber); animation:nodepulse 1s infinite; }
 .node.disconnected,.node.offline{ background:#3a3d44; }
-@keyframes nodepulse{ 0%,100%{opacity:1} 50%{opacity:.35} }
+@keyframes nodepulse{ 0%,100%{opacity:1} 50%{opacity:.3} }
 
-/* The Kill Box — physical, deeply shadowed buttons */
-.kill-btn{
-  position:relative; overflow:hidden; width:100%; border-radius:16px; padding:20px 16px;
-  font-family:inherit; font-weight:800; letter-spacing:2px; font-size:15px; cursor:pointer;
-  border:1px solid rgba(255,255,255,.07);
-  box-shadow:0 9px 0 rgba(0,0,0,.55), 0 20px 40px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.14);
-  transition:transform .08s ease, box-shadow .08s ease, filter .15s;
-}
-.kill-btn:hover{ filter:brightness(1.08); }
-.kill-btn:active{ transform:translateY(7px); box-shadow:0 2px 0 rgba(0,0,0,.55), 0 6px 16px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.14); }
-.kill-btn:disabled{ opacity:.45; cursor:default; box-shadow:0 9px 0 rgba(0,0,0,.4); }
-.kill-execute{ background:linear-gradient(180deg,#00E676,#00933f); color:#04140a; }
-.kill-halt{ background:linear-gradient(180deg,#2b2e36,#15171c); color:var(--amber); }
-.kill-liquidate{ background:linear-gradient(180deg,#FF3D00,#a82600); color:#1a0500; }
-.ripple{ position:absolute; border-radius:50%; background:rgba(255,255,255,.45); transform:translate(-50%,-50%); pointer-events:none; }
+/* ── Ticker strip (top marquee) ──────────────────────────────── */
+.ticker-strip{ height:34px; display:flex; align-items:center; overflow:hidden; white-space:nowrap; }
+.ticker-track{ display:inline-flex; align-items:center; animation:marquee 32s linear infinite; }
+@keyframes marquee{ from{transform:translateX(0)} to{transform:translateX(-50%)} }
+.ticker-item{ font-size:12px; letter-spacing:1px; color:rgba(255,255,255,.75); padding:0 20px; }
+.ticker-item b{ color:var(--bone); font-weight:600; }
+.ticker-sep{ color:var(--amber); }
 
-/* Execution tape rows */
-.tape-row{ display:grid; grid-template-columns:1.4fr .8fr .8fr 1fr 1fr; align-items:center; gap:8px;
-  padding:10px 12px; font-size:11px; border-bottom:1px solid rgba(255,255,255,.04); font-variant-numeric:tabular-nums; }
-.tape-row:hover{ background:rgba(255,176,0,.04); }
-.tape-head{ color:var(--muted); font-size:9px; letter-spacing:2px; border-bottom:1px solid rgba(255,176,0,.14); }
+/* ── Cinematic overlays ──────────────────────────────────────── */
+.scanline{ position:fixed; left:0; right:0; height:1px; background:rgba(255,176,0,.10); z-index:6; pointer-events:none; box-shadow:0 0 12px rgba(255,176,0,.3); animation:sweep 9s linear infinite; }
+@keyframes sweep{ 0%{top:-2%} 100%{top:102%} }
+.corner{ position:fixed; width:15px; height:15px; z-index:20; pointer-events:none; }
+.corner::before,.corner::after{ content:''; position:absolute; background:rgba(255,255,255,.22); }
+.corner::before{ width:15px; height:1px; } .corner::after{ width:1px; height:15px; }
+.corner.tl{ top:9px; left:9px; } .corner.tr{ top:9px; right:9px; } .corner.tr::before,.corner.tr::after{ right:0; }
+.corner.bl{ bottom:9px; left:9px; } .corner.bl::before,.corner.bl::after{ bottom:0; }
+.corner.br{ bottom:9px; right:9px; } .corner.br::before,.corner.br::after{ right:0; bottom:0; }
 
-/* Floating telemetry pill */
-.telemetry-pill{
-  display:flex; align-items:center; gap:20px; padding:12px 24px; border-radius:999px;
-  background:rgba(16,18,24,.55); backdrop-filter:blur(28px) saturate(1.3); -webkit-backdrop-filter:blur(28px);
-  border:1px solid rgba(255,176,0,.18);
-  box-shadow:0 24px 70px -18px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.06);
-}
+/* ── Execution tape rows (no card — colored left edge only) ──── */
+.xrow{ display:grid; grid-template-columns:1.3fr .7fr .7fr .9fr 1fr; align-items:center; gap:8px;
+  height:46px; padding:0 12px 0 15px; font-size:12px; position:relative; border-bottom:1px solid rgba(255,255,255,.045); font-variant-numeric:tabular-nums; }
+.xrow::before{ content:''; position:absolute; left:0; top:9px; bottom:9px; width:2px; background:var(--edge,#6b7280); box-shadow:0 0 8px var(--edge,transparent); }
+.xhead{ height:32px; color:var(--muted); font-size:9px; letter-spacing:2px; }
 
-.grain{ position:fixed; inset:0; z-index:1; pointer-events:none; opacity:.35;
-  background:repeating-linear-gradient(0deg, rgba(0,0,0,0) 0, rgba(0,0,0,0) 2px, rgba(0,0,0,.16) 3px, rgba(0,0,0,.16) 3px); mix-blend-mode:overlay; }
+/* ── Kill box (the one physical object) ──────────────────────── */
+.kill-cluster{ position:relative; background:rgba(0,0,0,.72); backdrop-filter:blur(18px); border:1px solid rgba(255,255,255,.10); padding:16px; width:340px; max-width:88vw; }
+.kbtn{ position:relative; overflow:hidden; height:56px; width:100%; font-family:inherit; font-weight:800; letter-spacing:2px; font-size:14px; cursor:pointer; background:transparent; transition:background .15s, color .15s; }
+.kbtn-exec{ border:1px solid rgba(255,176,0,.6); color:var(--amber); }
+.kbtn-exec:hover{ background:var(--amber); color:#000; }
+.kbtn-halt{ border:1px solid rgba(255,61,0,.55); color:var(--crimson); }
+.kbtn-halt:hover{ background:rgba(255,61,0,.08); }
+.kbtn-progress{ position:absolute; left:0; bottom:0; height:2px; background:var(--crimson); transform-origin:left; }
+.hazard{ background-image:repeating-linear-gradient(45deg, rgba(255,255,255,.03) 0 7px, transparent 7px 14px); }
+
+/* ── GRX edge drawer ─────────────────────────────────────────── */
+.grx-tab{ position:fixed; right:0; top:38%; z-index:40; writing-mode:vertical-rl; transform:rotate(180deg);
+  background:rgba(0,0,0,.6); border:1px solid rgba(255,176,0,.4); border-right:none; padding:16px 9px;
+  font-size:11px; letter-spacing:3px; color:var(--amber); cursor:pointer; }
+.grx-drawer{ position:fixed; top:0; right:0; bottom:0; width:420px; max-width:92vw; z-index:41;
+  background:rgba(3,4,6,.82); backdrop-filter:blur(26px); border-left:1px solid rgba(255,176,0,.5); padding:24px; overflow-y:auto; }
+.grx-field{ display:flex; flex-direction:column; gap:4px; }
+.grx-input{ width:100%; background:transparent; border:none; border-bottom:1px solid rgba(255,255,255,.15); outline:none;
+  color:#f0e6cf; font-size:16px; font-weight:600; font-family:inherit; padding:4px 0; transition:border-color .2s; }
+.grx-input:focus{ border-color:var(--amber); }
+.grx-apply{ width:100%; padding:14px; background:transparent; border:1px solid rgba(255,176,0,.6); color:var(--amber);
+  font-family:inherit; font-weight:800; letter-spacing:3px; font-size:13px; cursor:pointer; transition:.15s; }
+.grx-apply:hover{ background:var(--amber); color:#000; }
+
+.grain{ position:fixed; inset:0; z-index:1; pointer-events:none; opacity:.3;
+  background:repeating-linear-gradient(0deg, transparent 0 2px, rgba(0,0,0,.16) 3px 3px); mix-blend-mode:overlay; }
+.vignette{ position:fixed; inset:0; z-index:2; pointer-events:none;
+  background:radial-gradient(ellipse at 45% 38%, transparent 42%, rgba(7,8,10,.92) 100%); }

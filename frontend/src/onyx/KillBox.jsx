@@ -1,86 +1,98 @@
 import React, { useState, useRef } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useTradeExecution } from '../store/useLiveConnection';
 
-const EMERALD = '#00E676', AMBER = '#FFB000', CRIMSON = '#FF3D00', MUTED = '#6b7280';
+const EMERALD = '#00E676', AMBER = '#FFB000', CRIMSON = '#FF3D00', MUTED = 'rgba(255,255,255,.35)';
+const HOLD_MS = 800;
 
-/* Tactile emergency control center. EXECUTE/HALT hit the real
-   /api/bot/control endpoint. LIQUIDATE (close-all) has no backend
-   endpoint yet, so it HALTS as a real failsafe and says so. */
+/* Floating physical control. EXECUTE = single press (start bot).
+   HALT = press-and-hold 800ms (safety) → stop bot. Both hit the
+   real /api/bot/control. Ripple + screen-shake on fire. */
 export default function KillBox({ onFire }) {
-  const { execute, botRunning, positions } = useTradeExecution();
+  const { execute, botRunning } = useTradeExecution();
   const [toast, setToast] = useState(null);
-  const [pending, setPending] = useState(null);
-  const rippleId = useRef(0);
+  const [progress, setProgress] = useState(0);
   const [ripples, setRipples] = useState([]);
+  const holdRaf = useRef(0);
+  const holdStart = useRef(0);
+  const rid = useRef(0);
 
-  const flash = (msg, color) => { setToast({ msg, color }); setTimeout(() => setToast(null), 3200); };
+  const flash = (msg, color) => { setToast({ msg, color }); setTimeout(() => setToast(null), 3000); };
 
-  const spawnRipple = (e) => {
+  const ripple = (e) => {
     const r = e.currentTarget.getBoundingClientRect();
-    const id = rippleId.current++;
+    const id = rid.current++;
     setRipples((rs) => [...rs, { id, x: e.clientX - r.left, y: e.clientY - r.top }]);
     setTimeout(() => setRipples((rs) => rs.filter((x) => x.id !== id)), 650);
   };
 
-  const fire = async (kind, e) => {
-    spawnRipple(e);
-    onFire?.();
-    setPending(kind);
-    if (kind === 'execute') {
-      const ok = await execute('start');
-      flash(ok ? '▶ ENGINE IGNITED' : '✕ IGNITE FAILED', ok ? EMERALD : CRIMSON);
-    } else if (kind === 'halt') {
-      const ok = await execute('stop');
-      flash(ok ? '■ ENGINE HALTED' : '✕ HALT FAILED', ok ? AMBER : CRIMSON);
-    } else if (kind === 'liquidate') {
-      // No close-all endpoint on backend — HALT as the real failsafe.
-      const ok = await execute('stop');
-      flash(ok ? `⚠ FAILSAFE: ENGINE HALTED (${positions.length} pos still open — needs /api/positions/close_all)` : '✕ FAILSAFE FAILED', ok ? CRIMSON : CRIMSON);
-    }
-    setTimeout(() => setPending(null), 500);
+  const doExecute = async (e) => {
+    ripple(e); onFire?.();
+    const ok = await execute('start');
+    flash(ok ? '▶ ENGINE IGNITED' : '✕ IGNITE FAILED', ok ? EMERALD : CRIMSON);
   };
 
-  const Btn = ({ kind, cls, children }) => (
-    <button className={`kill-btn ${cls}`} disabled={pending === kind} onMouseDown={(e) => fire(kind, e)}>
-      {children}
-      <AnimatePresence>
-        {ripples.map((r) => (
-          <motion.span key={r.id} className="ripple" style={{ left: r.x, top: r.y }}
-            initial={{ width: 0, height: 0, opacity: 0.5 }}
-            animate={{ width: 480, height: 480, opacity: 0 }}
-            exit={{ opacity: 0 }} transition={{ duration: 0.6, ease: 'easeOut' }} />
-        ))}
-      </AnimatePresence>
-    </button>
+  const startHold = (e) => {
+    ripple(e);
+    holdStart.current = performance.now();
+    const tick = (now) => {
+      const p = Math.min(1, (now - holdStart.current) / HOLD_MS);
+      setProgress(p);
+      if (p >= 1) { fireHalt(); return; }
+      holdRaf.current = requestAnimationFrame(tick);
+    };
+    holdRaf.current = requestAnimationFrame(tick);
+  };
+  const cancelHold = () => { cancelAnimationFrame(holdRaf.current); if (progress < 1) setProgress(0); };
+  const fireHalt = async () => {
+    cancelAnimationFrame(holdRaf.current);
+    setProgress(0);
+    onFire?.();
+    const ok = await execute('stop');
+    flash(ok ? '■ ENGINE HALTED' : '✕ HALT FAILED', ok ? AMBER : CRIMSON);
+  };
+
+  const Ripples = () => (
+    <AnimatePresence>
+      {ripples.map((r) => (
+        <motion.span key={r.id} className="ripple" style={{ position: 'absolute', left: r.x, top: r.y, borderRadius: '50%', background: 'rgba(255,255,255,.4)', transform: 'translate(-50%,-50%)', pointerEvents: 'none' }}
+          initial={{ width: 0, height: 0, opacity: 0.5 }} animate={{ width: 420, height: 420, opacity: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.6 }} />
+      ))}
+    </AnimatePresence>
   );
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="kill-cluster">
+      <div className="corner tl" style={{ position: 'absolute', top: 6, left: 6 }} />
+      <div className="corner br" style={{ position: 'absolute', bottom: 6, right: 6 }} />
+
       <div className="flex items-center justify-between mb-3">
-        <span className="panel-title">Tactical Override</span>
-        <span style={{ fontSize: 9, letterSpacing: 2, color: botRunning ? EMERALD : CRIMSON }}>
-          {botRunning ? '● ARMED' : '● SAFE'}
-        </span>
+        <span className="section-label">Tactical Override</span>
+        <span style={{ fontSize: 10, letterSpacing: 2, color: botRunning ? EMERALD : CRIMSON }}>{botRunning ? '● SYSTEM ARMED' : '● SYSTEM HALTED'}</span>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 flex-1">
-        {botRunning
-          ? <Btn kind="halt" cls="kill-halt">■ HALT ENGINE</Btn>
-          : <Btn kind="execute" cls="kill-execute">▶ EXECUTE</Btn>}
-        <Btn kind="liquidate" cls="kill-liquidate">⚠ LIQUIDATE</Btn>
+      <div className="grid grid-cols-2 gap-3">
+        <button className="kbtn kbtn-exec" onMouseDown={doExecute}>EXECUTE<Ripples /></button>
+        <button
+          className="kbtn kbtn-halt hazard"
+          onMouseDown={startHold} onMouseUp={cancelHold} onMouseLeave={cancelHold}
+          onTouchStart={startHold} onTouchEnd={cancelHold}
+        >
+          {progress > 0 && progress < 1 ? 'HOLD…' : 'HALT'}
+          <motion.span className="kbtn-progress" style={{ scaleX: progress }} />
+          <Ripples />
+        </button>
       </div>
 
-      <div className="mt-3 h-5 text-center">
+      <div className="mt-2" style={{ height: 16, textAlign: 'center' }}>
         <AnimatePresence mode="wait">
           {toast && (
-            <motion.span key={toast.msg} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-              style={{ fontSize: 10, letterSpacing: 1, color: toast.color }}>
-              {toast.msg}
-            </motion.span>
+            <motion.span key={toast.msg} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              style={{ fontSize: 10, letterSpacing: 1, color: toast.color }}>{toast.msg}</motion.span>
           )}
         </AnimatePresence>
       </div>
+      <div className="micro" style={{ textAlign: 'center', marginTop: 2 }}>HOLD HALT 0.8s TO CONFIRM</div>
     </div>
   );
 }

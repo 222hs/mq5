@@ -16,9 +16,9 @@ export default function MomentumRadar() {
     const c = createChart(el.current, {
       autoSize: true,
       layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#7b808c', fontFamily: 'JetBrains Mono, monospace', fontSize: 10 },
-      grid: { vertLines: { visible: false }, horzLines: { visible: false } },
-      rightPriceScale: { borderColor: 'rgba(255,176,0,0.15)' },
-      timeScale: { borderColor: 'rgba(255,176,0,0.15)', timeVisible: true, secondsVisible: false },
+      grid: { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.03)' } },
+      rightPriceScale: { borderColor: 'rgba(255,255,255,0.06)' },
+      timeScale: { borderColor: 'rgba(255,255,255,0.06)', timeVisible: true, secondsVisible: false },
       crosshair: {
         mode: 0,
         vertLine: { color: 'rgba(255,176,0,0.4)', width: 1, style: 3, labelBackgroundColor: '#FFB000' },

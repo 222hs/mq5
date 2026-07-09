@@ -1,5 +1,5 @@
-import React from 'react';
-import { motion, useMotionValue, useAnimationControls } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
+import { motion, useSpring, useTransform, useMotionValue, useAnimationControls } from 'framer-motion';
 import './onyx.css';
 import { useLiveConnection } from '../store/useLiveConnection';
 import { useTradingStore } from '../store/useTradingStore';
@@ -7,103 +7,217 @@ import MeshGradient from './MeshGradient.jsx';
 import LatencyCore from './LatencyCore.jsx';
 import MomentumRadar from './MomentumRadar.jsx';
 import ExecutionTape from './ExecutionTape.jsx';
-import TelemetryHeader from './TelemetryHeader.jsx';
 import KillBox from './KillBox.jsx';
+import StrategyConfig from './StrategyConfig.jsx';
 
-const AMBER = '#FFB000', EMERALD = '#00E676', CRIMSON = '#FF3D00', MUTED = '#6b7280';
+const AMBER = '#FFB000', EMERALD = '#00E676', CRIMSON = '#FF3D00', MUTED = 'rgba(255,255,255,.35)';
+const netOf = (t) => (t.profit || 0) + (t.swap || 0) + (t.commission || 0);
 
-const container = { hidden: {}, show: { transition: { staggerChildren: 0.09, delayChildren: 0.15 } } };
-const panel = {
-  hidden: { opacity: 0, y: 34, filter: 'blur(10px)' },
-  show: { opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: 0.7, ease: [0.22, 1, 0.36, 1] } },
-};
-
-function PanelHead({ title, tag, accent = AMBER, dotStatus }) {
+/* Giant balance — ignition spring count-up from 0, dollars huge, cents small. */
+function BigBalance({ value }) {
+  const sv = useSpring(0, { stiffness: 55, damping: 22, mass: 1 });
+  useEffect(() => { sv.set(value || 0); }, [value, sv]);
+  const dollars = useTransform(sv, (v) => Math.floor(Math.abs(v)).toLocaleString('en-US'));
+  const cents = useTransform(sv, (v) => (Math.abs(v) % 1).toFixed(2).slice(1));
   return (
-    <div className="flex items-center justify-between mb-3">
-      <span className="flex items-center gap-2">
-        <span style={{ width: 6, height: 6, borderRadius: '50%', background: accent, boxShadow: `0 0 8px ${accent}` }} />
-        <span className="panel-title">{title}</span>
-      </span>
-      {tag && <span className="panel-label">{tag}</span>}
-      {dotStatus && <span style={{ fontSize: 9, letterSpacing: 2, color: MUTED }}>{dotStatus}</span>}
+    <div className="balance-num">
+      <span className="balance-cur">$</span>
+      <motion.span>{dollars}</motion.span>
+      <motion.span className="balance-cents">{cents}</motion.span>
     </div>
   );
 }
 
-export default function Onyx() {
-  useLiveConnection(); // mount every live source; auto-torn-down on unmount
+/* Naked stat separated by vertical hairlines — no boxes. */
+function Stat({ label, value, color, sub, progress }) {
+  const sv = useSpring(0, { stiffness: 70, damping: 20 });
+  useEffect(() => { sv.set(value || 0); }, [value, sv]);
+  const txt = useTransform(sv, (v) => (typeof value === 'string' ? value : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })));
+  return (
+    <div className="flex flex-col gap-2 min-w-[120px]">
+      <span className="micro">{label}</span>
+      <span className="stat-num" style={{ color }}><motion.span>{txt}</motion.span></span>
+      {progress != null && <div style={{ width: 60, height: 2, background: 'rgba(255,255,255,.1)' }}><div style={{ width: `${Math.min(100, progress)}%`, height: '100%', background: AMBER }} /></div>}
+      {sub && <span className="micro" style={{ letterSpacing: '.15em' }}>{sub}</span>}
+    </div>
+  );
+}
 
-  const rsi = useTradingStore((s) => s.rsi);
-  const macd = useTradingStore((s) => s.macd);
+function TickerStrip() {
+  const balance = useTradingStore((s) => s.balance);
+  const stats = useTradingStore((s) => s.stats);
   const latency = useTradingStore((s) => s.latencyMs);
+  const positions = useTradingStore((s) => s.positions);
+  const botRunning = useTradingStore((s) => s.botRunning);
+  const items = [
+    ['BALANCE', balance != null ? '$' + Number(balance).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '--'],
+    ['TOTAL PNL', (stats.total_profit >= 0 ? '+$' : '-$') + Math.abs(stats.total_profit || 0).toFixed(2)],
+    ['WIN', (stats.win_rate ?? 0) + '%'],
+    ['PING', latency == null ? '—' : latency + 'MS'],
+    ['POSITIONS', positions.length],
+    ['GRX', botRunning ? 'ACTIVE' : 'HALTED'],
+    ['TRADES', stats.total_trades || 0],
+  ];
+  const seq = [...items, ...items];
+  return (
+    <div className="ticker-strip">
+      <div className="ticker-track">
+        {seq.map(([k, v], i) => (
+          <span className="ticker-item" key={i}>
+            <span className="ticker-sep">▸ </span>{k} <b>{v}</b>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Node({ label, status }) {
+  return (
+    <span className="flex items-center gap-1.5" title={`${label}: ${status}`}>
+      <span className={`node ${status}`} /><span className="micro">{label}</span>
+    </span>
+  );
+}
+
+export default function Onyx() {
+  useLiveConnection();
+
+  const balance = useTradingStore((s) => s.balance);
+  const equity = useTradingStore((s) => s.equity);
+  const stats = useTradingStore((s) => s.stats);
+  const pnlOpen = useTradingStore((s) => s.pnlOpen);
+  const positions = useTradingStore((s) => s.positions);
+  const history = useTradingStore((s) => s.history);
   const isOnline = useTradingStore((s) => s.isOnline);
+  const latency = useTradingStore((s) => s.latencyMs);
+  const rsi = useTradingStore((s) => s.rsi);
   const pair = useTradingStore((s) => s.pair);
   const price = useTradingStore((s) => s.price);
+  const connections = useTradingStore((s) => s.connections);
 
+  const totalPnl = stats.total_profit ?? 0;
+  const winRate = stats.win_rate ?? 0;
+  const todayStr = new Date().toDateString();
+  const todayNet = history.filter((t) => new Date(t.time).toDateString() === todayStr).reduce((a, t) => a + netOf(t), 0);
+
+  const [drawer, setDrawer] = useState(false);
   const shake = useAnimationControls();
-  const px = useMotionValue(0);
-  const py = useMotionValue(0);
-  const onMove = (e) => {
-    px.set((e.clientX / window.innerWidth - 0.5) * 14);
-    py.set((e.clientY / window.innerHeight - 0.5) * 14);
-  };
-  const doShake = () => shake.start({ x: [0, -11, 9, -7, 5, -2, 0], y: [0, 5, -4, 2, -1, 0], transition: { duration: 0.5 } });
+  const px = useMotionValue(0), py = useMotionValue(0);
+  const onMove = (e) => { px.set((e.clientX / window.innerWidth - 0.5) * 10); py.set((e.clientY / window.innerHeight - 0.5) * 10); };
+  const doShake = () => shake.start({ x: [0, -12, 10, -7, 4, 0], y: [0, 5, -4, 2, 0], transition: { duration: 0.5 } });
 
   return (
     <div className="onyx-root" onMouseMove={onMove}>
       <MeshGradient />
-      <div className="grain" />
+      <div className="grain" /><div className="vignette" />
+      <div className="scanline" />
+      <div className="corner tl" /><div className="corner tr" /><div className="corner bl" /><div className="corner br" />
 
-      {/* Floating telemetry header */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 30, display: 'flex', justifyContent: 'center', padding: '18px 12px 0' }}>
-        <TelemetryHeader />
-      </div>
-
-      {/* Spatial content (shake layer → parallax layer) */}
       <motion.div animate={shake} style={{ position: 'relative', zIndex: 10 }}>
-        <motion.div style={{ x: px, y: py }} className="px-4 md:px-8 pb-16 pt-8 max-w-[1500px] mx-auto">
-          <motion.div className="grid grid-cols-12 gap-5" variants={container} initial="hidden" animate="show">
+        {/* Z1 — ticker strip */}
+        <TickerStrip />
+        <div className="hair-h" />
 
-            {/* A · Momentum Radar */}
-            <motion.section variants={panel} className="col-span-12 lg:col-span-7 glass glass-hover p-5" style={{ minHeight: 380 }}>
-              <PanelHead title="The Momentum Radar" tag={`${pair} · M1`} dotStatus={price != null ? `$${Number(price).toFixed(2)}` : ''} />
-              <div style={{ height: 320 }}><MomentumRadar /></div>
-            </motion.section>
+        {/* Z2 — floating header (transparent, hairline only) */}
+        <motion.header initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}
+          className="flex items-center justify-between px-6 md:px-10" style={{ height: 64 }}>
+          <div className="flex items-center gap-3">
+            <span style={{ width: 7, height: 7, background: AMBER, boxShadow: `0 0 10px ${AMBER}` }} />
+            <span style={{ fontSize: 22, fontWeight: 700, letterSpacing: '.35em', color: '#f0e6cf' }}>ONYX</span>
+          </div>
+          <div className="flex items-center gap-6">
+            <div className="hidden md:flex items-center gap-3 px-3 py-1.5" style={{ border: '1px solid rgba(255,176,0,.12)' }}>
+              <Node label="MT5" status={connections.mt5} />
+              <Node label="BINANCE" status={connections.binance} />
+              <Node label="FIREBASE" status={connections.firebase} />
+            </div>
+            <span style={{ fontSize: 12, letterSpacing: 2, color: latency == null ? CRIMSON : latency < 20 ? EMERALD : latency > 50 ? AMBER : '#cdd3dc' }}>
+              PING {latency == null ? '—' : latency + 'MS'}
+            </span>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: isOnline ? EMERALD : CRIMSON }}>{isOnline ? '● LIVE' : '● OFFLINE'}</span>
+          </div>
+        </motion.header>
+        <div className="hair-h" />
 
-            {/* C · 3D Network Latency Core */}
-            <motion.section variants={panel} className="col-span-12 lg:col-span-5 glass glass-hover p-5 flex flex-col" style={{ minHeight: 380, transform: 'translateY(26px)' }}>
-              <PanelHead title="Network Latency Core" tag="MT5 · PING RTT" accent={EMERALD} />
-              <div style={{ flex: 1, minHeight: 210, position: 'relative' }}>
-                <LatencyCore />
-                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                  <span style={{ fontSize: 34, fontWeight: 800, color: latency == null ? CRIMSON : latency < 20 ? EMERALD : latency > 50 ? AMBER : '#cdd3dc', textShadow: '0 0 20px currentColor' }}>
-                    {latency == null ? '—' : latency}
-                  </span>
-                  <span style={{ fontSize: 10, letterSpacing: 3, color: MUTED }}>MILLISECONDS</span>
-                </div>
+        {/* Z3 + Z4 — the monument + execution tape */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px]">
+          {/* MONUMENT */}
+          <motion.div style={{ x: px, y: py }} className="relative" >
+            {/* latency core behind the digits */}
+            <div style={{ position: 'absolute', right: '8%', top: '46%', width: 460, height: 460, transform: 'translateY(-50%)', opacity: 0.35, mixBlendMode: 'screen', pointerEvents: 'none' }} className="hidden md:block">
+              <LatencyCore />
+            </div>
+            <div className="relative" style={{ padding: 'clamp(28px,5vw,72px)', paddingBottom: 40 }}>
+              <div className="rule" />
+              <div className="eyebrow" style={{ marginBottom: 10 }}>Total Balance</div>
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.8 }}>
+                <BigBalance value={balance} />
+              </motion.div>
+              <div style={{ fontSize: 12, letterSpacing: 2, color: MUTED, marginTop: 14 }}>
+                {(stats.total_trades || 0).toLocaleString()} TRADES · EQUITY{' '}
+                <b style={{ color: EMERALD }}>{equity != null ? '$' + Number(equity).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '--'}</b>
+                {' · '}OPEN <b style={{ color: pnlOpen >= 0 ? EMERALD : CRIMSON }}>{pnlOpen >= 0 ? '+' : ''}${Math.abs(pnlOpen).toFixed(2)}</b>
               </div>
-              <div className="flex justify-around mt-3 pt-3" style={{ borderTop: '1px solid rgba(255,176,0,0.12)', fontSize: 11 }}>
-                <span>RSI <b style={{ color: rsi == null ? MUTED : rsi > 70 || rsi < 30 ? AMBER : EMERALD }}>{rsi != null ? Number(rsi).toFixed(1) : '—'}</b></span>
-                <span title="Backend does not emit MACD yet">MACD <b style={{ color: MUTED }}>{macd != null ? Number(macd).toFixed(2) : '—'}</b></span>
-                <span>LINK <b style={{ color: isOnline ? EMERALD : CRIMSON }}>{isOnline ? 'LIVE' : 'DOWN'}</b></span>
+
+              {/* constellation */}
+              <div className="flex items-end gap-6 md:gap-9 mt-10 flex-wrap">
+                <Stat label="Total P&L" value={typeof totalPnl === 'number' ? Math.abs(totalPnl) : 0} color={totalPnl >= 0 ? EMERALD : CRIMSON}
+                  sub={`${totalPnl >= 0 ? '+' : '−'} · avg ${stats.total_trades ? (totalPnl / stats.total_trades).toFixed(2) : '--'}`} />
+                <div className="hair-v" style={{ height: 42 }} />
+                <Stat label="Today Net" value={Math.abs(todayNet)} color={todayNet >= 0 ? EMERALD : CRIMSON} sub={`${todayNet >= 0 ? '+' : '−'} · ${positions.length} open`} />
+                <div className="hair-v" style={{ height: 42 }} />
+                <Stat label="Win Rate" value={`${winRate}%`} color="#f0e6cf" progress={winRate} sub={`${stats.wins || 0}w / ${stats.losses || 0}l`} />
               </div>
-            </motion.section>
-
-            {/* B · Execution Tape */}
-            <motion.section variants={panel} className="col-span-12 lg:col-span-5 glass glass-hover p-5 flex flex-col" style={{ minHeight: 300, transform: 'translateY(-4px)' }}>
-              <PanelHead title="Execution Tape" tag="ACTIVE ORDERS" />
-              <div className="flex-1"><ExecutionTape /></div>
-            </motion.section>
-
-            {/* D · Tactical Override (Kill Box) */}
-            <motion.section variants={panel} className="col-span-12 lg:col-span-7 glass glass-hover p-6" style={{ minHeight: 300, transform: 'translateY(18px)' }}>
-              <KillBox onFire={doShake} />
-            </motion.section>
-
+            </div>
           </motion.div>
-        </motion.div>
+
+          {/* EXECUTION TAPE rail */}
+          <div className="flex">
+            <div className="hair-v hidden lg:block" />
+            <div className="flex-1 min-w-0 px-4 py-4">
+              <ExecutionTape />
+            </div>
+          </div>
+        </div>
+
+        <div className="hair-h-amber" />
+
+        {/* Z5 — momentum radar (full-bleed) with floating kill box */}
+        <div className="relative" style={{ minHeight: 360 }}>
+          <div style={{ position: 'absolute', inset: 0 }}>
+            <MomentumRadar />
+          </div>
+          {/* chart HUD */}
+          <div className="absolute top-4 left-6 pointer-events-none" style={{ zIndex: 2 }}>
+            <div className="section-label">Momentum Radar</div>
+            <div style={{ fontSize: 13, letterSpacing: 1, color: '#e7d7b0', marginTop: 4 }}>
+              {pair} <span style={{ color: MUTED }}>·</span> {price != null ? '$' + Number(price).toFixed(2) : '--'}
+              <span style={{ marginLeft: 12, color: rsi == null ? MUTED : rsi > 70 || rsi < 30 ? AMBER : EMERALD }}>RSI {rsi != null ? Number(rsi).toFixed(1) : '—'}</span>
+            </div>
+          </div>
+          {/* floating kill box */}
+          <div className="absolute bottom-6 left-6" style={{ zIndex: 3 }}>
+            <KillBox onFire={doShake} />
+          </div>
+        </div>
       </motion.div>
+
+      {/* Z7 — GRX strategy drawer */}
+      <button className="grx-tab" onClick={() => setDrawer(true)}>GRX · STRATEGY</button>
+      {drawer && (
+        <>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setDrawer(false)}
+            style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'rgba(0,0,0,.5)' }} />
+          <motion.div initial={{ x: 440 }} animate={{ x: 0 }} transition={{ type: 'spring', stiffness: 260, damping: 30 }} className="grx-drawer">
+            <div className="flex items-center justify-between mb-6">
+              <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: 3, color: AMBER }}>GRX PARAMETERS</span>
+              <button onClick={() => setDrawer(false)} style={{ background: 'transparent', border: '1px solid rgba(255,61,0,.5)', color: CRIMSON, padding: '4px 12px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>✕</button>
+            </div>
+            <StrategyConfig />
+          </motion.div>
+        </>
+      )}
     </div>
   );
 }
