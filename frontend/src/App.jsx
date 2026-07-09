@@ -1,36 +1,36 @@
 import { useState } from "react";
+import Nexus from "./nexus/Nexus.jsx";
 import Dashboard from "./Dashboard.jsx";
 import Settings from "./Settings.jsx";
 import Analysis from "./Analysis.jsx";
-import AlgoryDashboard from "./algory/AlgoryDashboard.jsx";
 
 const TABS = [
-  { id: "dashboard", label: "DASHBOARD" },
-  { id: "analysis",  label: "ANALYSIS"  },
-  { id: "settings",  label: "SETTINGS"  },
-  { id: "algory",    label: "ALGORY"    },
+  { id: "dashboard", label: "COMMAND" },
+  { id: "analysis",  label: "ANALYSIS" },
+  { id: "settings",  label: "SETTINGS" },
+  { id: "legacy",    label: "LEGACY"  },
 ];
 
 const TABS_STYLE = {
   bar: {
-    display: "flex", gap: 4, padding: "10px 16px 0",
-    background: "#1a1a18", borderBottom: "1px solid #2a2a24",
+    display: "flex", gap: 4, padding: "8px 16px 0",
+    background: "#000", borderBottom: "1px solid rgba(0,240,255,0.18)",
     direction: "ltr",
   },
   btn: {
-    fontFamily: "'Courier New', monospace", fontSize: 12,
+    fontFamily: "'JetBrains Mono','Courier New', monospace", fontSize: 11,
     fontWeight: 700, letterSpacing: 2, textTransform: "uppercase",
-    padding: "8px 20px", cursor: "pointer", border: "none",
-    background: "transparent", color: "#8a8580",
+    padding: "8px 18px", cursor: "pointer", border: "none",
+    background: "transparent", color: "#5f7078",
   },
-  active: { color: "#f0ebe0", borderBottom: "2px solid #52b788" },
+  active: { color: "#00F0FF", borderBottom: "2px solid #00F0FF", textShadow: "0 0 8px rgba(0,240,255,0.6)" },
 };
 
 export default function App() {
   const [tab, setTab] = useState("dashboard");
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f0ebe0", direction: "ltr" }}>
+    <div style={{ minHeight: "100vh", background: "#000", direction: "ltr" }}>
       <div style={TABS_STYLE.bar}>
         {TABS.map((t) => (
           <button
@@ -43,10 +43,8 @@ export default function App() {
         ))}
       </div>
       <div style={{ width: "100%" }}>
-        {tab === "dashboard" ? <Dashboard /> : tab === "analysis" ? <Analysis /> : tab === "algory" ? <AlgoryDashboard /> : <Settings />}
+        {tab === "dashboard" ? <Nexus /> : tab === "analysis" ? <Analysis /> : tab === "legacy" ? <Dashboard /> : <Settings />}
       </div>
     </div>
   );
 }
-
-const s = {};
