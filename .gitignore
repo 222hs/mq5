@@ -5,3 +5,7 @@ __pycache__/
 .env
 .env.*
 dist/
+
+# local dev
+*.vite-dev.log
+.vite-dev.log

@@ -2,11 +2,13 @@ import { useState } from "react";
 import Dashboard from "./Dashboard.jsx";
 import Settings from "./Settings.jsx";
 import Analysis from "./Analysis.jsx";
+import AlgoryDashboard from "./algory/AlgoryDashboard.jsx";
 
 const TABS = [
   { id: "dashboard", label: "DASHBOARD" },
   { id: "analysis",  label: "ANALYSIS"  },
   { id: "settings",  label: "SETTINGS"  },
+  { id: "algory",    label: "ALGORY"    },
 ];
 
 const TABS_STYLE = {
@@ -41,7 +43,7 @@ export default function App() {
         ))}
       </div>
       <div style={{ width: "100%" }}>
-        {tab === "dashboard" ? <Dashboard /> : tab === "analysis" ? <Analysis /> : <Settings />}
+        {tab === "dashboard" ? <Dashboard /> : tab === "analysis" ? <Analysis /> : tab === "algory" ? <AlgoryDashboard /> : <Settings />}
       </div>
     </div>
   );
