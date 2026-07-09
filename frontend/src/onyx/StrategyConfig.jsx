@@ -5,20 +5,29 @@ const API_KEY = 'mysecretkey123';
 const AUTH = { 'X-API-Key': API_KEY };
 const AMBER = '#FFB000', EMERALD = '#00E676', CRIMSON = '#FF3D00', MUTED = '#6b7280';
 
-/* Editable live GRX bot settings — wired to the real /api/settings/grx. */
+/* Editable live GRX bot settings — POST /api/settings/grx. The Windows
+   agent pulls these every 15s and writes GRX_Settings.json for the EA. */
 const FIELDS = [
   { k: 'BaseLot', label: 'Base Lot', step: 0.01 },
   { k: 'RiskPct', label: 'Risk %', step: 0.1 },
-  { k: 'BasketCount', label: 'Basket Count', step: 1 },
+  { k: 'BasketCount', label: 'Basket Count', step: 1, int: true },
   { k: 'BasketTP', label: 'Basket TP $', step: 0.5 },
   { k: 'MaxDrawdown', label: 'Max Drawdown $', step: 1 },
-  { k: 'MaxSpread', label: 'Max Spread', step: 10 },
+  { k: 'MaxSpread', label: 'Max Spread', step: 10, int: true },
   { k: 'LotBoost', label: 'Lot Boost', step: 0.1 },
-  { k: 'CooldownBars', label: 'Cooldown Bars', step: 1 },
+  { k: 'CooldownBars', label: 'Cooldown Bars', step: 1, int: true },
   { k: 'ADXMax', label: 'ADX Max', step: 1 },
   { k: 'SLMult', label: 'SL Mult', step: 0.1 },
   { k: 'ReverseStopUSD', label: 'Reverse Stop $', step: 0.5 },
 ];
+const INT = new Set(FIELDS.filter((f) => f.int).map((f) => f.k).concat('UseADXFilter'));
+
+// keep any field the user is still editing from being overwritten by the server echo
+const mergeKeepDirty = (server, dirty, prev) => {
+  const m = { ...server };
+  dirty.forEach((k) => { if (prev && Object.prototype.hasOwnProperty.call(prev, k)) m[k] = prev[k]; });
+  return m;
+};
 
 export default function StrategyConfig() {
   const [draft, setDraft] = useState({});
@@ -36,10 +45,16 @@ export default function StrategyConfig() {
     return () => { alive = false; };
   }, []);
 
+  // build the payload: coerce ints, and never send BotRunning (that is
+  // owned by the IGNITE/HALT control, not the settings form)
+  const payload = (over = {}) => {
+    const p = { ...draft, ...over };
+    delete p.BotRunning; delete p.grx_user_saved;
+    Object.keys(p).forEach((k) => { if (INT.has(k) && typeof p[k] === 'number') p[k] = Math.round(p[k]); });
+    return p;
+  };
   const post = async (body) => {
-    const r = await fetch(`${API_URL}/api/settings/grx`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', ...AUTH }, body: JSON.stringify(body),
-    });
+    const r = await fetch(`${API_URL}/api/settings/grx`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...AUTH }, body: JSON.stringify(body) });
     if (!r.ok) throw new Error('bad');
     return r.json();
   };
@@ -49,17 +64,23 @@ export default function StrategyConfig() {
   const saveField = async (k) => {
     if (!dirty.current.has(k)) return;
     setBusy(true); setMsg(`SAVING ${k}…`);
-    try { const d = await post({ ...draft, [k]: draft[k] }); if (d.settings) setDraft(d.settings); dirty.current.delete(k); setMsg(`✓ ${k}`); }
-    catch { setMsg('✕ ERROR'); }
-    setBusy(false); setTimeout(() => setMsg(''), 2000);
+    try {
+      const d = await post(payload());
+      dirty.current.delete(k);
+      if (d.settings) setDraft((prev) => mergeKeepDirty(d.settings, dirty.current, prev)); // keep other in-progress edits
+      setMsg(`✓ ${k}`);
+    } catch { setMsg('✕ ERROR'); }
+    setBusy(false); setTimeout(() => setMsg(''), 2200);
   };
 
   const saveAll = async () => {
     setBusy(true); setMsg('SAVING ALL…');
-    try { const d = await post(draft); if (d.settings) setDraft(d.settings); dirty.current.clear(); setMsg('✓ ALL SAVED'); }
+    try { const d = await post(payload()); dirty.current.clear(); if (d.settings) setDraft(d.settings); setMsg('✓ SAVED · BOT SYNCS ≤15s'); }
     catch { setMsg('✕ ERROR'); }
-    setBusy(false); setTimeout(() => setMsg(''), 2500);
+    setBusy(false); setTimeout(() => setMsg(''), 3000);
   };
+
+  const toggleADX = () => { const v = draft.UseADXFilter ? 0 : 1; dirty.current.add('UseADXFilter'); setDraft((d) => ({ ...d, UseADXFilter: v })); setTimeout(() => saveField('UseADXFilter'), 0); };
 
   return (
     <div className="flex flex-col h-full">
@@ -84,10 +105,16 @@ export default function StrategyConfig() {
             />
           </label>
         ))}
+        <div className="grx-field">
+          <span className="micro">ADX Filter</span>
+          <button disabled={!loaded} onClick={toggleADX} className="grx-input" style={{ textAlign: 'left', cursor: 'pointer', color: draft.UseADXFilter ? EMERALD : MUTED }}>
+            {draft.UseADXFilter ? 'ON ●' : 'OFF ○'}
+          </button>
+        </div>
       </div>
 
       <button onClick={saveAll} disabled={busy || !loaded} className="grx-apply mt-6" style={{ opacity: loaded ? 1 : 0.5 }}>
-        {busy ? '…' : 'APPLY PARAMETERS'}
+        {busy ? '…' : 'APPLY ALL PARAMETERS'}
       </button>
     </div>
   );

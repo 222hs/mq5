@@ -175,10 +175,10 @@ export default function Onyx() {
           </div>
           <div className="flex">
             <div className="hair-v hidden lg:block" />
-            <div className="flex-1 min-w-0 px-4 py-5 flex flex-col gap-4" style={{ maxHeight: 560 }}>
-              <div style={{ flex: '1 1 0', minHeight: 0 }}><ExecutionTape /></div>
+            <div className="flex-1 min-w-0 px-4 py-5 flex flex-col gap-4 lg:max-h-[560px]">
+              <div className="h-[260px] lg:h-auto lg:flex-1 lg:min-h-0"><ExecutionTape /></div>
               <div className="hair-h" />
-              <div style={{ flex: '1 1 0', minHeight: 0 }}><EngineLog /></div>
+              <div className="h-[260px] lg:h-auto lg:flex-1 lg:min-h-0"><EngineLog /></div>
             </div>
           </div>
         </div>
