@@ -122,6 +122,7 @@ DEFAULT_SETTINGS = {
     "MaxATRPoints":   80,
     "BlockRollover":  0,
     "MaxConsecLosses":0,
+    "AutoTPSL":       0,
 }
 
 BTC_DEFAULT_SETTINGS = {

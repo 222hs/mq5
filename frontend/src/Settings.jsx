@@ -13,6 +13,9 @@ const FIELDS = [
   { key: "TrailUSD",    label: "Trailing Stop (تراجع من الذروة)", unit: "$", min: 0, max: 10, step: 0.5, decimals: 1 },
 ];
 
+// الخانات التي يديرها الوضع الآلي (تختفي عند تشغيله)
+const AUTO_KEYS = ["LotSize", "TP_USD", "SL_USD"];
+
 // أزرار تشغيل/إيقاف — فلاتر السكالبينج
 const TOGGLES = [
   { key: "UseATRFilter",  label: "فلتر التقلب (ATR)",        hint: "يمنع الدخول وقت التقلب العالي" },
@@ -97,12 +100,34 @@ export default function Settings() {
 
   if (!settings) return <div style={s.loading}>جاري تحميل الإعدادات...</div>;
 
+  const auto = Number(settings.AutoTPSL ?? 0) > 0.5;
+
   return (
     <div style={s.wrap}>
       <p style={s.title}>⚙️ إعدادات البوت</p>
       <p style={s.hint}>التغييرات تُطبَّق تلقائياً على الـ EA خلال 15 ثانية</p>
 
-      {FIELDS.map(renderSlider)}
+      <div style={s.autoRow}>
+        <div>
+          <div style={s.autoLabel}>🤖 الوضع الآلي (Lot + TP + SL)</div>
+          <div style={s.toggleHint}>البوت يحسبهم تلقائياً من التقلب والمخاطرة</div>
+        </div>
+        <button
+          onClick={() => handleChange("AutoTPSL", auto ? 0 : 1)}
+          style={{ ...s.toggle, ...(auto ? s.toggleOn : s.toggleOff) }}
+        >
+          {auto ? "ON" : "OFF"}
+        </button>
+      </div>
+
+      {auto && (
+        <div style={s.autoNote}>
+          ✅ البوت يدير اللوت والـ TP/SL تلقائياً
+          <div style={s.autoNoteSub}>مخاطرة 1% · ATR×1.5 · R:R 1.5</div>
+        </div>
+      )}
+
+      {FIELDS.filter((f) => !(auto && AUTO_KEYS.includes(f.key))).map(renderSlider)}
 
       <div style={s.sectionHead}>⚡ فلاتر السكالبينج</div>
 
@@ -176,4 +201,12 @@ const s = {
             minWidth: 58, letterSpacing: 0.5 },
   toggleOn:  { background: "#4ADE80", color: "#052e16" },
   toggleOff: { background: "#2A2A33", color: "#9CA3AF" },
+  autoRow: { display: "flex", justifyContent: "space-between", alignItems: "center",
+             gap: 12, padding: "14px 16px", marginBottom: "1.25rem",
+             background: "#12203a", border: "0.5px solid #1e3a5f", borderRadius: 12 },
+  autoLabel: { fontSize: 14, fontWeight: 600, color: "#fff" },
+  autoNote: { padding: "14px 16px", marginBottom: "1.5rem", textAlign: "center",
+              fontSize: 13, fontWeight: 600, color: "#4ADE80",
+              background: "#0c2417", border: "0.5px solid #14532d", borderRadius: 12 },
+  autoNoteSub: { fontSize: 12, fontWeight: 400, color: "#6EE7B7", marginTop: 6 },
 };

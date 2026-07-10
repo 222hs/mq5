@@ -95,6 +95,12 @@ bool   g_blockRollover  = false; // يمنع التداول وقت الرول-أ
 int    g_maxConsecLosses= 0;     // 0=معطّل | حد الخسائر المتتالية قبل إيقاف الجلسة
 int    g_consecLosses   = 0;     // عدّاد الخسائر المتتالية (داخلي)
 
+// ── الوضع الآلي الكامل (Auto): لوت + TP + SL ديناميكية من ATR ──────
+bool   g_autoTPSL       = false; // زر واحد: يخلي اللوت والـ TP/SL تلقائية
+const double AUTO_RISK_PCT = 1.0; // نسبة المخاطرة من الرصيد لكل صفقة
+const double AUTO_SL_ATR   = 1.5; // مضاعف ATR لمسافة الستوب
+const double AUTO_TP_RR    = 1.5; // نسبة الهدف للخطر (R:R)
+
 // Scale tracking
 ulong  g_scaledFrom[200];
 int    g_scaledCount = 0;
@@ -164,7 +170,8 @@ void WriteCurrentSettings()
    j += "  \"UseATRFilter\": " + (g_useATRFilter ? "1" : "0")        + ",\n";
    j += "  \"MaxATRPoints\": " + DoubleToString(g_maxATRPoints,0)    + ",\n";
    j += "  \"BlockRollover\": "+ (g_blockRollover ? "1" : "0")       + ",\n";
-   j += "  \"MaxConsecLosses\": "+ IntegerToString(g_maxConsecLosses)+ "\n";
+   j += "  \"MaxConsecLosses\": "+ IntegerToString(g_maxConsecLosses)+ ",\n";
+   j += "  \"AutoTPSL\": "     + (g_autoTPSL ? "1" : "0")            + "\n";
    j += "}";
    FileWriteString(fh, j);
    FileClose(fh);
@@ -210,8 +217,47 @@ void EALog(string msg)
 //+------------------------------------------------------------------+
 // يحسب اللوت — ثابت أو ديناميكي حسب الإعداد
 //+------------------------------------------------------------------+
+// آخر قيمة ATR بالسعر (لحساب الوضع الآلي)
+double CurrentATRprice()
+  {
+   if(hATR == INVALID_HANDLE) return 0.0;
+   double a[];
+   ArraySetAsSeries(a, true);
+   if(CopyBuffer(hATR, 0, 0, 2, a) < 2) return 0.0;
+   return a[1];
+  }
+
+// قيمة الدولار لكل وحدة سعر لكل لوت (تُستعمل لتحويل مسافة ATR ↔ دولار)
+double ValuePerPricePerLot()
+  {
+   double ts = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   double tv = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   if(ts <= 0.0) return 0.0;
+   return tv / ts;
+  }
+
 double CalcLot()
   {
+   // الوضع الآلي: اللوت من المخاطرة % والستوب من ATR
+   if(g_autoTPSL)
+     {
+      double atrP   = CurrentATRprice();
+      double vpl    = ValuePerPricePerLot();
+      double slDist = AUTO_SL_ATR * atrP;
+      if(atrP > 0.0 && vpl > 0.0 && slDist > 0.0)
+        {
+         double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+         double riskAmt = balance * (AUTO_RISK_PCT / 100.0);
+         double lot     = riskAmt / (slDist * vpl);
+         double step    = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+         double minL    = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+         double maxL    = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+         lot = MathFloor(lot / step) * step;
+         lot = MathMax(minL, MathMin(MathMin(maxL, 5.0), lot));
+         return NormalizeLot(lot);
+        }
+      return NormalizeLot(g_lot); // fallback لو ATR غير متاح
+     }
    if(g_riskMode == 0) return NormalizeLot(g_lot);  // لوت ثابت
    if(g_slUSD <= 0)    return NormalizeLot(g_lot);
    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
@@ -256,6 +302,7 @@ void LoadSettings()
    double maxATR = ReadSetting("MaxATRPoints",   80.0);
    bool   blkRO  = (ReadSetting("BlockRollover",  0.0) > 0.5);
    int    maxCL  = (int)ReadSetting("MaxConsecLosses", 0.0);
+   bool   autoTS = (ReadSetting("AutoTPSL",       0.0) > 0.5);
 
    string hash = DoubleToString(lot,2)+DoubleToString(tp,2)+DoubleToString(sl,2)
                + IntegerToString(maxPos)+DoubleToString(spread,0)
@@ -270,7 +317,8 @@ void LoadSettings()
                + DoubleToString(hMult,2)+IntegerToString(scStep)
                + DoubleToString(scMult,2)+IntegerToString(scMax)
                + (useATR?"1":"0")+DoubleToString(maxATR,0)
-               + (blkRO?"1":"0")+IntegerToString(maxCL);
+               + (blkRO?"1":"0")+IntegerToString(maxCL)
+               + (autoTS?"1":"0");
    bool changed = (hash != g_lastSettingsHash);
    g_lastSettingsHash = hash;
 
@@ -287,6 +335,7 @@ void LoadSettings()
    g_scaleStep=MathMax(10,scStep); g_scaleMult=MathMax(1.0,scMult); g_maxScales=MathMax(1,scMax);
    g_useATRFilter=useATR; g_maxATRPoints=MathMax(0.0,maxATR);
    g_blockRollover=blkRO; g_maxConsecLosses=MathMax(0,maxCL);
+   g_autoTPSL=autoTS;
    LoadNewsBlock();
 
    if(changed)
@@ -309,6 +358,7 @@ void LoadSettings()
       EALog("Scalp: ATRFilter="+(g_useATRFilter?"ON max="+DoubleToString(g_maxATRPoints,0)+"pts":"OFF")
             +" | Rollover="+(g_blockRollover?"BLOCK 21-22GMT":"OFF")
             +" | MaxConsecLosses="+(g_maxConsecLosses>0?IntegerToString(g_maxConsecLosses):"OFF"));
+      EALog("AutoMode="+(g_autoTPSL?"ON — Lot+TP+SL ديناميكي (risk "+DoubleToString(AUTO_RISK_PCT,1)+"% · ATR×"+DoubleToString(AUTO_SL_ATR,1)+" · RR "+DoubleToString(AUTO_TP_RR,1)+")":"OFF — يدوي"));
       EALog("═══════════════════════════════════════");
      }
    // heartbeat دائم — الـ Agent يعتمد على mtime هذا الملف لكشف أن البوت حي
@@ -984,6 +1034,19 @@ void ManagePositions()
       double   posLot  = posInfo.Volume();
       double   effTP   = g_tpUSD;
       double   effSL   = g_slUSD;
+
+      // الوضع الآلي: TP/SL ديناميكية من ATR اللحظة (تكبر وتصغر مع التقلب)
+      if(g_autoTPSL)
+        {
+         double atrP   = CurrentATRprice();
+         double vpl    = ValuePerPricePerLot();
+         double slDist = AUTO_SL_ATR * atrP;
+         if(atrP > 0.0 && vpl > 0.0 && slDist > 0.0)
+           {
+            effSL = slDist * vpl * posLot;
+            effTP = effSL * AUTO_TP_RR;
+           }
+        }
 
       // Breakeven: إذا الربح وصل 1.5× SL → نقل الـ SL لنقطة التعادل
       if(profit >= effSL * 1.5)
