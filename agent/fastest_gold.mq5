@@ -1309,12 +1309,24 @@ void ManagePositions()
            {
             if(profit > g_lkPeak[li]) { g_lkPeak[li] = profit; g_lkTime[li] = now; } // ذروة جديدة
 
-            // تريلينج: بعد ربح TrailStart، لو رجع TrailGive من الذروة → اقفل فوراً
-            if(g_trailStartUSD > 0.0 && g_lkPeak[li] >= g_trailStartUSD
-               && profit <= g_lkPeak[li] - g_trailGiveUSD)
-              { trade.PositionClose(tk);
-                EALog("📈 TRAIL #"+IntegerToString((int)tk)+" +$"+DoubleToString(profit,2)+" (ذروة $"+DoubleToString(g_lkPeak[li],2)+")");
-                LkRemove(tk); continue; }
+            // ستوب متحرّك حقيقي: بعد ربح TrailStart، حرّك الـ SL ليقفل (الذروة − Give)
+            // يعطي الصفقة مساحة ثم يتبع الربح؛ يظهر على الشارت والبروكر يسكّر عند لمسه
+            if(g_trailStartUSD > 0.0 && g_lkPeak[li] >= g_trailStartUSD)
+              {
+               double tvpl = ValuePerPricePerLot();
+               if(tvpl > 0.0 && posLot > 0.0)
+                 {
+                  double lockUSD = g_lkPeak[li] - g_trailGiveUSD;      // الربح المراد قفله
+                  double dist    = lockUSD / (posLot * tvpl);          // مسافة سعرية من الدخول
+                  bool   isBuyT  = (posInfo.PositionType()==POSITION_TYPE_BUY);
+                  double openPT  = posInfo.PriceOpen();
+                  int    digsT   = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+                  double newSLT  = NormalizeDouble(isBuyT ? openPT + dist : openPT - dist, digsT);
+                  double curSLT  = posInfo.StopLoss();
+                  bool   tighten = isBuyT ? (newSLT > curSLT) : (curSLT==0.0 || newSLT < curSLT);
+                  if(tighten) trade.PositionModify(tk, newSLT, posInfo.TakeProfit());
+                 }
+              }
 
             // قفل الربح عند الركود: بربح ووقف يتقدّم مدة → احجز
             if(g_lockProfitUSD > 0.0 && profit >= g_lockProfitUSD && (int)(now - g_lkTime[li]) >= g_stallSecs)
