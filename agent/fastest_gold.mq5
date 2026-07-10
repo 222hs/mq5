@@ -1252,13 +1252,14 @@ void ManagePositions()
         { trade.PositionClose(tk); LkRemove(tk);
           EALog("⏱ TIME #"+IntegerToString((int)tk)+" "+(profit>=0?"+":"")+"$"+DoubleToString(profit,2)+" (حد "+IntegerToString(g_maxHoldMin)+"د)"); continue; }
 
-      // قص الخسارة عند انعكاس الشمعة: صفقة خاسرة والشمعة راحت عكسها → سكّرها
-      if(g_exitOnReverse && profit < 0.0 && ageSeconds >= 20)
+      // قص الخسارة عند انعكاس الشمعة — فقط لو الخسارة حقيقية (≥40% من الستوب)
+      // حتى لا يخنق الصفقات الجديدة عند ضجيج الشموع
+      if(g_exitOnReverse && profit <= -0.40*effSL && ageSeconds >= 30)
         {
          bool isBuy = (posInfo.PositionType()==POSITION_TYPE_BUY);
          if((isBuy && candleBear) || (!isBuy && candleBull))
            { trade.PositionClose(tk); LkRemove(tk);
-             EALog("🔄 REVERSE cut #"+IntegerToString((int)tk)+" $"+DoubleToString(profit,2)+" (الشمعة انعكست)"); continue; }
+             EALog("🔄 REVERSE cut #"+IntegerToString((int)tk)+" $"+DoubleToString(profit,2)+" (خسارة+انعكاس)"); continue; }
         }
      }
   }
