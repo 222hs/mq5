@@ -27,6 +27,8 @@ const SCALP_FIELDS = [
   { k: 'LockProfitUSD', label: 'Lock Profit $ (0=off)', step: 0.1 },
   { k: 'StallSecs', label: 'Stall Seconds', step: 5, int: true },
   { k: 'QuickTPUSD', label: 'Quick TP $ — close at profit (0=off)', step: 0.5 },
+  { k: 'TrailStartUSD', label: 'Trail Start $ (0=off)', step: 0.5 },
+  { k: 'TrailGiveUSD', label: 'Trail Give-back $ (smaller=faster)', step: 0.1 },
   { k: 'PartialTP_R', label: 'Partial TP at R× (0=off)', step: 0.1 },
   { k: 'PartialTP_Frac', label: 'Partial Close Fraction', step: 0.05 },
   { k: 'RSIBuyMax', label: 'RSI Buy Max', step: 1, int: true },

@@ -131,6 +131,8 @@ DEFAULT_SETTINGS = {
     "SyncTPSL":       0,
     "ExitOnReverse":  0,
     "QuickTPUSD":     0.0,
+    "TrailStartUSD":  0.0,
+    "TrailGiveUSD":   0.5,
     "PartialTP_R":    0.0,
     "PartialTP_Frac": 0.5,
 }

@@ -112,6 +112,8 @@ bool   g_splitLot       = false; // يوزّع اللوت على أقصى عدد
 bool   g_syncTPSL       = false; // يكتب TP/SL الحقيقية على الصفقات ويحدّثها مع الإعدادات
 bool   g_exitOnReverse  = false; // يقص الصفقة الخاسرة لو الشمعة انعكست ضد اتجاهها
 double g_quickTPUSD     = 0.0;   // 0=معطّل | يسكّر الصفقة كاملة عند ربح $ ثابت (بغضّ النظر عن AUTO)
+double g_trailStartUSD  = 0.0;   // 0=معطّل | يبدأ التريلينج بعد ربح $
+double g_trailGiveUSD   = 0.5;   // كم $ يسمح يرجع من الذروة قبل ما يقفل (أصغر=أسرع)
 double g_partialTP_R    = 0.0;   // 0=معطّل | جني جزئي عند ربح = R× الستوب
 double g_partialTP_Frac = 0.5;   // نسبة الصفقة التي تُغلق عند الجني الجزئي
 bool   g_lkTp1[256];             // هل تم الجني الجزئي لهذه الصفقة؟
@@ -198,6 +200,8 @@ void WriteCurrentSettings()
    j += "  \"SyncTPSL\": "     + (g_syncTPSL ? "1" : "0")            + ",\n";
    j += "  \"ExitOnReverse\": "+ (g_exitOnReverse ? "1" : "0")       + ",\n";
    j += "  \"QuickTPUSD\": "   + DoubleToString(g_quickTPUSD,2)      + ",\n";
+   j += "  \"TrailStartUSD\": "+ DoubleToString(g_trailStartUSD,2)   + ",\n";
+   j += "  \"TrailGiveUSD\": " + DoubleToString(g_trailGiveUSD,2)    + ",\n";
    j += "  \"PartialTP_R\": "  + DoubleToString(g_partialTP_R,2)     + ",\n";
    j += "  \"PartialTP_Frac\": "+ DoubleToString(g_partialTP_Frac,2) + "\n";
    j += "}";
@@ -352,6 +356,8 @@ void LoadSettings()
    bool   syncTS = (ReadSetting("SyncTPSL",        0.0) > 0.5);
    bool   exitRv = (ReadSetting("ExitOnReverse",   0.0) > 0.5);
    double qtp    = ReadSetting("QuickTPUSD",        0.0);
+   double trStart= ReadSetting("TrailStartUSD",     0.0);
+   double trGive = ReadSetting("TrailGiveUSD",      0.5);
    double ptpR   = ReadSetting("PartialTP_R",      0.0);
    double ptpF   = ReadSetting("PartialTP_Frac",   0.5);
    int    maxHold= (int)ReadSetting("MaxHoldMin",  0.0);
@@ -374,7 +380,8 @@ void LoadSettings()
                + (blkRO?"1":"0")+IntegerToString(maxCL)
                + (autoTS?"1":"0")+(splitL?"1":"0")+IntegerToString(maxHold)
                + DoubleToString(lockUSD,2)+IntegerToString(stallS)+(syncTS?"1":"0")+(exitRv?"1":"0")
-               + DoubleToString(ptpR,2)+DoubleToString(ptpF,2)+DoubleToString(qtp,2);
+               + DoubleToString(ptpR,2)+DoubleToString(ptpF,2)+DoubleToString(qtp,2)
+               + DoubleToString(trStart,2)+DoubleToString(trGive,2);
    bool changed = (hash != g_lastSettingsHash);
    g_lastSettingsHash = hash;
 
@@ -395,6 +402,7 @@ void LoadSettings()
    g_lockProfitUSD=MathMax(0.0,lockUSD); g_stallSecs=MathMax(5,stallS);
    g_syncTPSL=syncTS; g_exitOnReverse=exitRv;
    g_quickTPUSD=MathMax(0.0,qtp);
+   g_trailStartUSD=MathMax(0.0,trStart); g_trailGiveUSD=MathMax(0.05,trGive);
    g_partialTP_R=MathMax(0.0,ptpR); g_partialTP_Frac=MathMax(0.1,MathMin(1.0,ptpF));
    LoadNewsBlock();
 
@@ -425,6 +433,7 @@ void LoadSettings()
             +" | SyncTPSL="+(g_syncTPSL?"ON":"OFF")
             +" | ExitReverse="+(g_exitOnReverse?"ON":"OFF")
             +" | CashTP="+(g_quickTPUSD>0?"$"+DoubleToString(g_quickTPUSD,2):"OFF")
+            +" | Trail="+(g_trailStartUSD>0?"start$"+DoubleToString(g_trailStartUSD,2)+" give$"+DoubleToString(g_trailGiveUSD,2):"OFF")
             +" | PartialTP="+(g_partialTP_R>0?DoubleToString(g_partialTP_R,1)+"R×"+DoubleToString(g_partialTP_Frac*100,0)+"%":"OFF")
             +" → lot/trade="+DoubleToString(CalcLot(),2));
       EALog("═══════════════════════════════════════");
@@ -1199,17 +1208,25 @@ void ManagePositions()
            }
         }
 
-      // قفل الربح عند الركود: صفقة بربح وقفت تتقدّم → احجز الربح
-      if(g_lockProfitUSD > 0.0)
+      // تتبّع ذروة الربح (للتريلينج + قفل الركود)
+      if(g_trailStartUSD > 0.0 || g_lockProfitUSD > 0.0)
         {
          int li = LkIdx(tk);
          if(li >= 0)
            {
             if(profit > g_lkPeak[li]) { g_lkPeak[li] = profit; g_lkTime[li] = now; } // ذروة جديدة
-            int stall = (int)(now - g_lkTime[li]);
-            if(profit >= g_lockProfitUSD && stall >= g_stallSecs)
+
+            // تريلينج: بعد ربح TrailStart، لو رجع TrailGive من الذروة → اقفل فوراً
+            if(g_trailStartUSD > 0.0 && g_lkPeak[li] >= g_trailStartUSD
+               && profit <= g_lkPeak[li] - g_trailGiveUSD)
               { trade.PositionClose(tk);
-                EALog("🔒 LOCK #"+IntegerToString((int)tk)+" +$"+DoubleToString(profit,2)+" (ربح ثابت "+IntegerToString(stall)+"s)");
+                EALog("📈 TRAIL #"+IntegerToString((int)tk)+" +$"+DoubleToString(profit,2)+" (ذروة $"+DoubleToString(g_lkPeak[li],2)+")");
+                LkRemove(tk); continue; }
+
+            // قفل الربح عند الركود: بربح ووقف يتقدّم مدة → احجز
+            if(g_lockProfitUSD > 0.0 && profit >= g_lockProfitUSD && (int)(now - g_lkTime[li]) >= g_stallSecs)
+              { trade.PositionClose(tk);
+                EALog("🔒 LOCK #"+IntegerToString((int)tk)+" +$"+DoubleToString(profit,2)+" (ربح ثابت "+IntegerToString((int)(now-g_lkTime[li]))+"s)");
                 LkRemove(tk); continue; }
            }
         }
