@@ -142,24 +142,11 @@ export default function Dashboard() {
         if (!active) return;
         if (r.ok) {
           const d = await r.json();
+          // history من dashboard مباشرة — أبسط وأضمن
           const hist = Array.isArray(d.history) && d.history.length > 0
             ? d.history.slice().sort((a,b) => new Date(b.time) - new Date(a.time))
             : null;
-          setData(prev => {
-            const prevPos = prev?.positions || [];
-            const newPos  = d.positions || [];
-            const posChanged =
-              prevPos.length !== newPos.length ||
-              newPos.some((p, i) =>
-                p.ticket !== prevPos[i]?.ticket ||
-                p.profit !== prevPos[i]?.profit
-              );
-            return {
-              ...d,
-              positions: posChanged ? newPos : prevPos,
-              history: hist || prev?.history || [],
-            };
-          });
+          setData(prev => ({ ...d, history: hist || prev?.history || [] }));
           if (Array.isArray(d.candles) && d.candles.length > 0)
             setCandleData({ candles: d.candles, sessions: d.sessions || {} });
         }
