@@ -22,11 +22,17 @@ const AUTO_KEYS = ['LotSize', 'TP_USD', 'SL_USD'];
 const SCALP_FIELDS = [
   { k: 'MaxATRPoints', label: 'Max ATR (pts)', step: 5, int: true },
   { k: 'MaxConsecLosses', label: 'Max Consec Losses', step: 1, int: true },
+  { k: 'RSIBuyMax', label: 'RSI Buy Max', step: 1, int: true },
+  { k: 'RSISellMin', label: 'RSI Sell Min', step: 1, int: true },
+  { k: 'TradeHoursStart', label: 'Trade Hour Start (UTC)', step: 1, int: true },
+  { k: 'TradeHoursEnd', label: 'Trade Hour End (UTC)', step: 1, int: true },
 ];
 // ON/OFF switches
 const TOGGLES = [
   { k: 'AutoTPSL', label: 'AUTO · Lot+TP+SL', hint: 'bot sizes everything from ATR + 1% risk' },
   { k: 'UseM15Filter', label: 'MTF Filter (15m + 1h)', hint: 'backtested edge — trade only with both trends aligned' },
+  { k: 'UseH1Filter', label: 'H1 Trend Filter', hint: 'trade only with the 1h trend (big backtested edge)' },
+  { k: 'UseRSIFilter', label: 'RSI Filter', hint: 'block entries at RSI extremes (uses RSI bounds below)' },
   { k: 'SplitLot', label: 'Split Lot ÷ Positions', hint: 'divides lot across max positions' },
   { k: 'UseATRFilter', label: 'ATR Volatility Filter', hint: 'skip entries when ATR too high' },
   { k: 'BlockRollover', label: 'Block Rollover 21-22 GMT', hint: 'avoid stop-hunt window' },
