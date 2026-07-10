@@ -86,8 +86,8 @@ int    g_strategyMode  = 0;
 int    g_gridLevels    = 3;    // عدد مستويات الشبكة
 int    g_gridStep      = 50;   // نقاط بين كل مستوى
 bool   g_claudeGrid    = false;// كلود يحدّد أماكن أوردرات الشبكة من الشارت
-double g_aiBuys[8];  int g_aiBuyN  = 0;   // مستويات دعم من كلود (شراء)
-double g_aiSells[8]; int g_aiSellN = 0;   // مستويات مقاومة من كلود (بيع)
+double g_aiBuys[64];  int g_aiBuyN  = 0;   // مستويات دعم من كلود (شراء)
+double g_aiSells[64]; int g_aiSellN = 0;   // مستويات مقاومة من كلود (بيع)
 double g_hedgeLotMult  = 0.5;  // نسبة لوت الهيدج من الأصلي
 int    g_scaleStep     = 30;   // نقاط خسارة قبل scale-in
 double g_scaleMult     = 1.5;  // مضاعف اللوت عند scale
@@ -822,8 +822,19 @@ void OpenGrid(int signal, double atrVal)
          if(isBuy){double sl=NormalizeDouble(e-slD,digs);double tp=NormalizeDouble(e+tpD,digs);if(trade.BuyLimit(lot,e,_Symbol,sl,tp,ORDER_TIME_SPECIFIED,expiry,"AIGRID"))fired++;}
          else     {double sl=NormalizeDouble(e+slD,digs);double tp=NormalizeDouble(e-tpD,digs);if(trade.SellLimit(lot,e,_Symbol,sl,tp,ORDER_TIME_SPECIFIED,expiry,"AIGRID"))fired++;}
         }
+      // كمّل بخطوات ثابتة لين نوصل GridLevels (لو المطلوب أكثر من مستويات كلود)
+      int extra = 1;
+      while(fired < g_gridLevels && (CountMyPositions()+fired) < g_maxPositions && extra <= g_gridLevels)
+        {
+         double off = extra*stepD;
+         bool ok2=false;
+         if(isBuy){double e=NormalizeDouble(bid-off,digs);double sl=NormalizeDouble(e-slD,digs);double tp=NormalizeDouble(e+tpD,digs);ok2=trade.BuyLimit(lot,e,_Symbol,sl,tp,ORDER_TIME_SPECIFIED,expiry,"AIGRID+");}
+         else     {double e=NormalizeDouble(ask+off,digs);double sl=NormalizeDouble(e+slD,digs);double tp=NormalizeDouble(e-tpD,digs);ok2=trade.SellLimit(lot,e,_Symbol,sl,tp,ORDER_TIME_SPECIFIED,expiry,"AIGRID+");}
+         if(ok2) fired++;
+         extra++;
+        }
       if(fired>0){g_lastEntryTime=TimeCurrent(); g_totalTrades+=fired;
-        EALog("🧮 AIGRID fired="+IntegerToString(fired)+" "+(isBuy?"BUY":"SELL")+" (مستويات كلود)");}
+        EALog("🧮 AIGRID fired="+IntegerToString(fired)+" "+(isBuy?"BUY":"SELL")+" (مستويات كلود + تعبئة)");}
       else EALog("🧮 AIGRID: ما فيه مستويات كلود بعد — انتظر");
       return;
      }

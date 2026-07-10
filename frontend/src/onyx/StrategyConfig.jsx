@@ -23,6 +23,8 @@ const SCALP_FIELDS = [
   { k: 'MaxATRPoints', label: 'Max ATR (pts)', step: 5, int: true },
   { k: 'MaxConsecLosses', label: 'Max Consec Losses', step: 1, int: true },
   { k: 'StrategyMode', label: 'Strategy Mode (0=safe·1G·2H·4Scale)', step: 1, int: true },
+  { k: 'GridLevels', label: 'Grid Orders (up to 100)', step: 1, int: true },
+  { k: 'GridStep', label: 'Grid Step (points)', step: 5, int: true },
   { k: 'MaxHoldMin', label: 'Time Exit (min, 0=off)', step: 1, int: true },
   { k: 'LockProfitUSD', label: 'Lock Profit $ (0=off)', step: 0.1 },
   { k: 'StallSecs', label: 'Stall Seconds', step: 5, int: true },
