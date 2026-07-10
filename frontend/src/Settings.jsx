@@ -13,6 +13,18 @@ const FIELDS = [
   { key: "TrailUSD",    label: "Trailing Stop (تراجع من الذروة)", unit: "$", min: 0, max: 10, step: 0.5, decimals: 1 },
 ];
 
+// أزرار تشغيل/إيقاف — فلاتر السكالبينج
+const TOGGLES = [
+  { key: "UseATRFilter",  label: "فلتر التقلب (ATR)",        hint: "يمنع الدخول وقت التقلب العالي" },
+  { key: "BlockRollover", label: "إيقاف وقت الرول-أوفر",     hint: "يوقف التداول 21:00–22:00 GMT (صيد الستوبات)" },
+];
+
+// سلايدرات إضافية تظهر فقط تحت قسم السكالبينج
+const SCALP_FIELDS = [
+  { key: "MaxATRPoints",    label: "أقصى ATR مسموح",         unit: "pts", min: 20, max: 200, step: 5, decimals: 0 },
+  { key: "MaxConsecLosses", label: "حد الخسائر المتتالية (0=معطّل)", unit: "", min: 0, max: 10, step: 1, decimals: 0 },
+];
+
 export default function Settings() {
   const [settings, setSettings] = useState(null);
   const [saving, setSaving]     = useState(false);
@@ -49,6 +61,40 @@ export default function Settings() {
     setSaving(false);
   };
 
+  const renderSlider = (f) => {
+    const val = settings[f.key] ?? f.min;
+    const pct = ((val - f.min) / (f.max - f.min)) * 100;
+    return (
+      <div key={f.key} style={s.row}>
+        <div style={s.labelRow}>
+          <span style={s.label}>{f.label}</span>
+          <span style={s.valBadge}>
+            {Number(val).toFixed(f.decimals)}{f.unit}
+          </span>
+        </div>
+        <div style={s.inputRow}>
+          <div style={s.trackWrap}>
+            <div style={{ ...s.trackFill, width: pct + "%" }} />
+            <input
+              type="range"
+              min={f.min} max={f.max} step={f.step}
+              value={val}
+              onChange={(e) => handleChange(f.key, parseFloat(e.target.value))}
+              style={{ ...s.range, direction: "ltr" }}
+            />
+          </div>
+          <input
+            type="number"
+            min={f.min} max={f.max} step={f.step}
+            value={val}
+            onChange={(e) => handleChange(f.key, parseFloat(e.target.value))}
+            style={s.numInput}
+          />
+        </div>
+      </div>
+    );
+  };
+
   if (!settings) return <div style={s.loading}>جاري تحميل الإعدادات...</div>;
 
   return (
@@ -56,39 +102,29 @@ export default function Settings() {
       <p style={s.title}>⚙️ إعدادات البوت</p>
       <p style={s.hint}>التغييرات تُطبَّق تلقائياً على الـ EA خلال 15 ثانية</p>
 
-      {FIELDS.map((f) => {
-        const val = settings[f.key] ?? f.min;
-        const pct = ((val - f.min) / (f.max - f.min)) * 100;
+      {FIELDS.map(renderSlider)}
+
+      <div style={s.sectionHead}>⚡ فلاتر السكالبينج</div>
+
+      {TOGGLES.map((t) => {
+        const on = Number(settings[t.key] ?? 0) > 0.5;
         return (
-          <div key={f.key} style={s.row}>
-            <div style={s.labelRow}>
-              <span style={s.label}>{f.label}</span>
-              <span style={s.valBadge}>
-                {Number(val).toFixed(f.decimals)}{f.unit}
-              </span>
+          <div key={t.key} style={s.toggleRow}>
+            <div>
+              <div style={s.label}>{t.label}</div>
+              <div style={s.toggleHint}>{t.hint}</div>
             </div>
-            <div style={s.inputRow}>
-              <div style={s.trackWrap}>
-                <div style={{ ...s.trackFill, width: pct + "%" }} />
-                <input
-                  type="range"
-                  min={f.min} max={f.max} step={f.step}
-                  value={val}
-                  onChange={(e) => handleChange(f.key, parseFloat(e.target.value))}
-                  style={{ ...s.range, direction: "ltr" }}
-                />
-              </div>
-              <input
-                type="number"
-                min={f.min} max={f.max} step={f.step}
-                value={val}
-                onChange={(e) => handleChange(f.key, parseFloat(e.target.value))}
-                style={s.numInput}
-              />
-            </div>
+            <button
+              onClick={() => handleChange(t.key, on ? 0 : 1)}
+              style={{ ...s.toggle, ...(on ? s.toggleOn : s.toggleOff) }}
+            >
+              {on ? "ON" : "OFF"}
+            </button>
           </div>
         );
       })}
+
+      {SCALP_FIELDS.map(renderSlider)}
 
       <button onClick={handleSave} disabled={saving} style={s.btn}>
         {saving ? "جاري الحفظ..." : "💾 حفظ الإعدادات"}
@@ -129,4 +165,15 @@ const s = {
     fontSize: 14, fontWeight: 500, cursor: "pointer", width: "100%",
   },
   msg: { marginTop: "0.75rem", fontSize: 13, textAlign: "center" },
+  sectionHead: { fontSize: 13, fontWeight: 600, color: "#F59E0B",
+                 margin: "0.5rem 0 1.25rem", paddingTop: "1rem",
+                 borderTop: "0.5px solid #2A2A33" },
+  toggleRow: { display: "flex", justifyContent: "space-between",
+               alignItems: "center", marginBottom: "1.25rem", gap: 12 },
+  toggleHint: { fontSize: 11, color: "#6B7280", marginTop: 3 },
+  toggle: { border: "none", borderRadius: 8, padding: "6px 18px",
+            fontSize: 12, fontWeight: 700, cursor: "pointer",
+            minWidth: 58, letterSpacing: 0.5 },
+  toggleOn:  { background: "#4ADE80", color: "#052e16" },
+  toggleOff: { background: "#2A2A33", color: "#9CA3AF" },
 };
