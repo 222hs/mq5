@@ -126,6 +126,8 @@ DEFAULT_SETTINGS = {
     "AutoTPSL":       0,
     "SplitLot":       0,
     "MaxHoldMin":     0,
+    "LockProfitUSD":  0.0,
+    "StallSecs":      60,
 }
 
 BTC_DEFAULT_SETTINGS = {
