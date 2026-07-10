@@ -391,7 +391,7 @@ void LoadSettings()
    g_autoTPSL=autoTS; g_splitLot=splitL; g_maxHoldMin=MathMax(0,maxHold);
    g_lockProfitUSD=MathMax(0.0,lockUSD); g_stallSecs=MathMax(5,stallS);
    g_syncTPSL=syncTS; g_exitOnReverse=exitRv;
-   g_partialTP_R=MathMax(0.0,ptpR); g_partialTP_Frac=MathMax(0.1,MathMin(0.9,ptpF));
+   g_partialTP_R=MathMax(0.0,ptpR); g_partialTP_Frac=MathMax(0.1,MathMin(1.0,ptpF));
    LoadNewsBlock();
 
    if(changed)
@@ -1215,18 +1215,24 @@ void ManagePositions()
          int li = LkIdx(tk);
          if(li >= 0 && !g_lkTp1[li])
            {
-            double closeVol = NormalizeLot(posLot * g_partialTP_Frac);
             double minV = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
-            if(closeVol >= minV && (posLot - closeVol) >= minV)
+            double closeVol = NormalizeLot(posLot * g_partialTP_Frac);
+            bool canSplit = (g_partialTP_Frac < 0.999) && (closeVol >= minV) && ((posLot - closeVol) >= minV);
+            if(canSplit)
               {
                if(trade.PositionClosePartial(tk, closeVol))
                  {
                   g_lkTp1[li] = true;
-                  // انقل الستوب لسعر الدخول (الباقي بلا مخاطرة)
-                  double be = posInfo.PriceOpen();
+                  double be = posInfo.PriceOpen();       // انقل الباقي للتعادل (بلا مخاطرة)
                   trade.PositionModify(tk, be, posInfo.TakeProfit());
                   EALog("🎯 PARTIAL #"+IntegerToString((int)tk)+" أغلق "+DoubleToString(closeVol,2)+" +$"+DoubleToString(profit,2)+" → الباقي على التعادل");
                  }
+              }
+            else
+              {
+               // لوت صغير ما ينقسم (أو نسبة كاملة) → أغلق الصفقة كاملة عند الربح المبكر
+               trade.PositionClose(tk); LkRemove(tk);
+               EALog("🎯 QUICK TP #"+IntegerToString((int)tk)+" +$"+DoubleToString(profit,2)+" (ربح مبكر عند "+DoubleToString(g_partialTP_R,1)+"R)"); continue;
               }
            }
         }
