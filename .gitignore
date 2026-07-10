@@ -9,3 +9,6 @@ dist/
 # local dev
 *.vite-dev.log
 .vite-dev.log
+
+# agent skills (installed via npx skills — not app code)
+.agents/

@@ -803,9 +803,10 @@ def sync_settings():
                 "CooldownSecs", "MaxLossPerDay", "MaxProfitPerDay",
                 "TradeHoursStart", "TradeHoursEnd", "BotRunning",
                 "OrderType", "RiskMode", "RiskPercent",
-                "RSIBuyMax", "RSISellMin", "UseH1Filter",
+                "RSIBuyMax", "RSISellMin", "UseH1Filter", "UseRSIFilter",
                 "StrategyMode", "GridLevels", "GridStep",
                 "HedgeLotMult", "ScaleStep", "ScaleMult", "MaxScales",
+                "UseATRFilter", "MaxATRPoints", "BlockRollover", "MaxConsecLosses",
             ]
             for k in gold_keys:
                 if k in settings:

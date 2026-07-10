@@ -88,6 +88,13 @@ int    g_scaleStep     = 30;   // نقاط خسارة قبل scale-in
 double g_scaleMult     = 1.5;  // مضاعف اللوت عند scale
 int    g_maxScales     = 3;    // أقصى scale-ins لكل صفقة
 
+// ── فلاتر السكالبينج (من سكِل XAUUSD) — كلها OFF افتراضياً ──────────
+bool   g_useATRFilter   = false; // فلتر تقلب: يمنع الدخول لو ATR عالي
+double g_maxATRPoints   = 80.0;  // أقصى ATR بالنقاط للسماح بالدخول
+bool   g_blockRollover  = false; // يمنع التداول وقت الرول-أوفر 21-22 GMT
+int    g_maxConsecLosses= 0;     // 0=معطّل | حد الخسائر المتتالية قبل إيقاف الجلسة
+int    g_consecLosses   = 0;     // عدّاد الخسائر المتتالية (داخلي)
+
 // Scale tracking
 ulong  g_scaledFrom[200];
 int    g_scaledCount = 0;
@@ -149,7 +156,15 @@ void WriteCurrentSettings()
    j += "  \"ScaleStep\": "    + IntegerToString(g_scaleStep)        + ",\n";
    j += "  \"ScaleMult\": "    + DoubleToString(g_scaleMult,2)       + ",\n";
    j += "  \"MaxScales\": "    + IntegerToString(g_maxScales)        + ",\n";
-   j += "  \"OrderType\": "    + IntegerToString(g_orderType)        + "\n";
+   j += "  \"OrderType\": "    + IntegerToString(g_orderType)        + ",\n";
+   j += "  \"RiskMode\": "     + IntegerToString(g_riskMode)         + ",\n";
+   j += "  \"RiskPercent\": "  + DoubleToString(g_riskPct,2)         + ",\n";
+   j += "  \"RSIBuyMax\": "    + DoubleToString(g_rsiBuyMax,1)       + ",\n";
+   j += "  \"RSISellMin\": "   + DoubleToString(g_rsiSellMin,1)      + ",\n";
+   j += "  \"UseATRFilter\": " + (g_useATRFilter ? "1" : "0")        + ",\n";
+   j += "  \"MaxATRPoints\": " + DoubleToString(g_maxATRPoints,0)    + ",\n";
+   j += "  \"BlockRollover\": "+ (g_blockRollover ? "1" : "0")       + ",\n";
+   j += "  \"MaxConsecLosses\": "+ IntegerToString(g_maxConsecLosses)+ "\n";
    j += "}";
    FileWriteString(fh, j);
    FileClose(fh);
@@ -237,6 +252,10 @@ void LoadSettings()
    int    scStep = (int)ReadSetting("ScaleStep",   30.0);
    double scMult = ReadSetting("ScaleMult",          1.5);
    int    scMax  = (int)ReadSetting("MaxScales",    3.0);
+   bool   useATR = (ReadSetting("UseATRFilter",  0.0) > 0.5);
+   double maxATR = ReadSetting("MaxATRPoints",   80.0);
+   bool   blkRO  = (ReadSetting("BlockRollover",  0.0) > 0.5);
+   int    maxCL  = (int)ReadSetting("MaxConsecLosses", 0.0);
 
    string hash = DoubleToString(lot,2)+DoubleToString(tp,2)+DoubleToString(sl,2)
                + IntegerToString(maxPos)+DoubleToString(spread,0)
@@ -249,7 +268,9 @@ void LoadSettings()
                + (useH1?"1":"0")+(useRSI?"1":"0")
                + IntegerToString(sMode)+IntegerToString(gLev)+IntegerToString(gStep)
                + DoubleToString(hMult,2)+IntegerToString(scStep)
-               + DoubleToString(scMult,2)+IntegerToString(scMax);
+               + DoubleToString(scMult,2)+IntegerToString(scMax)
+               + (useATR?"1":"0")+DoubleToString(maxATR,0)
+               + (blkRO?"1":"0")+IntegerToString(maxCL);
    bool changed = (hash != g_lastSettingsHash);
    g_lastSettingsHash = hash;
 
@@ -264,22 +285,43 @@ void LoadSettings()
    g_gridLevels=MathMax(1,gLev);  g_gridStep=MathMax(10,gStep);
    g_hedgeLotMult=MathMax(0.1,MathMin(2.0,hMult));
    g_scaleStep=MathMax(10,scStep); g_scaleMult=MathMax(1.0,scMult); g_maxScales=MathMax(1,scMax);
+   g_useATRFilter=useATR; g_maxATRPoints=MathMax(0.0,maxATR);
+   g_blockRollover=blkRO; g_maxConsecLosses=MathMax(0,maxCL);
    LoadNewsBlock();
 
    if(changed)
      {
       string otStr = g_orderType==3?"BASKET":g_orderType==1?"LIMIT":g_orderType==2?"STOP":"MARKET";
       string lotStr = g_riskMode==1 ? ("DYNAMIC "+DoubleToString(g_riskPct,1)+"%="+DoubleToString(CalcLot(),2)) : DoubleToString(g_lot,2);
-      Print(EA_NAME," ✅ إعدادات محملة:"
-            " Lot=",lotStr," TP$=",g_tpUSD," SL$=",g_slUSD,
-            " MaxPos=",g_maxPositions," Spread=",g_maxSpread,
-            " Hours=",g_tradeHoursStart,"-",g_tradeHoursEnd,
-            " Bot=",g_botRunning?"ON":"OFF",
-            " Order=",otStr,
-            " RSI=",g_rsiBuyMax,"/",g_rsiSellMin);
+      // طباعة كل الإعدادات المحمّلة من الداشبورد — للتأكد أن كل تعديل وصل للبوت
+      EALog("═══════ إعدادات محمّلة من الداشبورد ═══════");
+      EALog("Lot="+lotStr+" | TP$="+DoubleToString(g_tpUSD,2)+" | SL$="+DoubleToString(g_slUSD,2)
+            +" | RiskMode="+(g_riskMode==1?"DYNAMIC "+DoubleToString(g_riskPct,1)+"%":"FIXED"));
+      EALog("MaxPos="+IntegerToString(g_maxPositions)+" | Spread="+DoubleToString(g_maxSpread,0)
+            +" | Cooldown="+IntegerToString(g_cooldownSecs)+"s | Order="+otStr);
+      EALog("Bot="+(g_botRunning?"ON":"OFF")+" | Hours="+IntegerToString(g_tradeHoursStart)+"-"+IntegerToString(g_tradeHoursEnd)
+            +" | MaxLoss/day=$"+DoubleToString(g_maxLossPerDay,2)+" | MaxProfit/day=$"+DoubleToString(g_maxProfitPerDay,2));
+      EALog("Filters: RSI="+(g_useRSIFilter?"ON":"OFF")+" ("+DoubleToString(g_rsiBuyMax,1)+"/"+DoubleToString(g_rsiSellMin,1)+")"
+            +" | H1="+(g_useH1Filter?"ON":"OFF")+" | StrategyMode="+IntegerToString(g_strategyMode));
+      EALog("Grid: Levels="+IntegerToString(g_gridLevels)+" Step="+IntegerToString(g_gridStep)
+            +" | Hedge x"+DoubleToString(g_hedgeLotMult,2)
+            +" | Scale: Step="+IntegerToString(g_scaleStep)+" x"+DoubleToString(g_scaleMult,2)+" Max="+IntegerToString(g_maxScales));
+      EALog("Scalp: ATRFilter="+(g_useATRFilter?"ON max="+DoubleToString(g_maxATRPoints,0)+"pts":"OFF")
+            +" | Rollover="+(g_blockRollover?"BLOCK 21-22GMT":"OFF")
+            +" | MaxConsecLosses="+(g_maxConsecLosses>0?IntegerToString(g_maxConsecLosses):"OFF"));
+      EALog("═══════════════════════════════════════");
      }
    // heartbeat دائم — الـ Agent يعتمد على mtime هذا الملف لكشف أن البوت حي
    WriteCurrentSettings();
+  }
+
+//+------------------------------------------------------------------+
+// نافذة الرول-أوفر اليومي 21:00–22:00 GMT — وقت صيد الستوبات (من سكِل XAUUSD)
+bool InRolloverWindow()
+  {
+   MqlDateTime dt;
+   TimeToStruct(TimeGMT(), dt);
+   return (dt.hour == 21);
   }
 
 //+------------------------------------------------------------------+
@@ -300,7 +342,7 @@ bool DayLimitHit()
    MqlDateTime dt;
    TimeToStruct(TimeCurrent(), dt);
    datetime today = (datetime)(TimeCurrent() - dt.hour*3600 - dt.min*60 - dt.sec);
-   if(today != g_today) { g_today = today; g_dayPL = 0.0; }
+   if(today != g_today) { g_today = today; g_dayPL = 0.0; g_consecLosses = 0; }
    if(g_maxLossPerDay > 0.0   && g_dayPL <= -g_maxLossPerDay)   return true;
    if(g_maxProfitPerDay > 0.0 && g_dayPL >=  g_maxProfitPerDay) return true;
    return false;
@@ -487,7 +529,12 @@ void OnTick()
    bool sessOK   = InTradingHours();
    bool dayOK    = !DayLimitHit();
    bool newsOK   = !g_newsBlock;
-   bool allOK    = spreadOK && coolOK && slotsOK && sessOK && dayOK && newsOK && atr1 > 0.0;
+   // ── فلاتر السكالبينج الجديدة ─────────────────────────────────────
+   bool atrOK      = !g_useATRFilter  || ((atr1 / _Point) <= g_maxATRPoints);
+   bool rolloverOK = !g_blockRollover || !InRolloverWindow();
+   bool consecOK   = (g_maxConsecLosses <= 0) || (g_consecLosses < g_maxConsecLosses);
+   bool allOK    = spreadOK && coolOK && slotsOK && sessOK && dayOK && newsOK && atr1 > 0.0
+                   && atrOK && rolloverOK && consecOK;
 
    if(signal != 0 && allOK && g_botRunning && SymbolTradable())
      {
@@ -987,7 +1034,13 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
    double profit     = HistoryDealGetDouble(dealTicket, DEAL_PROFIT);
    double swap       = HistoryDealGetDouble(dealTicket, DEAL_SWAP);
    double commission = HistoryDealGetDouble(dealTicket, DEAL_COMMISSION);
-   g_dayPL += profit + swap + commission;
+   double net        = profit + swap + commission;
+   g_dayPL += net;
+   // عدّاد الخسائر المتتالية — يوقف فتح صفقات جديدة عند بلوغ الحد
+   if(net < 0.0)      g_consecLosses++;
+   else if(net > 0.0) g_consecLosses = 0;
+   if(g_maxConsecLosses > 0 && g_consecLosses == g_maxConsecLosses)
+      EALog("⛔ توقّف الجلسة: "+IntegerToString(g_consecLosses)+" خسائر متتالية (الحد "+IntegerToString(g_maxConsecLosses)+")");
   }
 
 //+------------------------------------------------------------------+
