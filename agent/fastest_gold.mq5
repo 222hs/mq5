@@ -264,8 +264,21 @@ double CalcLot()
       raw = riskAmt / g_slUSD;
      }
 
-   // ── توزيع اللوت على أقصى عدد صفقات (عشان الميزانية تكفي لكلها) ──
-   if(g_splitLot && g_maxPositions > 0) raw = raw / g_maxPositions;
+   // ── توزيع اللوت على أقصى عدد صفقات ──────────────────────────────
+   // الوضع الآلي يوزّع دائماً؛ والوضع اليدوي يوزّع فقط لو فعّلت SplitLot
+   if((g_autoTPSL || g_splitLot) && g_maxPositions > 0) raw = raw / g_maxPositions;
+
+   // ── سقف الهامش: يضمن أن الرصيد يكفي لكل عدد الصفقات المطلوب ──────
+   double price = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double marginPerLot = 0.0;
+   if(price > 0.0 && OrderCalcMargin(ORDER_TYPE_BUY, _Symbol, 1.0, price, marginPerLot)
+      && marginPerLot > 0.0)
+     {
+      double freeM = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+      int    n     = MathMax(1, g_maxPositions);
+      double afford = (freeM * 0.80) / (n * marginPerLot); // 80% أمان لكل الصفقات
+      if(afford > 0.0) raw = MathMin(raw, afford);
+     }
 
    // ── تطبيع + سقف أمان ─────────────────────────────────────────────
    double step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);

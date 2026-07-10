@@ -124,7 +124,7 @@ export default function Settings() {
       {auto && (
         <div style={s.autoNote}>
           ✅ البوت يدير اللوت والـ TP/SL تلقائياً
-          <div style={s.autoNoteSub}>مخاطرة 1% · ATR×1.5 · R:R 1.5</div>
+          <div style={s.autoNoteSub}>موزّع على كل الصفقات · هامش آمن 80% · ATR×1.5 · R:R 1.5</div>
         </div>
       )}
 

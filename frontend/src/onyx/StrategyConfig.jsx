@@ -123,7 +123,7 @@ export default function StrategyConfig() {
       {auto && (
         <div style={S.autoNote}>
           ✅ AUTO — bot manages Lot · TP · SL
-          <span style={S.autoSub}>1% risk · ATR×1.5 · R:R 1.5</span>
+          <span style={S.autoSub}>lot auto-split across positions · 80% margin cap · ATR×1.5 · R:R 1.5</span>
         </div>
       )}
 
