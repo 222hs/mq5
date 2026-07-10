@@ -99,8 +99,8 @@ int    g_consecLosses   = 0;     // عدّاد الخسائر المتتالية
 bool   g_autoTPSL       = false; // زر واحد: يخلي اللوت والـ TP/SL تلقائية
 bool   g_splitLot       = false; // يوزّع اللوت على أقصى عدد صفقات
 const double AUTO_RISK_PCT = 1.0; // نسبة المخاطرة من الرصيد لكل صفقة
-const double AUTO_SL_ATR   = 1.5; // مضاعف ATR لمسافة الستوب
-const double AUTO_TP_RR    = 1.5; // نسبة الهدف للخطر (R:R)
+const double AUTO_SL_ATR   = 1.0; // مضاعف ATR لمسافة الستوب (مؤكّد بالباك-تيست)
+const double AUTO_TP_RR    = 2.0; // نسبة الهدف للخطر R:R (مؤكّد بالباك-تيست: PF 1.66)
 
 // Scale tracking
 ulong  g_scaledFrom[200];
