@@ -134,6 +134,8 @@ DEFAULT_SETTINGS = {
     "QuickTPUSD":     0.0,
     "TrailStartUSD":  0.0,
     "TrailGiveUSD":   0.5,
+    "TrendReverse":   0,
+    "ReverseAfterLosses": 3,
     "PartialTP_R":    0.0,
     "PartialTP_Frac": 0.5,
 }

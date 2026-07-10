@@ -828,6 +828,7 @@ def sync_settings():
                 "UseATRFilter", "MaxATRPoints", "BlockRollover", "MaxConsecLosses",
                 "AutoTPSL", "SplitLot", "MaxHoldMin", "LockProfitUSD", "StallSecs", "SyncTPSL",
                 "ExitOnReverse", "QuickTPUSD", "TrailStartUSD", "TrailGiveUSD",
+                "TrendReverse", "ReverseAfterLosses",
                 "PartialTP_R", "PartialTP_Frac",
             ]
             for k in gold_keys:

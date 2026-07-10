@@ -22,6 +22,7 @@ const AUTO_KEYS = ['LotSize', 'TP_USD', 'SL_USD'];
 const SCALP_FIELDS = [
   { k: 'MaxATRPoints', label: 'Max ATR (pts)', step: 5, int: true },
   { k: 'MaxConsecLosses', label: 'Max Consec Losses', step: 1, int: true },
+  { k: 'ReverseAfterLosses', label: 'Reverse After N Losses', step: 1, int: true },
   { k: 'StrategyMode', label: 'Strategy Mode (0=safe·1G·2H·4Scale)', step: 1, int: true },
   { k: 'GridLevels', label: 'Grid Orders (up to 100)', step: 1, int: true },
   { k: 'GridStep', label: 'Grid Step (points)', step: 5, int: true },
@@ -43,6 +44,7 @@ const TOGGLES = [
   { k: 'AutoTPSL', label: 'AUTO · Lot+TP+SL', hint: 'bot sizes everything from ATR + 1% risk' },
   { k: 'SyncTPSL', label: 'Write TP/SL on Trades', hint: 'sets real TP/SL on open positions & keeps them updated live' },
   { k: 'ExitOnReverse', label: 'Cut Loss on Candle Reverse', hint: 'close a losing trade when the candle flips against it' },
+  { k: 'TrendReverse', label: 'Trend-Vote Reverse', hint: 'after consecutive losses: close counter-trend & follow the M5/M15/H1 vote (pause if ranging)' },
   { k: 'UseM15Filter', label: 'MTF Filter (15m + 1h)', hint: 'backtested edge — trade only with both trends aligned' },
   { k: 'UseH1Filter', label: 'H1 Trend Filter', hint: 'trade only with the 1h trend (big backtested edge)' },
   { k: 'UseRSIFilter', label: 'RSI Filter', hint: 'block entries at RSI extremes (uses RSI bounds below)' },
