@@ -1,28 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
-import CommandCore from './CommandCore.jsx';
-import InvadersGame from './algory/InvadersGame.jsx';
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = 'mysecretkey123';
-const DASH_VERSION = 'v5.0';
+const DASH_VERSION = 'v3.47';
 const POLL_MS = 1000; // HTTP poll interval
 
 // ── Terminal palette (matches reference design) ─────────────────────
 const C = {
-  bg:      '#000000',
-  surface: '#0a1014',
+  bg:      '#0d1117',
+  surface: '#161b22',
   ink:     '#e6edf3',
-  muted:   '#5f7078',
-  faint:   '#12191d',
+  muted:   '#8b949e',
+  faint:   '#21262d',
   neon:    '#00ff41',
   neonDim: 'rgba(0,255,65,0.08)',
-  cyan:    '#00F0FF',
-  red:     '#FF003C',
+  red:     '#ff4560',
   yellow:  '#f0b429',
-  mono:    "'JetBrains Mono','Fira Code','Courier New',monospace",
-  shadow:  '0 0 22px rgba(0,240,255,0.10)',
-  border:  '1px solid rgba(0,240,255,0.28)',
+  mono:    "'Courier New','Courier',monospace",
+  shadow:  'none',
+  border:  '1px solid rgba(0,255,65,0.25)',
 };
 
 // ── helpers ────────────────────────────────────────────────────────
@@ -117,7 +114,6 @@ export default function Dashboard() {
   const [logs, setLogs] = useState([]);
   const logBoxRef = useRef(null);
   const [showAnalysis, setShowAnalysis] = useState(false);
-  const [showGame, setShowGame] = useState(false);
   const [snapshots, setSnapshots] = useState([]);
   const [snapLoading, setSnapLoading] = useState(false);
   const [historyData, setHistoryData] = useState([]);
@@ -146,11 +142,24 @@ export default function Dashboard() {
         if (!active) return;
         if (r.ok) {
           const d = await r.json();
-          // history من dashboard مباشرة — أبسط وأضمن
           const hist = Array.isArray(d.history) && d.history.length > 0
             ? d.history.slice().sort((a,b) => new Date(b.time) - new Date(a.time))
             : null;
-          setData(prev => ({ ...d, history: hist || prev?.history || [] }));
+          setData(prev => {
+            const prevPos = prev?.positions || [];
+            const newPos  = d.positions || [];
+            const posChanged =
+              prevPos.length !== newPos.length ||
+              newPos.some((p, i) =>
+                p.ticket !== prevPos[i]?.ticket ||
+                p.profit !== prevPos[i]?.profit
+              );
+            return {
+              ...d,
+              positions: posChanged ? newPos : prevPos,
+              history: hist || prev?.history || [],
+            };
+          });
           if (Array.isArray(d.candles) && d.candles.length > 0)
             setCandleData({ candles: d.candles, sessions: d.sessions || {} });
         }
@@ -474,23 +483,8 @@ export default function Dashboard() {
     { n:'06', t:'CLOSE',    s:'per-trade',             ok: !!lastTrade, last: lastProfit },
   ];
 
-  // holographic 3D tilt — follows the cursor over any .bcard (event-delegated)
-  const handleTilt = (e) => {
-    if (e.target.closest('canvas')) return;
-    const card = e.target.closest('.bcard');
-    if (!card || card.classList.contains('no-tilt')) return;
-    const r = card.getBoundingClientRect();
-    const px = (e.clientX - r.left) / r.width - 0.5;
-    const py = (e.clientY - r.top) / r.height - 0.5;
-    card.style.transform = `perspective(1100px) rotateX(${(-py * 4).toFixed(2)}deg) rotateY(${(px * 4).toFixed(2)}deg)`;
-  };
-  const clearTilt = (e) => {
-    const card = e.target.closest('.bcard');
-    if (card && !card.contains(e.relatedTarget)) card.style.transform = '';
-  };
-
   return (
-    <div onMouseMove={handleTilt} onMouseOut={clearTilt} style={{
+    <div style={{
       fontFamily: C.mono,
       background: C.bg,
       minHeight: '100vh',
@@ -500,11 +494,11 @@ export default function Dashboard() {
     }}>
       <style>{`
         * { box-sizing: border-box; border-radius: 2px !important; }
-        body { background: #000; }
+        body { background: #0d1117; }
         @keyframes popIn  { from { transform: scale(0.8) translateY(20px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
         @keyframes blink  { 0%,100%{opacity:1} 50%{opacity:0.15} }
         @keyframes slideUp{ from{transform:translateY(40px);opacity:0} to{transform:translateY(0);opacity:1} }
-        .bcard:hover { border-color: rgba(0,240,255,0.6) !important; }
+        .bcard:hover { border-color: rgba(0,255,65,0.6) !important; }
         .bbtn:hover  { background:#0d1117 !important; color:#00ff41 !important; border-color:#00ff41 !important; }
         .bbtn:active { opacity:0.8; }
         .bbtn-red:hover { background:#0d1117 !important; color:#ff4560 !important; border-color:#ff4560 !important; }
@@ -529,41 +523,8 @@ export default function Dashboard() {
         ::-webkit-scrollbar-track{background:#000}
         ::-webkit-scrollbar-thumb{background:#00ff41}
         tr.hrow:hover td { background: rgba(0,255,65,0.08); }
-        /* ── ALGORY sci-fi overlay ─────────────────────────── */
-        .scanlines { position:fixed; inset:0; z-index:9998; pointer-events:none;
-          background:repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px, rgba(0,0,0,0.22) 3px, rgba(0,0,0,0.22) 4px);
-          mix-blend-mode:multiply; animation:crtflk 4s steps(60) infinite; }
-        .scanlines::after { content:''; position:absolute; left:0; right:0; height:22vh;
-          background:linear-gradient(to bottom, transparent, rgba(0,240,255,0.05), transparent); animation:scansweep 7s linear infinite; }
-        .crt-vignette { position:fixed; inset:0; z-index:9997; pointer-events:none;
-          background:radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.7) 100%); }
-        @keyframes crtflk { 0%,100%{opacity:.5} 50%{opacity:.6} 52%{opacity:.4} 54%{opacity:.58} }
-        @keyframes scansweep { 0%{transform:translateY(-25vh)} 100%{transform:translateY(120vh)} }
-        .bcard { transition:transform .12s ease, border-color .15s, box-shadow .15s; transform-style:preserve-3d; will-change:transform; }
-        .bcard:hover { box-shadow:0 0 22px rgba(0,240,255,0.18) !important; }
-        .glx { position:relative; display:inline-block; }
-        .glx::before,.glx::after { content:attr(data-text); position:absolute; left:0; top:0; width:100%; overflow:hidden; clip-path:inset(0 0 100% 0); mix-blend-mode:screen; pointer-events:none; }
-        .glx::before { color:#FF003C; animation:glxa 3.2s steps(1) infinite; }
-        .glx::after  { color:#00F0FF; animation:glxb 2.6s steps(1) infinite; }
-        @keyframes glxa { 0%,88%,100%{clip-path:inset(0 0 100% 0); transform:translate(0,0)} 89%{clip-path:inset(8% 0 62% 0); transform:translate(-2px,-1px)} 92%{clip-path:inset(46% 0 24% 0); transform:translate(2px,1px)} 95%{clip-path:inset(74% 0 6% 0); transform:translate(-1px,0)} }
-        @keyframes glxb { 0%,82%,100%{clip-path:inset(0 0 100% 0); transform:translate(0,0)} 84%{clip-path:inset(20% 0 50% 0); transform:translate(2px,0)} 88%{clip-path:inset(60% 0 20% 0); transform:translate(-2px,1px)} 93%{clip-path:inset(34% 0 40% 0); transform:translate(1px,-1px)} }
-        .neon-pulse { animation:neonp 2.4s ease-in-out infinite; }
-        @keyframes neonp { 0%,100%{text-shadow:0 0 6px currentColor,0 0 14px currentColor} 50%{text-shadow:0 0 12px currentColor,0 0 30px currentColor,0 0 48px currentColor} }
       `}</style>
       <div className="scanlines" />
-      <div className="crt-vignette" />
-
-      {showGame && (
-        <div onClick={() => setShowGame(false)} style={{position:'fixed', inset:0, zIndex:10000, background:'rgba(0,0,0,0.86)', display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
-          <div onClick={(e) => e.stopPropagation()} className="bcard no-tilt" style={bCard({padding:'1rem', width:'min(94vw,470px)', border:`1px solid ${C.cyan}`, boxShadow:'0 0 42px rgba(0,240,255,0.3)'})}>
-            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10}}>
-              <span className="glx" data-text="PROVING GROUNDS" style={{fontSize:12, fontWeight:'bold', letterSpacing:3, color:C.cyan, textTransform:'uppercase'}}>PROVING GROUNDS</span>
-              <button onClick={() => setShowGame(false)} style={{background:'transparent', border:`1px solid ${C.red}`, color:C.red, cursor:'pointer', padding:'3px 10px', fontFamily:C.mono, fontWeight:'bold', fontSize:11}}>✕ CLOSE</button>
-            </div>
-            <InvadersGame />
-          </div>
-        </div>
-      )}
 
       {/* ═══ TOP BAR ═════════════════════════════════════════════ */}
       <header style={{
@@ -575,8 +536,8 @@ export default function Dashboard() {
       }}>
         {/* Left: title + status pill + controls */}
         <div style={{display:'flex', alignItems:'center', gap:14, flexWrap:'wrap'}}>
-          <div style={{fontSize:16, fontWeight:'bold', letterSpacing:'3px', color:C.cyan, textTransform:'uppercase'}}>
-            <span className="glx neon-pulse" data-text="222s" style={{color:C.cyan}}>222s</span><span style={{color:C.neon}}>&gt;_</span>
+          <div style={{fontSize:14, fontWeight:'bold', letterSpacing:'2px', color:C.ink, textTransform:'uppercase'}}>
+            GOLD_SCALPER_X<span style={{color:C.neon}}>&gt;_</span>
             <span style={{fontSize:9, color:C.muted, marginLeft:8, letterSpacing:'1px'}}>{DASH_VERSION}</span>
           </div>
           <div style={{
@@ -621,11 +582,6 @@ export default function Dashboard() {
             padding:'5px 14px', border:`2px solid #ff9900`, borderRadius:2,
             background:'transparent', color:'#ff9900', cursor:'pointer',
           }}>◆ ANALYSIS</button>
-          <button onClick={()=>setShowGame(true)} style={{
-            fontFamily:C.mono, fontWeight:'bold', fontSize:11, letterSpacing:'2px',
-            padding:'5px 14px', border:`2px solid ${C.cyan}`, borderRadius:2,
-            background:'transparent', color:C.cyan, cursor:'pointer',
-          }}>▶ ARCADE</button>
         </div>
         {/* Middle: symbol + account */}
         <div style={{display:'flex', gap:20, alignItems:'center', flexWrap:'wrap'}}>
@@ -649,24 +605,24 @@ export default function Dashboard() {
       <div style={{padding:'1.25rem'}}>
 
         {/* ═══ WIN STREAK + TOTAL PNL ══════════════════════════ */}
-        <div className="bcard no-tilt" style={bCard({marginBottom:'1.25rem', display:'flex', alignItems:'center', justifyContent:'space-around', flexWrap:'wrap', gap:40, padding:'2.5rem 3rem'})}>
+        <div className="bcard" style={bCard({marginBottom:'1.25rem', display:'flex', alignItems:'center', justifyContent:'space-around', flexWrap:'wrap', gap:40, padding:'2.5rem 3rem'})}>
 
           {/* دائرة WIN STREAK */}
           <div style={{display:'flex', flexDirection:'column', alignItems:'center', gap:16}}>
-            <div style={{width:320, height:320, position:'relative'}}>
-              <CommandCore
-                online={isOnline}
-                botRunning={botRunning}
-                profit={stats.total_profit}
-                equity={account?.equity}
-                winRate={stats.win_rate}
-                positions={positions.length}
-                velocity={tradesLastHour}
-              />
-              <div style={{position:'absolute', bottom:-4, left:0, right:0, textAlign:'center', fontSize:11, letterSpacing:4, color:C.muted, pointerEvents:'none'}}>
-                WIN STREAK <span style={{color: streak>0?C.neon:C.muted, fontWeight:'bold', textShadow: streak>0?`0 0 8px ${C.neon}`:'none'}}>{streak}</span>
-              </div>
-            </div>
+            <svg width="320" height="320" viewBox="0 0 320 320">
+              <circle cx="160" cy="160" r={R} fill="none" stroke={C.faint} strokeWidth="14"/>
+              <circle cx="160" cy="160" r={R} fill="none"
+                stroke={streak>0 ? C.neon : C.faint} strokeWidth="14"
+                strokeDasharray={`${CIRC*streakPct} ${CIRC}`}
+                transform="rotate(-90 160 160)" strokeLinecap="butt"
+                style={{filter: streak>0 ? `drop-shadow(0 0 12px ${C.neon})` : 'none'}}/>
+              <text x="160" y="148" textAnchor="middle"
+                fontSize="90" fontWeight="bold" fontFamily={C.mono}
+                fill={streak>0 ? C.neon : C.muted}>{streak}</text>
+              <text x="160" y="196" textAnchor="middle"
+                fontSize="18" fontWeight="bold" fontFamily={C.mono}
+                fill={C.muted} letterSpacing="4">WIN STREAK</text>
+            </svg>
             <div style={{display:'flex', gap:36}}>
               <div style={{textAlign:'center'}}>
                 <div style={bLabel({fontSize:10})}>WINS</div>
