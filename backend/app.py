@@ -123,6 +123,7 @@ DEFAULT_SETTINGS = {
     "BlockRollover":  0,
     "MaxConsecLosses":0,
     "AutoTPSL":       0,
+    "SplitLot":       0,
 }
 
 BTC_DEFAULT_SETTINGS = {

@@ -18,6 +18,7 @@ const AUTO_KEYS = ["LotSize", "TP_USD", "SL_USD"];
 
 // أزرار تشغيل/إيقاف — فلاتر السكالبينج
 const TOGGLES = [
+  { key: "SplitLot",      label: "توزيع اللوت على الصفقات",  hint: "يقسّم اللوت على أقصى عدد صفقات (لا يكشط الحساب)" },
   { key: "UseATRFilter",  label: "فلتر التقلب (ATR)",        hint: "يمنع الدخول وقت التقلب العالي" },
   { key: "BlockRollover", label: "إيقاف وقت الرول-أوفر",     hint: "يوقف التداول 21:00–22:00 GMT (صيد الستوبات)" },
 ];

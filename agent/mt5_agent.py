@@ -807,7 +807,7 @@ def sync_settings():
                 "StrategyMode", "GridLevels", "GridStep",
                 "HedgeLotMult", "ScaleStep", "ScaleMult", "MaxScales",
                 "UseATRFilter", "MaxATRPoints", "BlockRollover", "MaxConsecLosses",
-                "AutoTPSL",
+                "AutoTPSL", "SplitLot",
             ]
             for k in gold_keys:
                 if k in settings:
