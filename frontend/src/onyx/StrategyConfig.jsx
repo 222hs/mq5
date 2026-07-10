@@ -35,6 +35,7 @@ const SCALP_FIELDS = [
 const TOGGLES = [
   { k: 'AutoTPSL', label: 'AUTO · Lot+TP+SL', hint: 'bot sizes everything from ATR + 1% risk' },
   { k: 'SyncTPSL', label: 'Write TP/SL on Trades', hint: 'sets real TP/SL on open positions & keeps them updated live' },
+  { k: 'ExitOnReverse', label: 'Cut Loss on Candle Reverse', hint: 'close a losing trade when the candle flips against it' },
   { k: 'UseM15Filter', label: 'MTF Filter (15m + 1h)', hint: 'backtested edge — trade only with both trends aligned' },
   { k: 'UseH1Filter', label: 'H1 Trend Filter', hint: 'trade only with the 1h trend (big backtested edge)' },
   { k: 'UseRSIFilter', label: 'RSI Filter', hint: 'block entries at RSI extremes (uses RSI bounds below)' },

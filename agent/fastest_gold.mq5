@@ -110,6 +110,7 @@ int      g_lkCount = 0;
 bool   g_autoTPSL       = false; // زر واحد: يخلي اللوت والـ TP/SL تلقائية
 bool   g_splitLot       = false; // يوزّع اللوت على أقصى عدد صفقات
 bool   g_syncTPSL       = false; // يكتب TP/SL الحقيقية على الصفقات ويحدّثها مع الإعدادات
+bool   g_exitOnReverse  = false; // يقص الصفقة الخاسرة لو الشمعة انعكست ضد اتجاهها
 const double AUTO_RISK_PCT = 1.0;  // نسبة المخاطرة من الرصيد لكل صفقة
 const double AUTO_SL_ATR   = 1.25; // مضاعف ATR للستوب (M1 مؤكّد بالباك-تيست)
 const double AUTO_TP_RR    = 2.8;  // نسبة الهدف للخطر R:R (M1: PF 1.36 · 40 صفقة/يوم)
@@ -190,7 +191,8 @@ void WriteCurrentSettings()
    j += "  \"MaxHoldMin\": "   + IntegerToString(g_maxHoldMin)       + ",\n";
    j += "  \"LockProfitUSD\": "+ DoubleToString(g_lockProfitUSD,2)   + ",\n";
    j += "  \"StallSecs\": "    + IntegerToString(g_stallSecs)        + ",\n";
-   j += "  \"SyncTPSL\": "     + (g_syncTPSL ? "1" : "0")            + "\n";
+   j += "  \"SyncTPSL\": "     + (g_syncTPSL ? "1" : "0")            + ",\n";
+   j += "  \"ExitOnReverse\": "+ (g_exitOnReverse ? "1" : "0")       + "\n";
    j += "}";
    FileWriteString(fh, j);
    FileClose(fh);
@@ -341,6 +343,7 @@ void LoadSettings()
    bool   autoTS = (ReadSetting("AutoTPSL",       0.0) > 0.5);
    bool   splitL = (ReadSetting("SplitLot",       0.0) > 0.5);
    bool   syncTS = (ReadSetting("SyncTPSL",        0.0) > 0.5);
+   bool   exitRv = (ReadSetting("ExitOnReverse",   0.0) > 0.5);
    int    maxHold= (int)ReadSetting("MaxHoldMin",  0.0);
    double lockUSD= ReadSetting("LockProfitUSD",    0.0);
    int    stallS = (int)ReadSetting("StallSecs",  60.0);
@@ -360,7 +363,7 @@ void LoadSettings()
                + (useATR?"1":"0")+DoubleToString(maxATR,0)
                + (blkRO?"1":"0")+IntegerToString(maxCL)
                + (autoTS?"1":"0")+(splitL?"1":"0")+IntegerToString(maxHold)
-               + DoubleToString(lockUSD,2)+IntegerToString(stallS)+(syncTS?"1":"0");
+               + DoubleToString(lockUSD,2)+IntegerToString(stallS)+(syncTS?"1":"0")+(exitRv?"1":"0");
    bool changed = (hash != g_lastSettingsHash);
    g_lastSettingsHash = hash;
 
@@ -379,7 +382,7 @@ void LoadSettings()
    g_blockRollover=blkRO; g_maxConsecLosses=MathMax(0,maxCL);
    g_autoTPSL=autoTS; g_splitLot=splitL; g_maxHoldMin=MathMax(0,maxHold);
    g_lockProfitUSD=MathMax(0.0,lockUSD); g_stallSecs=MathMax(5,stallS);
-   g_syncTPSL=syncTS;
+   g_syncTPSL=syncTS; g_exitOnReverse=exitRv;
    LoadNewsBlock();
 
    if(changed)
@@ -407,6 +410,7 @@ void LoadSettings()
             +" | MaxHold="+(g_maxHoldMin>0?IntegerToString(g_maxHoldMin)+"د":"OFF")
             +" | LockProfit="+(g_lockProfitUSD>0?"$"+DoubleToString(g_lockProfitUSD,2)+"@"+IntegerToString(g_stallSecs)+"s":"OFF")
             +" | SyncTPSL="+(g_syncTPSL?"ON":"OFF")
+            +" | ExitReverse="+(g_exitOnReverse?"ON":"OFF")
             +" → lot/trade="+DoubleToString(CalcLot(),2));
       EALog("═══════════════════════════════════════");
      }
@@ -1100,6 +1104,16 @@ void LkRemove(ulong tk)
 void ManagePositions()
   {
    datetime now = TimeCurrent();
+
+   // اتجاه الشمعة الحالية (لقص الخسارة عند الانعكاس)
+   bool candleBull=false, candleBear=false;
+   if(g_exitOnReverse)
+     {
+      double co[1], cc[1];
+      if(CopyOpen(_Symbol,TF,0,1,co)==1 && CopyClose(_Symbol,TF,0,1,cc)==1)
+        { candleBull = (cc[0] > co[0]); candleBear = (cc[0] < co[0]); }
+     }
+
    for(int i=PositionsTotal()-1;i>=0;i--)
      {
       if(!posInfo.SelectByIndex(i)) continue;
@@ -1199,6 +1213,15 @@ void ManagePositions()
       if(g_maxHoldMin > 0 && ageSeconds >= g_maxHoldMin*60)
         { trade.PositionClose(tk); LkRemove(tk);
           EALog("⏱ TIME #"+IntegerToString((int)tk)+" "+(profit>=0?"+":"")+"$"+DoubleToString(profit,2)+" (حد "+IntegerToString(g_maxHoldMin)+"د)"); continue; }
+
+      // قص الخسارة عند انعكاس الشمعة: صفقة خاسرة والشمعة راحت عكسها → سكّرها
+      if(g_exitOnReverse && profit < 0.0 && ageSeconds >= 20)
+        {
+         bool isBuy = (posInfo.PositionType()==POSITION_TYPE_BUY);
+         if((isBuy && candleBear) || (!isBuy && candleBull))
+           { trade.PositionClose(tk); LkRemove(tk);
+             EALog("🔄 REVERSE cut #"+IntegerToString((int)tk)+" $"+DoubleToString(profit,2)+" (الشمعة انعكست)"); continue; }
+        }
      }
   }
 

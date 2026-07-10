@@ -129,6 +129,7 @@ DEFAULT_SETTINGS = {
     "LockProfitUSD":  0.0,
     "StallSecs":      60,
     "SyncTPSL":       0,
+    "ExitOnReverse":  0,
 }
 
 BTC_DEFAULT_SETTINGS = {

@@ -808,6 +808,7 @@ def sync_settings():
                 "HedgeLotMult", "ScaleStep", "ScaleMult", "MaxScales",
                 "UseATRFilter", "MaxATRPoints", "BlockRollover", "MaxConsecLosses",
                 "AutoTPSL", "SplitLot", "MaxHoldMin", "LockProfitUSD", "StallSecs", "SyncTPSL",
+                "ExitOnReverse",
             ]
             for k in gold_keys:
                 if k in settings:
