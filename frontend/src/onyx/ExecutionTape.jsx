@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useTradeExecution } from '../store/useLiveConnection';
+import { useTradingStore } from '../store/useTradingStore';
 
 const EMERALD = '#00E676', CRIMSON = '#FF3D00', MUTED = 'rgba(255,255,255,.35)';
 
@@ -10,8 +10,11 @@ const sideOf = (p) => {
   return typeof p.type === 'string' ? p.type.toUpperCase() : '—';
 };
 
-export default function ExecutionTape() {
-  const { positions, botRunning } = useTradeExecution();
+// subscribe ONLY to positions + botRunning (not history/clock) so the tape
+// re-renders solely when open positions actually change — no per-poll flicker
+function ExecutionTape() {
+  const positions = useTradingStore((s) => s.positions);
+  const botRunning = useTradingStore((s) => s.botRunning);
 
   return (
     <div className="flex flex-col h-full">
@@ -60,3 +63,5 @@ export default function ExecutionTape() {
     </div>
   );
 }
+
+export default React.memo(ExecutionTape);

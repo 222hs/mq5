@@ -10,6 +10,17 @@ import { create } from 'zustand';
 
 const lastClose = (candles) => (Array.isArray(candles) && candles.length ? Number(candles[candles.length - 1].c) : null);
 
+// keep the SAME array reference when content is unchanged, so 1s polls that
+// return identical data don't trigger re-renders / animation flicker
+const sameArr = (a, b, key) => {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (key(a[i]) !== key(b[i])) return false;
+  return true;
+};
+const posKey = (p) => `${p.ticket}|${p.profit}|${p.price_open}`;
+const trdKey = (t) => `${t.ticket}|${t.profit}`;
+
 export const useTradingStore = create((set) => ({
   // ── market ──
   pair: 'XAUUSD',
@@ -46,12 +57,14 @@ export const useTradingStore = create((set) => ({
 
   // ── ingest actions (called by the live layer) ──
   ingestDashboard: (d) => set((s) => {
-    const positions = Array.isArray(d.positions) ? d.positions : s.positions;
+    const incomingPos = Array.isArray(d.positions) ? d.positions : s.positions;
+    const positions = sameArr(incomingPos, s.positions, posKey) ? s.positions : incomingPos;
     const account = d.account || s.account;
     const candles = Array.isArray(d.candles) && d.candles.length ? d.candles : s.candles;
-    const history = Array.isArray(d.history) && d.history.length
+    const sortedHist = Array.isArray(d.history) && d.history.length
       ? [...d.history].sort((a, b) => new Date(b.time) - new Date(a.time))
       : s.history;
+    const history = sameArr(sortedHist, s.history, trdKey) ? s.history : sortedHist;
     return {
       account,
       balance: account?.balance ?? s.balance,
@@ -76,9 +89,11 @@ export const useTradingStore = create((set) => ({
     const candles = d.candles || [];
     return { candles, sessions: d.sessions || s.sessions, price: lastClose(candles) ?? s.price };
   }),
-  ingestHistory: (raw) => set((s) => ({
-    history: Array.isArray(raw) && raw.length ? [...raw].sort((a, b) => new Date(b.time) - new Date(a.time)) : s.history,
-  })),
+  ingestHistory: (raw) => set((s) => {
+    if (!Array.isArray(raw) || !raw.length) return {};
+    const sorted = [...raw].sort((a, b) => new Date(b.time) - new Date(a.time));
+    return sameArr(sorted, s.history, trdKey) ? {} : { history: sorted };
+  }),
   ingestLog: (e) => set((s) => { const n = [...s.logs, e]; return { logs: n.length > 200 ? n.slice(-200) : n }; }),
   setLogs: (arr) => set({ logs: arr || [] }),
   setLatency: (ms) => set({ latencyMs: ms }),
