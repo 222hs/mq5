@@ -803,7 +803,7 @@ def sync_settings():
                 "CooldownSecs", "MaxLossPerDay", "MaxProfitPerDay",
                 "TradeHoursStart", "TradeHoursEnd", "BotRunning",
                 "OrderType", "RiskMode", "RiskPercent",
-                "RSIBuyMax", "RSISellMin", "UseH1Filter", "UseRSIFilter",
+                "RSIBuyMax", "RSISellMin", "UseH1Filter", "UseM15Filter", "UseRSIFilter",
                 "StrategyMode", "GridLevels", "GridStep",
                 "HedgeLotMult", "ScaleStep", "ScaleMult", "MaxScales",
                 "UseATRFilter", "MaxATRPoints", "BlockRollover", "MaxConsecLosses",

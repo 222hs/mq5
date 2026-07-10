@@ -51,6 +51,7 @@ long     g_magic         = 0;
 int      hRSI = INVALID_HANDLE, hEMA9 = INVALID_HANDLE,
          hEMA21 = INVALID_HANDLE, hATR = INVALID_HANDLE,
          hH1EMA = INVALID_HANDLE,   // H1 EMA21 — bias filter
+         hM15EMA = INVALID_HANDLE,  // M15 EMA21 — MTF filter (مؤكّد بالباك-تيست)
          hM5EMA9 = INVALID_HANDLE, hM5EMA21 = INVALID_HANDLE; // M5 mid-trend filter
 datetime g_lastEntryTime = 0;
 datetime g_lastBar       = 0;
@@ -77,6 +78,7 @@ double   g_riskPct         = 1.0;  // نسبة الخطر % (لما riskMode=1)
 double   g_rsiBuyMax       = 65.0; // Claude auto-adjust: حد RSI لـ BUY
 double   g_rsiSellMin      = 35.0; // Claude auto-adjust: حد RSI لـ SELL
 bool     g_useH1Filter     = true;  // فلتر اتجاه H1 EMA21
+bool     g_useM15Filter    = true;  // فلتر اتجاه M15 (توافق التايمات — يرفع الأداء)
 bool     g_useRSIFilter    = true;  // فلتر RSI
 
 // Strategy mode — bitmask: 1=Grid  2=Hedge  4=Scale
@@ -98,9 +100,9 @@ int    g_consecLosses   = 0;     // عدّاد الخسائر المتتالية
 // ── الوضع الآلي الكامل (Auto): لوت + TP + SL ديناميكية من ATR ──────
 bool   g_autoTPSL       = false; // زر واحد: يخلي اللوت والـ TP/SL تلقائية
 bool   g_splitLot       = false; // يوزّع اللوت على أقصى عدد صفقات
-const double AUTO_RISK_PCT = 1.0; // نسبة المخاطرة من الرصيد لكل صفقة
-const double AUTO_SL_ATR   = 1.0; // مضاعف ATR لمسافة الستوب (مؤكّد بالباك-تيست)
-const double AUTO_TP_RR    = 2.0; // نسبة الهدف للخطر R:R (مؤكّد بالباك-تيست: PF 1.66)
+const double AUTO_RISK_PCT = 1.0;  // نسبة المخاطرة من الرصيد لكل صفقة
+const double AUTO_SL_ATR   = 1.25; // مضاعف ATR للستوب (M1 مؤكّد بالباك-تيست)
+const double AUTO_TP_RR    = 2.8;  // نسبة الهدف للخطر R:R (M1: PF 1.36 · 40 صفقة/يوم)
 
 // Scale tracking
 ulong  g_scaledFrom[200];
@@ -155,6 +157,7 @@ void WriteCurrentSettings()
    j += "  \"TradeHoursEnd\": "  + IntegerToString(g_tradeHoursEnd)  + ",\n";
    j += "  \"BotRunning\": "     + (g_botRunning ? "1" : "0")        + ",\n";
    j += "  \"UseH1Filter\": "   + (g_useH1Filter ? "1" : "0")        + ",\n";
+   j += "  \"UseM15Filter\": "  + (g_useM15Filter ? "1" : "0")       + ",\n";
    j += "  \"UseRSIFilter\": "  + (g_useRSIFilter ? "1" : "0")       + ",\n";
    j += "  \"StrategyMode\": " + IntegerToString(g_strategyMode)     + ",\n";
    j += "  \"GridLevels\": "   + IntegerToString(g_gridLevels)       + ",\n";
@@ -308,6 +311,7 @@ void LoadSettings()
    double rsiBM  = ReadSetting("RSIBuyMax",      65.0);
    double rsiSM  = ReadSetting("RSISellMin",     35.0);
    bool   useH1  = (ReadSetting("UseH1Filter",   1.0) > 0.5);
+   bool   useM15 = (ReadSetting("UseM15Filter",  1.0) > 0.5);
    bool   useRSI = (ReadSetting("UseRSIFilter",  1.0) > 0.5);
    int    sMode  = (int)ReadSetting("StrategyMode", 0.0);
    int    gLev   = (int)ReadSetting("GridLevels",   3.0);
@@ -331,7 +335,7 @@ void LoadSettings()
                + IntegerToString(ordTyp)+(botOn ? "1" : "0")
                + IntegerToString(rMode)+DoubleToString(rPct,1)
                + DoubleToString(rsiBM,1)+DoubleToString(rsiSM,1)
-               + (useH1?"1":"0")+(useRSI?"1":"0")
+               + (useH1?"1":"0")+(useM15?"1":"0")+(useRSI?"1":"0")
                + IntegerToString(sMode)+IntegerToString(gLev)+IntegerToString(gStep)
                + DoubleToString(hMult,2)+IntegerToString(scStep)
                + DoubleToString(scMult,2)+IntegerToString(scMax)
@@ -346,7 +350,7 @@ void LoadSettings()
    g_tradeHoursStart=hStart; g_tradeHoursEnd=hEnd; g_botRunning=botOn;
    g_orderType=ordTyp; g_riskMode=rMode; g_riskPct=rPct;
    g_rsiBuyMax=rsiBM; g_rsiSellMin=rsiSM;
-   g_useH1Filter=useH1;
+   g_useH1Filter=useH1; g_useM15Filter=useM15;
    g_useRSIFilter=useRSI;
    g_strategyMode=sMode;
    g_gridLevels=MathMax(1,gLev);  g_gridStep=MathMax(10,gStep);
@@ -370,7 +374,7 @@ void LoadSettings()
       EALog("Bot="+(g_botRunning?"ON":"OFF")+" | Hours="+IntegerToString(g_tradeHoursStart)+"-"+IntegerToString(g_tradeHoursEnd)
             +" | MaxLoss/day=$"+DoubleToString(g_maxLossPerDay,2)+" | MaxProfit/day=$"+DoubleToString(g_maxProfitPerDay,2));
       EALog("Filters: RSI="+(g_useRSIFilter?"ON":"OFF")+" ("+DoubleToString(g_rsiBuyMax,1)+"/"+DoubleToString(g_rsiSellMin,1)+")"
-            +" | H1="+(g_useH1Filter?"ON":"OFF")+" | StrategyMode="+IntegerToString(g_strategyMode));
+            +" | H1="+(g_useH1Filter?"ON":"OFF")+" | M15="+(g_useM15Filter?"ON":"OFF")+" | StrategyMode="+IntegerToString(g_strategyMode));
       EALog("Grid: Levels="+IntegerToString(g_gridLevels)+" Step="+IntegerToString(g_gridStep)
             +" | Hedge x"+DoubleToString(g_hedgeLotMult,2)
             +" | Scale: Step="+IntegerToString(g_scaleStep)+" x"+DoubleToString(g_scaleMult,2)+" Max="+IntegerToString(g_maxScales));
@@ -438,11 +442,13 @@ int OnInit()
    hEMA21  = iMA (_Symbol, TF,         21, 0, MODE_EMA, PRICE_CLOSE);
    hATR    = iATR(_Symbol, TF,         14);
    hH1EMA  = iMA (_Symbol, PERIOD_H1,  21, 0, MODE_EMA, PRICE_CLOSE); // H1 bias
+   hM15EMA = iMA (_Symbol, PERIOD_M15, 21, 0, MODE_EMA, PRICE_CLOSE); // M15 MTF bias
    hM5EMA9 = iMA (_Symbol, PERIOD_M5,  9,  0, MODE_EMA, PRICE_CLOSE); // M5 mid filter
    hM5EMA21= iMA (_Symbol, PERIOD_M5,  21, 0, MODE_EMA, PRICE_CLOSE); // M5 mid filter
 
    if(hRSI==INVALID_HANDLE||hEMA9==INVALID_HANDLE||
       hEMA21==INVALID_HANDLE||hATR==INVALID_HANDLE||hH1EMA==INVALID_HANDLE||
+      hM15EMA==INVALID_HANDLE||
       hM5EMA9==INVALID_HANDLE||hM5EMA21==INVALID_HANDLE)
      { Print(EA_NAME,": indicator init failed"); return(INIT_FAILED); }
 
@@ -467,6 +473,8 @@ void OnDeinit(const int reason)
    if(hEMA9  !=INVALID_HANDLE) IndicatorRelease(hEMA9);
    if(hEMA21 !=INVALID_HANDLE) IndicatorRelease(hEMA21);
    if(hATR   !=INVALID_HANDLE) IndicatorRelease(hATR);
+   if(hH1EMA !=INVALID_HANDLE) IndicatorRelease(hH1EMA);
+   if(hM15EMA!=INVALID_HANDLE) IndicatorRelease(hM15EMA);
    if(hM5EMA9 !=INVALID_HANDLE) IndicatorRelease(hM5EMA9);
    if(hM5EMA21!=INVALID_HANDLE) IndicatorRelease(hM5EMA21);
    ObjectsDeleteAll(0, DASH_PREFIX);
@@ -568,6 +576,13 @@ void OnTick()
    if(CopyBuffer(hH1EMA, 0, 0, 3, h1ema) >= 3)
       h1BullBias = (h1ema[1] >= h1ema[2]);
 
+   // ── M15 BIAS: توافق التايمات (MTF — مؤكّد بالباك-تيست) ──────────
+   double m15ema[];
+   ArraySetAsSeries(m15ema, true);
+   bool m15BullBias = true;
+   if(CopyBuffer(hM15EMA, 0, 0, 3, m15ema) >= 3)
+      m15BullBias = (m15ema[1] >= m15ema[2]);
+
    // ── M5 MID-TREND: اتجاه قريب (فلتر وسط) ─────────────────────────
    double m5e9[], m5e21[];
    ArraySetAsSeries(m5e9, true); ArraySetAsSeries(m5e21, true);
@@ -586,10 +601,14 @@ void OnTick()
    bool rsiBuyOK  = hftMode || !g_useRSIFilter || (rsi1 <= g_rsiBuyMax);
    bool rsiSellOK = hftMode || !g_useRSIFilter || (rsi1 >= g_rsiSellMin);
 
-   // ── SIGNAL: H1 + M1 ──────────────────────────────────────────────
+   // ── SIGNAL: MTF (M15 + H1) + M1 ──────────────────────────────────
    int signal = 0;
    bool h1BuyOK  = !g_useH1Filter ||  h1BullBias;
    bool h1SellOK = !g_useH1Filter || !h1BullBias;
+   bool m15BuyOK  = !g_useM15Filter ||  m15BullBias;
+   bool m15SellOK = !g_useM15Filter || !m15BullBias;
+   h1BuyOK  = h1BuyOK  && m15BuyOK;   // توافق التايمات: الاثنين لازم يوافقون
+   h1SellOK = h1SellOK && m15SellOK;
    if(bullBar && rsiBuyOK  && h1BuyOK)  signal =  1;
    else if(bearBar && rsiSellOK && h1SellOK) signal = -1;
 

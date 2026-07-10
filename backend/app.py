@@ -110,6 +110,7 @@ DEFAULT_SETTINGS = {
     "RSIBuyMax":      65.0,
     "RSISellMin":     35.0,
     "UseH1Filter":    1,
+    "UseM15Filter":   1,
     "UseRSIFilter":   1,
     "StrategyMode":   0,
     "GridLevels":     3,

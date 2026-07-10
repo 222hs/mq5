@@ -26,6 +26,7 @@ const SCALP_FIELDS = [
 // ON/OFF switches
 const TOGGLES = [
   { k: 'AutoTPSL', label: 'AUTO · Lot+TP+SL', hint: 'bot sizes everything from ATR + 1% risk' },
+  { k: 'UseM15Filter', label: 'MTF Filter (15m + 1h)', hint: 'backtested edge — trade only with both trends aligned' },
   { k: 'SplitLot', label: 'Split Lot ÷ Positions', hint: 'divides lot across max positions' },
   { k: 'UseATRFilter', label: 'ATR Volatility Filter', hint: 'skip entries when ATR too high' },
   { k: 'BlockRollover', label: 'Block Rollover 21-22 GMT', hint: 'avoid stop-hunt window' },
