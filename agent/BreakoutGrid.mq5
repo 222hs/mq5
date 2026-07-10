@@ -31,6 +31,11 @@ input double   InpMaxLossUSD      = 20.0;   // Close ALL when total loss <= -thi
 input double   InpTargetPct       = 0.0;    // ...or profit >= this % of balance (0=off)
 input double   InpMaxLossPct      = 0.0;    // ...or loss >= this % of balance (0=off)
 
+input group "=== Per-Position Exits (winners close / losers get grace) ==="
+input double   InpQuickTPPoints  = 100;    // Close a WINNER at +X points (0=off)
+input int      InpLossGraceSec   = 30;     // Grace time before cutting a LOSER (seconds)
+input double   InpLossCutPoints   = 150;   // Cut a LOSER beyond -X points after grace (0=off)
+
 input group "=== Trailing Stop ==="
 input bool     InpUseTrailing     = true;   // Trail SL on triggered positions
 input double   InpTrailStartPoints= 150;    // Start trailing after +X points profit
@@ -220,6 +225,33 @@ bool CheckGlobalExit()
    return false;
   }
 
+//================= PER-POSITION EXITS =============================
+// winners → take quick profit؛ losers → grace then cut
+void ManageTriggered()
+  {
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      if(!posInfo.SelectByIndex(i)) continue;
+      if(posInfo.Symbol()!=_Symbol || posInfo.Magic()!=InpMagic) continue;
+      ulong  tk   = posInfo.Ticket();
+      double open = posInfo.PriceOpen();
+      int    age  = (int)(TimeCurrent()-(datetime)posInfo.Time());
+      double curPts;
+      if(posInfo.PositionType()==POSITION_TYPE_BUY)
+         curPts = (SymbolInfoDouble(_Symbol,SYMBOL_BID)-open)/g_point;
+      else
+         curPts = (open-SymbolInfoDouble(_Symbol,SYMBOL_ASK))/g_point;
+
+      // WINNER → bank it
+      if(InpQuickTPPoints>0 && curPts >= InpQuickTPPoints)
+        { if(trade.PositionClose(tk)) Log("✅ QUICK TP #"+(string)tk+" +"+DoubleToString(curPts,0)+"pts"); continue; }
+
+      // LOSER → give a small grace, then cut
+      if(InpLossCutPoints>0 && age >= InpLossGraceSec && curPts <= -InpLossCutPoints)
+        { if(trade.PositionClose(tk)) Log("✂ CUT #"+(string)tk+" "+DoubleToString(curPts,0)+"pts (after "+(string)age+"s grace)"); continue; }
+     }
+  }
+
 //================= TRAILING STOP ==================================
 void ApplyTrailing()
   {
@@ -350,6 +382,7 @@ void OnTick()
 
    // 3) manage what has already triggered
    CheckOppositeCancel();
+   ManageTriggered();   // winners close · losers get grace then cut
    ApplyTrailing();
 
    // 3) grid lifecycle
