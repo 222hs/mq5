@@ -57,7 +57,7 @@ function TickerStrip() {
     ['WIN', (stats.win_rate ?? 0) + '%'],
     ['PING', latency == null ? '—' : latency + 'MS'],
     ['POSITIONS', positions.length],
-    ['GRX', botRunning ? 'ACTIVE' : 'HALTED'],
+    ['GOLD', botRunning ? 'ACTIVE' : 'HALTED'],
     ['TRADES', stats.total_trades || 0],
   ];
   const seq = [...items, ...items];
