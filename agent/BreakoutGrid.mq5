@@ -36,6 +36,12 @@ input bool     InpUseTrailing     = true;   // Trail SL on triggered positions
 input double   InpTrailStartPoints= 150;    // Start trailing after +X points profit
 input double   InpTrailStepPoints = 100;    // Trail distance behind price (points)
 
+input group "=== Explosive Move (cancel & reverse) ==="
+input bool     InpUseExplosion    = true;   // Detect explosive spikes → commit to that side
+input double   InpExplosionPoints = 200;    // Move (points) over the window that counts as a spike
+input int      InpExplosionBars   = 3;      // Window length in M1 candles
+input bool     InpExplosionMarket = false;  // Also fire a market order in the spike direction
+
 input group "=== Options ==="
 input bool     InpOppositeCancel  = true;   // When one side triggers, cancel the other side's pendings
 input int      InpMaxSpreadPoints = 500;    // Skip placing grid if spread wider than this
@@ -255,6 +261,56 @@ void ApplyTrailing()
      }
   }
 
+//================= EXPLOSIVE MOVE: CANCEL & REVERSE ===============
+void ClosePositionsOfType(const ENUM_POSITION_TYPE t)
+  {
+   for(int i=PositionsTotal()-1;i>=0;i--)
+      if(posInfo.SelectByIndex(i))
+         if(posInfo.Symbol()==_Symbol && posInfo.Magic()==InpMagic && posInfo.PositionType()==t)
+            if(trade.PositionClose(posInfo.Ticket()))
+               Log("REVERSE close #"+(string)posInfo.Ticket()+" $"+DoubleToString(posInfo.Profit(),2));
+  }
+
+// returns +1 explosive up, -1 explosive down, 0 none (measured over M1 window)
+int ExplosionDetect()
+  {
+   if(!InpUseExplosion) return 0;
+   int need = InpExplosionBars+1;
+   double c[];
+   ArraySetAsSeries(c,true);
+   if(CopyClose(_Symbol, PERIOD_M1, 0, need, c) < need) return 0;
+   double movePts = (c[0]-c[InpExplosionBars]) / g_point;
+   if(movePts >=  InpExplosionPoints) return  1;
+   if(movePts <= -InpExplosionPoints) return -1;
+   return 0;
+  }
+
+// on a spike: keep only the spike-side grid, close counter-trend positions, optional market entry
+void HandleExplosion()
+  {
+   int dir = ExplosionDetect();
+   if(dir==0) return;
+
+   if(dir>0) // ── explosive UP → commit LONG ──
+     {
+      CancelPending(false, true);                 // drop the sell-stop side
+      ClosePositionsOfType(POSITION_TYPE_SELL);   // reverse: dump the shorts
+      if(InpExplosionMarket && CountPositions(POSITION_TYPE_BUY)==0)
+         if(trade.Buy(InpLotSize,_Symbol,0.0,0.0,0.0,"BGRID-EXP"))
+            Log("💥 EXPLOSION UP — market BUY "+DoubleToString(InpLotSize,2));
+      Log("💥 EXPLOSION UP — cancelled Sell-Stops, closed shorts");
+     }
+   else      // ── explosive DOWN → commit SHORT ──
+     {
+      CancelPending(true, false);                 // drop the buy-stop side
+      ClosePositionsOfType(POSITION_TYPE_BUY);    // reverse: dump the longs
+      if(InpExplosionMarket && CountPositions(POSITION_TYPE_SELL)==0)
+         if(trade.Sell(InpLotSize,_Symbol,0.0,0.0,0.0,"BGRID-EXP"))
+            Log("💥 EXPLOSION DOWN — market SELL "+DoubleToString(InpLotSize,2));
+      Log("💥 EXPLOSION DOWN — cancelled Buy-Stops, closed longs");
+     }
+  }
+
 //================= OPPOSITE-GRID CANCELLATION =====================
 void CheckOppositeCancel()
   {
@@ -289,7 +345,10 @@ void OnTick()
    // 1) global protective exit first
    if(CheckGlobalExit()) return;
 
-   // 2) manage what has already triggered
+   // 2) explosive spike → cancel wrong side + reverse counter-trend
+   HandleExplosion();
+
+   // 3) manage what has already triggered
    CheckOppositeCancel();
    ApplyTrailing();
 
