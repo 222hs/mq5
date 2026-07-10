@@ -798,7 +798,7 @@ void OpenGrid(int signal, double atrVal)
    double safeMin=MathMax(minD,atrVal*1.5);
    double slD=MathMax(g_slUSD/ptV,safeMin);
    double tpD=MathMax(g_tpUSD/ptV,safeMin);
-   double stepD=g_gridStep*tickSz;
+   double stepD=MathMax(g_gridStep*tickSz, minD*1.5); // خطوة لا تقل عن حد البروكر (وإلا تُرفض الأوردرات)
    datetime expiry=TimeCurrent()+PeriodSeconds(TF)*g_gridLevels*4;
    bool isBuy=(signal==1);
    int fired=0;
