@@ -85,6 +85,9 @@ bool     g_useRSIFilter    = true;  // فلتر RSI
 int    g_strategyMode  = 0;
 int    g_gridLevels    = 3;    // عدد مستويات الشبكة
 int    g_gridStep      = 50;   // نقاط بين كل مستوى
+bool   g_claudeGrid    = false;// كلود يحدّد أماكن أوردرات الشبكة من الشارت
+double g_aiBuys[8];  int g_aiBuyN  = 0;   // مستويات دعم من كلود (شراء)
+double g_aiSells[8]; int g_aiSellN = 0;   // مستويات مقاومة من كلود (بيع)
 double g_hedgeLotMult  = 0.5;  // نسبة لوت الهيدج من الأصلي
 int    g_scaleStep     = 30;   // نقاط خسارة قبل scale-in
 double g_scaleMult     = 1.5;  // مضاعف اللوت عند scale
@@ -179,6 +182,7 @@ void WriteCurrentSettings()
    j += "  \"StrategyMode\": " + IntegerToString(g_strategyMode)     + ",\n";
    j += "  \"GridLevels\": "   + IntegerToString(g_gridLevels)       + ",\n";
    j += "  \"GridStep\": "     + IntegerToString(g_gridStep)         + ",\n";
+   j += "  \"ClaudeGrid\": "   + (g_claudeGrid ? "1" : "0")          + ",\n";
    j += "  \"HedgeLotMult\": " + DoubleToString(g_hedgeLotMult,2)   + ",\n";
    j += "  \"ScaleStep\": "    + IntegerToString(g_scaleStep)        + ",\n";
    j += "  \"ScaleMult\": "    + DoubleToString(g_scaleMult,2)       + ",\n";
@@ -343,6 +347,7 @@ void LoadSettings()
    int    sMode  = (int)ReadSetting("StrategyMode", 0.0);
    int    gLev   = (int)ReadSetting("GridLevels",   3.0);
    int    gStep  = (int)ReadSetting("GridStep",    50.0);
+   bool   aiGrid = (ReadSetting("ClaudeGrid",       0.0) > 0.5);
    double hMult  = ReadSetting("HedgeLotMult",      0.5);
    int    scStep = (int)ReadSetting("ScaleStep",   30.0);
    double scMult = ReadSetting("ScaleMult",          1.5);
@@ -373,7 +378,7 @@ void LoadSettings()
                + IntegerToString(rMode)+DoubleToString(rPct,1)
                + DoubleToString(rsiBM,1)+DoubleToString(rsiSM,1)
                + (useH1?"1":"0")+(useM15?"1":"0")+(useRSI?"1":"0")
-               + IntegerToString(sMode)+IntegerToString(gLev)+IntegerToString(gStep)
+               + IntegerToString(sMode)+IntegerToString(gLev)+IntegerToString(gStep)+(aiGrid?"1":"0")
                + DoubleToString(hMult,2)+IntegerToString(scStep)
                + DoubleToString(scMult,2)+IntegerToString(scMax)
                + (useATR?"1":"0")+DoubleToString(maxATR,0)
@@ -393,7 +398,7 @@ void LoadSettings()
    g_useH1Filter=useH1; g_useM15Filter=useM15;
    g_useRSIFilter=useRSI;
    g_strategyMode=sMode;
-   g_gridLevels=MathMax(1,gLev);  g_gridStep=MathMax(10,gStep);
+   g_gridLevels=MathMax(1,gLev);  g_gridStep=MathMax(10,gStep); g_claudeGrid=aiGrid;
    g_hedgeLotMult=MathMax(0.1,MathMin(2.0,hMult));
    g_scaleStep=MathMax(10,scStep); g_scaleMult=MathMax(1.0,scMult); g_maxScales=MathMax(1,scMax);
    g_useATRFilter=useATR; g_maxATRPoints=MathMax(0.0,maxATR);
@@ -420,7 +425,7 @@ void LoadSettings()
             +" | MaxLoss/day=$"+DoubleToString(g_maxLossPerDay,2)+" | MaxProfit/day=$"+DoubleToString(g_maxProfitPerDay,2));
       EALog("Filters: RSI="+(g_useRSIFilter?"ON":"OFF")+" ("+DoubleToString(g_rsiBuyMax,1)+"/"+DoubleToString(g_rsiSellMin,1)+")"
             +" | H1="+(g_useH1Filter?"ON":"OFF")+" | M15="+(g_useM15Filter?"ON":"OFF")+" | StrategyMode="+IntegerToString(g_strategyMode));
-      EALog("Grid: Levels="+IntegerToString(g_gridLevels)+" Step="+IntegerToString(g_gridStep)
+      EALog("Grid: ClaudeGrid="+(g_claudeGrid?"ON":"OFF")+" Levels="+IntegerToString(g_gridLevels)+" Step="+IntegerToString(g_gridStep)
             +" | Hedge x"+DoubleToString(g_hedgeLotMult,2)
             +" | Scale: Step="+IntegerToString(g_scaleStep)+" x"+DoubleToString(g_scaleMult,2)+" Max="+IntegerToString(g_maxScales));
       EALog("Scalp: ATRFilter="+(g_useATRFilter?"ON max="+DoubleToString(g_maxATRPoints,0)+"pts":"OFF")
@@ -753,6 +758,31 @@ bool ScaledAlready(ulong ticket)
 
 //+------------------------------------------------------------------+
 // GRID: يفتح GridLevels أوردرات في اتجاه الإشارة بأسعار متدرجة
+// يقرأ مستويات كلود من GSX_GridLevels.txt (صيغة: BUY:p,p\nSELL:p,p)
+void ReadAIGridLevels()
+  {
+   g_aiBuyN = 0; g_aiSellN = 0;
+   int fh = FileOpen("GSX_GridLevels.txt", FILE_READ|FILE_TXT|FILE_ANSI|FILE_COMMON);
+   if(fh == INVALID_HANDLE) return;
+   while(!FileIsEnding(fh))
+     {
+      string ln = FileReadString(fh);
+      string pfx = ""; int arrSel = 0; // 1=buys 2=sells
+      if(StringFind(ln,"BUY:")==0)  { pfx=StringSubstr(ln,4); arrSel=1; }
+      else if(StringFind(ln,"SELL:")==0){ pfx=StringSubstr(ln,5); arrSel=2; }
+      else continue;
+      string parts[]; int cnt = StringSplit(pfx, ',', parts);
+      for(int i=0;i<cnt;i++)
+        {
+         double v = StringToDouble(parts[i]);
+         if(v <= 0) continue;
+         if(arrSel==1 && g_aiBuyN<8)  g_aiBuys[g_aiBuyN++]   = v;
+         if(arrSel==2 && g_aiSellN<8) g_aiSells[g_aiSellN++] = v;
+        }
+     }
+   FileClose(fh);
+  }
+
 void OpenGrid(int signal, double atrVal)
   {
    double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
@@ -772,6 +802,31 @@ void OpenGrid(int signal, double atrVal)
    datetime expiry=TimeCurrent()+PeriodSeconds(TF)*g_gridLevels*4;
    bool isBuy=(signal==1);
    int fired=0;
+
+   // ── وضع كلود: أماكن الأوردرات من الشارت (دعم/مقاومة) بدل الخطوة الثابتة ──
+   if(g_claudeGrid)
+     {
+      ReadAIGridLevels();
+      // [0] دخول فوري بالماركت
+      if(isBuy){double sl=NormalizeDouble(ask-slD,digs);double tp=NormalizeDouble(ask+tpD,digs);if(trade.Buy(lot,_Symbol,ask,sl,tp,"AIGRID[0]"))fired++;}
+      else     {double sl=NormalizeDouble(bid+slD,digs);double tp=NormalizeDouble(bid-tpD,digs);if(trade.Sell(lot,_Symbol,bid,sl,tp,"AIGRID[0]"))fired++;}
+      // أوردرات معلّقة عند مستويات كلود
+      int cnt = isBuy ? g_aiBuyN : g_aiSellN;
+      for(int i=0;i<cnt;i++)
+        {
+         if(CountMyPositions()+fired>=g_maxPositions) break;
+         double e = isBuy ? g_aiBuys[i] : g_aiSells[i];
+         if(isBuy  && e >= bid) continue;   // شراء لازم تحت السعر
+         if(!isBuy && e <= ask) continue;   // بيع لازم فوق السعر
+         e = NormalizeDouble(e,digs);
+         if(isBuy){double sl=NormalizeDouble(e-slD,digs);double tp=NormalizeDouble(e+tpD,digs);if(trade.BuyLimit(lot,e,_Symbol,sl,tp,ORDER_TIME_SPECIFIED,expiry,"AIGRID"))fired++;}
+         else     {double sl=NormalizeDouble(e+slD,digs);double tp=NormalizeDouble(e-tpD,digs);if(trade.SellLimit(lot,e,_Symbol,sl,tp,ORDER_TIME_SPECIFIED,expiry,"AIGRID"))fired++;}
+        }
+      if(fired>0){g_lastEntryTime=TimeCurrent(); g_totalTrades+=fired;
+        EALog("🧮 AIGRID fired="+IntegerToString(fired)+" "+(isBuy?"BUY":"SELL")+" (مستويات كلود)");}
+      else EALog("🧮 AIGRID: ما فيه مستويات كلود بعد — انتظر");
+      return;
+     }
 
    for(int i=0;i<g_gridLevels;i++)
      {

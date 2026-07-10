@@ -422,6 +422,25 @@ def send_candles():
     threading.Thread(target=_bg, daemon=True).start()
 
 
+def sync_grid_levels():
+    """يسحب مستويات كلود (دعم/مقاومة) ويكتبها GSX_GridLevels.txt ليقرأها البوت."""
+    try:
+        r = _session.get(f"{BACKEND_URL}/api/grid_levels", timeout=(5, 12))
+        if r.status_code != 200:
+            return
+        d = r.json()
+        buys  = d.get("buys", []) or []
+        sells = d.get("sells", []) or []
+        if not buys and not sells:
+            return
+        line = "BUY:" + ",".join(str(x) for x in buys) + "\nSELL:" + ",".join(str(x) for x in sells)
+        fpath = os.path.join(_MT5_COMMON, "GSX_GridLevels.txt")
+        with open(fpath, "w", encoding="ascii") as f:
+            f.write(line)
+    except Exception:
+        pass
+
+
 def read_local_settings():
     """يقرأ الإعدادات الحالية من ملف البوت"""
     if not os.path.exists(SETTINGS_FILE):
@@ -804,7 +823,7 @@ def sync_settings():
                 "TradeHoursStart", "TradeHoursEnd", "BotRunning",
                 "OrderType", "RiskMode", "RiskPercent",
                 "RSIBuyMax", "RSISellMin", "UseH1Filter", "UseM15Filter", "UseRSIFilter",
-                "StrategyMode", "GridLevels", "GridStep",
+                "StrategyMode", "GridLevels", "GridStep", "ClaudeGrid",
                 "HedgeLotMult", "ScaleStep", "ScaleMult", "MaxScales",
                 "UseATRFilter", "MaxATRPoints", "BlockRollover", "MaxConsecLosses",
                 "AutoTPSL", "SplitLot", "MaxHoldMin", "LockProfitUSD", "StallSecs", "SyncTPSL",
@@ -1173,6 +1192,7 @@ def main():
             # شمعات كل 10 ثواني (endpoint منفصل)
             if now - last_candles_sync >= CANDLES_INTERVAL:
                 send_candles()
+                threading.Thread(target=sync_grid_levels, daemon=True).start()  # مستويات كلود للشبكة
                 last_candles_sync = now
 
             account    = get_account_info()

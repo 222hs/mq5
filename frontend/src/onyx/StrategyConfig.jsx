@@ -47,6 +47,7 @@ const TOGGLES = [
   { k: 'SplitLot', label: 'Split Lot ÷ Positions', hint: 'divides lot across max positions' },
   { k: 'UseATRFilter', label: 'ATR Volatility Filter', hint: 'skip entries when ATR too high' },
   { k: 'BlockRollover', label: 'Block Rollover 21-22 GMT', hint: 'avoid stop-hunt window' },
+  { k: 'ClaudeGrid', label: 'Claude Grid (AI order levels)', hint: 'with Strategy Mode 1: Claude places grid orders at chart support/resistance' },
 ];
 const INT = new Set([
   ...FIELDS.filter((f) => f.int).map((f) => f.k),

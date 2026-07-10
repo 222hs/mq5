@@ -115,6 +115,7 @@ DEFAULT_SETTINGS = {
     "StrategyMode":   0,
     "GridLevels":     3,
     "GridStep":       50,
+    "ClaudeGrid":     0,
     "HedgeLotMult":   0.5,
     "ScaleStep":      30,
     "ScaleMult":      1.5,
@@ -158,6 +159,7 @@ BTC_DEFAULT_SETTINGS = {
     "StrategyMode":   0,
     "GridLevels":     3,
     "GridStep":       50,
+    "ClaudeGrid":     0,
     "HedgeLotMult":   0.5,
     "ScaleStep":      30,
     "ScaleMult":      1.5,
@@ -973,7 +975,10 @@ def update_data():
     # Claude checks
     settings = get_settings()
     claude_enabled = int(settings.get("ClaudeEnabled", 1)) == 1
-    if claude_enabled and history_payload:
+    # تحليل كلود للصفقات الخاسرة (تعديل تلقائي) — معطّل بطلب المستخدم؛
+    # يُفعّل فقط لو ClaudeLossAdjust=1 صراحةً.
+    claude_loss_adjust = int(settings.get("ClaudeLossAdjust", 0)) == 1
+    if claude_loss_adjust and claude_enabled and history_payload:
         recent = get_history(20)
         # 1) تحذير خسائر متتالية
         consecutive = 0
@@ -1379,6 +1384,59 @@ def get_candles():
             "candles":  latest_data["candles"],
             "sessions": latest_data["sessions"],
         })
+
+
+# ── GRID-AI: كلود يحدّد أماكن أوردرات الشبكة من الشارت (دعم/مقاومة) ──
+_grid_cache = {"buys": [], "sells": [], "ts": 0.0}
+
+def compute_grid_levels():
+    """كلود يحلل آخر الشموع ويرجّع مستويات دعم (للشراء) ومقاومة (للبيع)."""
+    import time as _t, urllib.request
+    if not ANTHROPIC_API_KEY:
+        return _grid_cache
+    with data_lock:
+        candles = list(latest_data.get("candles") or [])[-40:]
+    if len(candles) < 20:
+        return _grid_cache
+    cur = candles[-1].get("c")
+    rows = "\n".join(f"{c.get('o')},{c.get('h')},{c.get('l')},{c.get('c')}" for c in candles)
+    prompt = (
+        "You place a grid of pending orders on XAUUSD (gold).\n"
+        f"Current price: {cur}\n"
+        "Recent M1 candles as open,high,low,close (oldest first):\n" + rows + "\n\n"
+        "From swing highs/lows and level clustering, pick key SUPPORT prices BELOW "
+        "current (for BUY-limit orders) and key RESISTANCE prices ABOVE current (for "
+        "SELL-limit orders). Return ONLY compact JSON, no words:\n"
+        '{"buys":[up to 4 support prices below current, nearest first],'
+        '"sells":[up to 4 resistance prices above current, nearest first]}'
+    )
+    try:
+        body = json.dumps({"model": "claude-haiku-4-5-20251001", "max_tokens": 200,
+                           "messages": [{"role": "user", "content": prompt}]}).encode()
+        req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=body,
+              headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
+                       "content-type": "application/json"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            txt = json.loads(r.read())["content"][0]["text"]
+        s = txt.find("{"); e = txt.rfind("}") + 1
+        obj = json.loads(txt[s:e])
+        buys  = [round(float(x), 2) for x in obj.get("buys", [])  if float(x) < cur][:4]
+        sells = [round(float(x), 2) for x in obj.get("sells", []) if float(x) > cur][:4]
+        _grid_cache.update(buys=buys, sells=sells, ts=_t.time())
+        push_log("ok", f"🧮 GRID-AI: {len(buys)} دعم / {len(sells)} مقاومة")
+    except Exception as ex:
+        push_log("err", f"GRID-AI: {str(ex)[:50]}")
+    return _grid_cache
+
+
+@app.route("/api/grid_levels", methods=["GET"])
+def api_grid_levels():
+    import time as _t
+    s = get_settings()
+    if int(s.get("ClaudeGrid", 0)) == 1 and (_t.time() - _grid_cache["ts"] > 180):
+        compute_grid_levels()
+    return jsonify({"buys": _grid_cache["buys"], "sells": _grid_cache["sells"],
+                    "age": int(_t.time() - _grid_cache["ts"])})
 
 
 @app.route("/api/analyze/run", methods=["POST"])
