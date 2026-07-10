@@ -111,6 +111,9 @@ bool   g_autoTPSL       = false; // زر واحد: يخلي اللوت والـ 
 bool   g_splitLot       = false; // يوزّع اللوت على أقصى عدد صفقات
 bool   g_syncTPSL       = false; // يكتب TP/SL الحقيقية على الصفقات ويحدّثها مع الإعدادات
 bool   g_exitOnReverse  = false; // يقص الصفقة الخاسرة لو الشمعة انعكست ضد اتجاهها
+double g_partialTP_R    = 0.0;   // 0=معطّل | جني جزئي عند ربح = R× الستوب
+double g_partialTP_Frac = 0.5;   // نسبة الصفقة التي تُغلق عند الجني الجزئي
+bool   g_lkTp1[256];             // هل تم الجني الجزئي لهذه الصفقة؟
 const double AUTO_RISK_PCT = 1.0;  // نسبة المخاطرة من الرصيد لكل صفقة
 const double AUTO_SL_ATR   = 1.25; // مضاعف ATR للستوب (M1 مؤكّد بالباك-تيست)
 const double AUTO_TP_RR    = 2.8;  // نسبة الهدف للخطر R:R (M1: PF 1.36 · 40 صفقة/يوم)
@@ -192,7 +195,9 @@ void WriteCurrentSettings()
    j += "  \"LockProfitUSD\": "+ DoubleToString(g_lockProfitUSD,2)   + ",\n";
    j += "  \"StallSecs\": "    + IntegerToString(g_stallSecs)        + ",\n";
    j += "  \"SyncTPSL\": "     + (g_syncTPSL ? "1" : "0")            + ",\n";
-   j += "  \"ExitOnReverse\": "+ (g_exitOnReverse ? "1" : "0")       + "\n";
+   j += "  \"ExitOnReverse\": "+ (g_exitOnReverse ? "1" : "0")       + ",\n";
+   j += "  \"PartialTP_R\": "  + DoubleToString(g_partialTP_R,2)     + ",\n";
+   j += "  \"PartialTP_Frac\": "+ DoubleToString(g_partialTP_Frac,2) + "\n";
    j += "}";
    FileWriteString(fh, j);
    FileClose(fh);
@@ -344,6 +349,8 @@ void LoadSettings()
    bool   splitL = (ReadSetting("SplitLot",       0.0) > 0.5);
    bool   syncTS = (ReadSetting("SyncTPSL",        0.0) > 0.5);
    bool   exitRv = (ReadSetting("ExitOnReverse",   0.0) > 0.5);
+   double ptpR   = ReadSetting("PartialTP_R",      0.0);
+   double ptpF   = ReadSetting("PartialTP_Frac",   0.5);
    int    maxHold= (int)ReadSetting("MaxHoldMin",  0.0);
    double lockUSD= ReadSetting("LockProfitUSD",    0.0);
    int    stallS = (int)ReadSetting("StallSecs",  60.0);
@@ -363,7 +370,8 @@ void LoadSettings()
                + (useATR?"1":"0")+DoubleToString(maxATR,0)
                + (blkRO?"1":"0")+IntegerToString(maxCL)
                + (autoTS?"1":"0")+(splitL?"1":"0")+IntegerToString(maxHold)
-               + DoubleToString(lockUSD,2)+IntegerToString(stallS)+(syncTS?"1":"0")+(exitRv?"1":"0");
+               + DoubleToString(lockUSD,2)+IntegerToString(stallS)+(syncTS?"1":"0")+(exitRv?"1":"0")
+               + DoubleToString(ptpR,2)+DoubleToString(ptpF,2);
    bool changed = (hash != g_lastSettingsHash);
    g_lastSettingsHash = hash;
 
@@ -383,6 +391,7 @@ void LoadSettings()
    g_autoTPSL=autoTS; g_splitLot=splitL; g_maxHoldMin=MathMax(0,maxHold);
    g_lockProfitUSD=MathMax(0.0,lockUSD); g_stallSecs=MathMax(5,stallS);
    g_syncTPSL=syncTS; g_exitOnReverse=exitRv;
+   g_partialTP_R=MathMax(0.0,ptpR); g_partialTP_Frac=MathMax(0.1,MathMin(0.9,ptpF));
    LoadNewsBlock();
 
    if(changed)
@@ -411,6 +420,7 @@ void LoadSettings()
             +" | LockProfit="+(g_lockProfitUSD>0?"$"+DoubleToString(g_lockProfitUSD,2)+"@"+IntegerToString(g_stallSecs)+"s":"OFF")
             +" | SyncTPSL="+(g_syncTPSL?"ON":"OFF")
             +" | ExitReverse="+(g_exitOnReverse?"ON":"OFF")
+            +" | PartialTP="+(g_partialTP_R>0?DoubleToString(g_partialTP_R,1)+"R×"+DoubleToString(g_partialTP_Frac*100,0)+"%":"OFF")
             +" → lot/trade="+DoubleToString(CalcLot(),2));
       EALog("═══════════════════════════════════════");
      }
@@ -1092,13 +1102,13 @@ double NormalizeLot(double lot)
 int LkIdx(ulong tk)
   {
    for(int k=0;k<g_lkCount;k++) if(g_lkTk[k]==tk) return k;
-   if(g_lkCount<256){ g_lkTk[g_lkCount]=tk; g_lkPeak[g_lkCount]=-1e9; g_lkTime[g_lkCount]=TimeCurrent(); return g_lkCount++; }
+   if(g_lkCount<256){ g_lkTk[g_lkCount]=tk; g_lkPeak[g_lkCount]=-1e9; g_lkTime[g_lkCount]=TimeCurrent(); g_lkTp1[g_lkCount]=false; return g_lkCount++; }
    return -1;
   }
 void LkRemove(ulong tk)
   {
    for(int k=0;k<g_lkCount;k++) if(g_lkTk[k]==tk)
-     { g_lkTk[k]=g_lkTk[g_lkCount-1]; g_lkPeak[k]=g_lkPeak[g_lkCount-1]; g_lkTime[k]=g_lkTime[g_lkCount-1]; g_lkCount--; return; }
+     { g_lkTk[k]=g_lkTk[g_lkCount-1]; g_lkPeak[k]=g_lkPeak[g_lkCount-1]; g_lkTime[k]=g_lkTime[g_lkCount-1]; g_lkTp1[k]=g_lkTp1[g_lkCount-1]; g_lkCount--; return; }
   }
 
 void ManagePositions()
@@ -1196,6 +1206,28 @@ void ManagePositions()
               { trade.PositionClose(tk);
                 EALog("🔒 LOCK #"+IntegerToString((int)tk)+" +$"+DoubleToString(profit,2)+" (ربح ثابت "+IntegerToString(stall)+"s)");
                 LkRemove(tk); continue; }
+           }
+        }
+
+      // جني جزئي: عند ربح = R× الستوب، أغلق جزءاً واحجز الباقي على التعادل
+      if(g_partialTP_R > 0.0 && profit >= g_partialTP_R * effSL)
+        {
+         int li = LkIdx(tk);
+         if(li >= 0 && !g_lkTp1[li])
+           {
+            double closeVol = NormalizeLot(posLot * g_partialTP_Frac);
+            double minV = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+            if(closeVol >= minV && (posLot - closeVol) >= minV)
+              {
+               if(trade.PositionClosePartial(tk, closeVol))
+                 {
+                  g_lkTp1[li] = true;
+                  // انقل الستوب لسعر الدخول (الباقي بلا مخاطرة)
+                  double be = posInfo.PriceOpen();
+                  trade.PositionModify(tk, be, posInfo.TakeProfit());
+                  EALog("🎯 PARTIAL #"+IntegerToString((int)tk)+" أغلق "+DoubleToString(closeVol,2)+" +$"+DoubleToString(profit,2)+" → الباقي على التعادل");
+                 }
+              }
            }
         }
 

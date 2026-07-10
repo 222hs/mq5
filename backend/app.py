@@ -130,6 +130,8 @@ DEFAULT_SETTINGS = {
     "StallSecs":      60,
     "SyncTPSL":       0,
     "ExitOnReverse":  0,
+    "PartialTP_R":    0.0,
+    "PartialTP_Frac": 0.5,
 }
 
 BTC_DEFAULT_SETTINGS = {
