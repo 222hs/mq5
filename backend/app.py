@@ -904,7 +904,17 @@ def update_data():
     history_payload = payload.get("history")
     with data_lock:
         latest_data["account"]        = payload.get("account")
-        latest_data["positions"]      = payload.get("positions", [])
+        # حماية من التذبذب: لو مصدر ثانٍ (وكيل مكرر / قديم) يرسل positions فارغة،
+        # نتجاهل الإفراغ العابر ونبقي آخر صفقات معروفة — لا نُفرّغ إلا بعد 8 ثوانٍ
+        # بلا أي تحديث فيه صفقات (إغلاق فعلي).
+        import time as _t
+        _pos_in = payload.get("positions", [])
+        _pnow = _t.time()
+        if _pos_in:
+            latest_data["positions"] = _pos_in
+            latest_data["_pos_ts"]   = _pnow
+        elif _pnow - latest_data.get("_pos_ts", 0) > 8:
+            latest_data["positions"] = []
         latest_data["pending_orders"] = payload.get("pending_orders", [])
         latest_data["news_filter"]    = payload.get("news_filter", {"blocked": False, "title": ""})
         if payload.get("h1_bias_up") is not None:
