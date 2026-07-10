@@ -109,6 +109,7 @@ int      g_lkCount = 0;
 // ── الوضع الآلي الكامل (Auto): لوت + TP + SL ديناميكية من ATR ──────
 bool   g_autoTPSL       = false; // زر واحد: يخلي اللوت والـ TP/SL تلقائية
 bool   g_splitLot       = false; // يوزّع اللوت على أقصى عدد صفقات
+bool   g_syncTPSL       = false; // يكتب TP/SL الحقيقية على الصفقات ويحدّثها مع الإعدادات
 const double AUTO_RISK_PCT = 1.0;  // نسبة المخاطرة من الرصيد لكل صفقة
 const double AUTO_SL_ATR   = 1.25; // مضاعف ATR للستوب (M1 مؤكّد بالباك-تيست)
 const double AUTO_TP_RR    = 2.8;  // نسبة الهدف للخطر R:R (M1: PF 1.36 · 40 صفقة/يوم)
@@ -188,7 +189,8 @@ void WriteCurrentSettings()
    j += "  \"SplitLot\": "     + (g_splitLot ? "1" : "0")            + ",\n";
    j += "  \"MaxHoldMin\": "   + IntegerToString(g_maxHoldMin)       + ",\n";
    j += "  \"LockProfitUSD\": "+ DoubleToString(g_lockProfitUSD,2)   + ",\n";
-   j += "  \"StallSecs\": "    + IntegerToString(g_stallSecs)        + "\n";
+   j += "  \"StallSecs\": "    + IntegerToString(g_stallSecs)        + ",\n";
+   j += "  \"SyncTPSL\": "     + (g_syncTPSL ? "1" : "0")            + "\n";
    j += "}";
    FileWriteString(fh, j);
    FileClose(fh);
@@ -338,6 +340,7 @@ void LoadSettings()
    int    maxCL  = (int)ReadSetting("MaxConsecLosses", 0.0);
    bool   autoTS = (ReadSetting("AutoTPSL",       0.0) > 0.5);
    bool   splitL = (ReadSetting("SplitLot",       0.0) > 0.5);
+   bool   syncTS = (ReadSetting("SyncTPSL",        0.0) > 0.5);
    int    maxHold= (int)ReadSetting("MaxHoldMin",  0.0);
    double lockUSD= ReadSetting("LockProfitUSD",    0.0);
    int    stallS = (int)ReadSetting("StallSecs",  60.0);
@@ -357,7 +360,7 @@ void LoadSettings()
                + (useATR?"1":"0")+DoubleToString(maxATR,0)
                + (blkRO?"1":"0")+IntegerToString(maxCL)
                + (autoTS?"1":"0")+(splitL?"1":"0")+IntegerToString(maxHold)
-               + DoubleToString(lockUSD,2)+IntegerToString(stallS);
+               + DoubleToString(lockUSD,2)+IntegerToString(stallS)+(syncTS?"1":"0");
    bool changed = (hash != g_lastSettingsHash);
    g_lastSettingsHash = hash;
 
@@ -376,6 +379,7 @@ void LoadSettings()
    g_blockRollover=blkRO; g_maxConsecLosses=MathMax(0,maxCL);
    g_autoTPSL=autoTS; g_splitLot=splitL; g_maxHoldMin=MathMax(0,maxHold);
    g_lockProfitUSD=MathMax(0.0,lockUSD); g_stallSecs=MathMax(5,stallS);
+   g_syncTPSL=syncTS;
    LoadNewsBlock();
 
    if(changed)
@@ -402,6 +406,7 @@ void LoadSettings()
             +" | SplitLot="+(g_splitLot?"ON ÷"+IntegerToString(g_maxPositions):"OFF")
             +" | MaxHold="+(g_maxHoldMin>0?IntegerToString(g_maxHoldMin)+"د":"OFF")
             +" | LockProfit="+(g_lockProfitUSD>0?"$"+DoubleToString(g_lockProfitUSD,2)+"@"+IntegerToString(g_stallSecs)+"s":"OFF")
+            +" | SyncTPSL="+(g_syncTPSL?"ON":"OFF")
             +" → lot/trade="+DoubleToString(CalcLot(),2));
       EALog("═══════════════════════════════════════");
      }
@@ -1140,6 +1145,28 @@ void ManagePositions()
            {
             if(trade.PositionModify(tk, bePrice, posInfo.TakeProfit()))
                EALog("BE نقطة تعادل #"+IntegerToString((int)tk)+" — profit=$"+DoubleToString(profit,2));
+           }
+        }
+
+      // مزامنة TP/SL الحقيقية على الصفقة (تظهر في MT5 وتتحدّث مع الإعدادات/ATR)
+      if(g_syncTPSL)
+        {
+         double vpl = ValuePerPricePerLot();
+         if(vpl > 0.0 && posLot > 0.0)
+           {
+            bool   isBuy = (posInfo.PositionType()==POSITION_TYPE_BUY);
+            double openP = posInfo.PriceOpen();
+            int    digs  = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+            double slD   = effSL / (posLot * vpl);
+            double tpD   = effTP / (posLot * vpl);
+            double rawSL = isBuy ? openP - slD : openP + slD;
+            double newTP = NormalizeDouble(isBuy ? openP + tpD : openP - tpD, digs);
+            double curSL = posInfo.StopLoss(), curTP = posInfo.TakeProfit();
+            double newSL = rawSL;
+            if(curSL > 0.0) newSL = isBuy ? MathMax(curSL, rawSL) : MathMin(curSL, rawSL); // لا يُرخّي الستوب
+            newSL = NormalizeDouble(newSL, digs);
+            if(MathAbs(curSL-newSL) > _Point || MathAbs(curTP-newTP) > _Point)
+               trade.PositionModify(tk, newSL, newTP);
            }
         }
 

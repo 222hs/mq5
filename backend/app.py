@@ -128,6 +128,7 @@ DEFAULT_SETTINGS = {
     "MaxHoldMin":     0,
     "LockProfitUSD":  0.0,
     "StallSecs":      60,
+    "SyncTPSL":       0,
 }
 
 BTC_DEFAULT_SETTINGS = {
