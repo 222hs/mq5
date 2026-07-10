@@ -19,6 +19,7 @@ input double   InpStepPoints      = 100;    // Spacing between each grid level (
 input double   InpFirstDistPoints = 100;    // Distance from price to the FIRST order (points)
 input double   InpLotSize         = 0.01;   // Fixed lot size for every order
 input long     InpMagic           = 990100; // Magic number (bot identity)
+input bool     InpAlternatingGrid = true;   // Fill BOTH sides, alternating Buy/Sell every level (no middle gap)
 
 input group "=== Dynamic Maintenance ==="
 input bool     InpRecenter        = true;   // Re-center the grid when price drifts (no triggers)
@@ -101,7 +102,18 @@ int CountPositions(const int typeFilter) // -1 = any, else POSITION_TYPE_*
   }
 
 //================= ORDER SENDERS (with retry) ======================
-bool SendStop(const bool isBuy, double price)
+string TypeName(const ENUM_ORDER_TYPE t)
+  {
+   switch(t){
+      case ORDER_TYPE_BUY_STOP:  return "BuyStop";
+      case ORDER_TYPE_SELL_STOP: return "SellStop";
+      case ORDER_TYPE_BUY_LIMIT: return "BuyLimit";
+      case ORDER_TYPE_SELL_LIMIT:return "SellLimit";
+     }
+   return "?";
+  }
+
+bool SendPending(const ENUM_ORDER_TYPE type, double price)
   {
    price = NormalizeDouble(price, g_digits);
    datetime exp = (InpOrderExpiryMin>0) ? TimeCurrent()+InpOrderExpiryMin*60 : 0;
@@ -109,23 +121,20 @@ bool SendStop(const bool isBuy, double price)
 
    for(int attempt=0; attempt<3; attempt++)
      {
-      bool ok = isBuy
-                ? trade.BuyStop (InpLotSize, price, _Symbol, 0.0, 0.0, tt, exp, "BGRID")
-                : trade.SellStop(InpLotSize, price, _Symbol, 0.0, 0.0, tt, exp, "BGRID");
-      if(ok)
-        {
-         Log((isBuy?"BuyStop":"SellStop")+" @ "+DoubleToString(price,g_digits)+
-             "  ticket="+(string)trade.ResultOrder());
-         return true;
+      bool ok=false;
+      switch(type){
+         case ORDER_TYPE_BUY_STOP:  ok=trade.BuyStop  (InpLotSize,price,_Symbol,0,0,tt,exp,"BGRID"); break;
+         case ORDER_TYPE_SELL_STOP: ok=trade.SellStop (InpLotSize,price,_Symbol,0,0,tt,exp,"BGRID"); break;
+         case ORDER_TYPE_BUY_LIMIT: ok=trade.BuyLimit (InpLotSize,price,_Symbol,0,0,tt,exp,"BGRID"); break;
+         case ORDER_TYPE_SELL_LIMIT:ok=trade.SellLimit(InpLotSize,price,_Symbol,0,0,tt,exp,"BGRID"); break;
         }
+      if(ok){ Log(TypeName(type)+" @ "+DoubleToString(price,g_digits)+"  ticket="+(string)trade.ResultOrder()); return true; }
       uint rc = trade.ResultRetcode();
-      // transient errors → retry after a short pause
       if(rc==TRADE_RETCODE_REQUOTE || rc==TRADE_RETCODE_PRICE_CHANGED ||
          rc==TRADE_RETCODE_TIMEOUT || rc==TRADE_RETCODE_PRICE_OFF ||
          rc==TRADE_RETCODE_CONNECTION || rc==TRADE_RETCODE_TOO_MANY_REQUESTS)
         { Sleep(200); continue; }
-      Log((isBuy?"BuyStop":"SellStop")+" FAIL @ "+DoubleToString(price,g_digits)+
-          "  rc="+(string)rc+" "+trade.ResultRetcodeDescription());
+      Log(TypeName(type)+" FAIL @ "+DoubleToString(price,g_digits)+"  rc="+(string)rc+" "+trade.ResultRetcodeDescription());
       return false;
      }
    return false;
@@ -139,10 +148,21 @@ void CancelPending(const bool buys, const bool sells)
       if(!ordInfo.SelectByIndex(i)) continue;
       if(ordInfo.Symbol()!=_Symbol || ordInfo.Magic()!=InpMagic) continue;
       ENUM_ORDER_TYPE t = ordInfo.OrderType();
-      if((buys && t==ORDER_TYPE_BUY_STOP) || (sells && t==ORDER_TYPE_SELL_STOP))
+      bool isBuy  = (t==ORDER_TYPE_BUY_STOP  || t==ORDER_TYPE_BUY_LIMIT);
+      bool isSell = (t==ORDER_TYPE_SELL_STOP || t==ORDER_TYPE_SELL_LIMIT);
+      if((buys && isBuy) || (sells && isSell))
          if(!trade.OrderDelete(ordInfo.Ticket()))
             Log("OrderDelete FAIL #"+(string)ordInfo.Ticket()+" rc="+(string)trade.ResultRetcode());
      }
+  }
+
+int CountAllPending()
+  {
+   int n=0;
+   for(int i=OrdersTotal()-1;i>=0;i--)
+      if(ordInfo.SelectByIndex(i))
+         if(ordInfo.Symbol()==_Symbol && ordInfo.Magic()==InpMagic) n++;
+   return n;
   }
 
 void CloseAllPositions()
@@ -181,24 +201,51 @@ void PlaceGrid()
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    long   stops = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
-   // stop orders must sit at least STOPS_LEVEL away from price
-   double firstD = MathMax(InpFirstDistPoints, (double)stops+1) * g_point;
+   double minGap = MathMax(InpFirstDistPoints, (double)stops+1) * g_point;
    double step   = MathMax(InpStepPoints, 1.0) * g_point;
-
    int placed=0;
-   for(int i=0;i<InpGridLevels;i++)
+
+   if(InpAlternatingGrid)
      {
-      double buyP  = ask + firstD + i*step;        // Buy Stops ABOVE ask
-      double sellP = bid - firstD - i*step;        // Sell Stops BELOW bid
-      if(sellP <= 0) continue;
-      if(SendStop(true,  buyP))  placed++;
-      if(SendStop(false, sellP)) placed++;
+      // يملّي الجهتين بالكامل، بيع/شرا متبادل في كل مستوى (بدون فراغ)
+      int toggle=0;                                 // 0=Buy, 1=Sell
+      // فوق السعر
+      for(int i=0;i<InpGridLevels;i++)
+        {
+         double lvl = ask + minGap + i*step;
+         bool buy = (toggle%2==0);
+         // شراء فوق = Buy Stop ، بيع فوق = Sell Limit
+         if(SendPending(buy?ORDER_TYPE_BUY_STOP:ORDER_TYPE_SELL_LIMIT, lvl)) placed++;
+         toggle++;
+        }
+      // تحت السعر
+      for(int i=0;i<InpGridLevels;i++)
+        {
+         double lvl = bid - minGap - i*step;
+         if(lvl<=0) continue;
+         bool buy = (toggle%2==0);
+         // شراء تحت = Buy Limit ، بيع تحت = Sell Stop
+         if(SendPending(buy?ORDER_TYPE_BUY_LIMIT:ORDER_TYPE_SELL_STOP, lvl)) placed++;
+         toggle++;
+        }
      }
+   else
+     {
+      // شبكة اختراق كلاسيكية: Buy Stop فوق ، Sell Stop تحت
+      for(int i=0;i<InpGridLevels;i++)
+        {
+         double buyP  = ask + minGap + i*step;
+         double sellP = bid - minGap - i*step;
+         if(SendPending(ORDER_TYPE_BUY_STOP,  buyP))  placed++;
+         if(sellP>0 && SendPending(ORDER_TYPE_SELL_STOP, sellP)) placed++;
+        }
+     }
+
    g_gridCenter = (ask+bid)*0.5;
    g_gridActive = (placed>0);
    g_lastGrid   = TimeCurrent();
-   Log("GRID placed "+(string)placed+" orders around "+DoubleToString(g_gridCenter,g_digits)+
-       " (spread="+(string)spread+")");
+   Log((InpAlternatingGrid?"ALT-GRID":"GRID")+" placed "+(string)placed+" orders around "+
+       DoubleToString(g_gridCenter,g_digits)+" (spread="+(string)spread+")");
   }
 
 //================= GLOBAL EXIT ====================================
@@ -385,8 +432,8 @@ void OnTick()
    ManageTriggered();   // winners close · losers get grace then cut
    ApplyTrailing();
 
-   // 3) grid lifecycle
-   int pend = CountPending(ORDER_TYPE_BUY_STOP)+CountPending(ORDER_TYPE_SELL_STOP);
+   // 4) grid lifecycle
+   int pend = CountAllPending();
    int pos  = CountPositions(-1);
 
    if(pend==0 && pos==0)
