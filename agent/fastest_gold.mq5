@@ -707,7 +707,7 @@ void OpenGrid(int signal, double atrVal)
       if(ok){fired++;g_totalTrades++;}
      }
    if(fired>0){g_lastEntryTime=TimeCurrent();
-     Print(EA_NAME,": GRID fired=",fired,"/",g_gridLevels," ",isBuy?"BUY":"SELL"," step=",g_gridStep,"pts");}
+     EALog("GRID fired="+IntegerToString(fired)+"/"+IntegerToString(g_gridLevels)+" "+(isBuy?"BUY":"SELL")+" step="+IntegerToString(g_gridStep)+"pts");}
   }
 
 //+------------------------------------------------------------------+
@@ -747,7 +747,7 @@ void OpenHedge(int signal, double atrVal)
       if(ok){fired++;g_totalTrades++;}
      }
    if(fired>0){g_lastEntryTime=TimeCurrent();
-     Print(EA_NAME,": HEDGE fired=",fired," main=",mainLot," opp=",hedgeLot);}
+     EALog("HEDGE fired="+IntegerToString(fired)+" main="+DoubleToString(mainLot,2)+" opp="+DoubleToString(hedgeLot,2));}
   }
 
 //+------------------------------------------------------------------+
@@ -791,7 +791,7 @@ void CheckScale()
         {
          if(g_scaledCount<200) g_scaledFrom[g_scaledCount++]=tk;
          g_totalTrades++; g_lastEntryTime=TimeCurrent();
-         Print(EA_NAME,": SCALE #",tk," lot=",newLot," loss=",DoubleToString(lossPts,0),"pts");
+         EALog("SCALE #"+IntegerToString((int)tk)+" lot="+DoubleToString(newLot,2)+" loss="+DoubleToString(lossPts,0)+"pts");
         }
      }
   }
@@ -898,8 +898,8 @@ void OpenBasket(const ENUM_ORDER_TYPE dir, const double atrVal,
 
    if(fired > 0)
      { g_lastEntryTime = TimeCurrent();
-       Print(EA_NAME,": BASKET fired=",fired,"/3 dir=",isBuy?"BUY":"SELL",
-             " TP$=",g_tpUSD," SL$=",g_slUSD); }
+       EALog("BASKET fired="+IntegerToString(fired)+"/3 dir="+(isBuy?"BUY":"SELL")
+             +" TP$="+DoubleToString(g_tpUSD,1)+" SL$="+DoubleToString(g_slUSD,1)); }
   }
 
 //+------------------------------------------------------------------+
@@ -1075,19 +1075,19 @@ void ManagePositions()
          if(needMove)
            {
             if(trade.PositionModify(tk, bePrice, posInfo.TakeProfit()))
-               Print(EA_NAME,": BE moved — profit=$",DoubleToString(profit,2));
+               EALog("BE نقطة تعادل #"+IntegerToString((int)tk)+" — profit=$"+DoubleToString(profit,2));
            }
         }
 
       // TP: check immediately
       if(profit >= effTP)
         { trade.PositionClose(tk);
-          Print(EA_NAME,": TP $",DoubleToString(profit,2)," (limit $",DoubleToString(effTP,2),") age=",ageSeconds,"s"); continue; }
+          EALog("✅ TP #"+IntegerToString((int)tk)+" +$"+DoubleToString(profit,2)+" (هدف $"+DoubleToString(effTP,2)+") عمر="+IntegerToString(ageSeconds)+"s"); continue; }
 
       // SL: wait 60s first (spread cost needs time to recover)
       if(ageSeconds >= 60 && profit <= -effSL)
         { trade.PositionClose(tk);
-          Print(EA_NAME,": SL $",DoubleToString(profit,2)," (limit $",DoubleToString(effSL,2),") age=",ageSeconds,"s"); continue; }
+          EALog("🛑 SL #"+IntegerToString((int)tk)+" $"+DoubleToString(profit,2)+" (حد $"+DoubleToString(effSL,2)+") عمر="+IntegerToString(ageSeconds)+"s"); continue; }
      }
   }
 
