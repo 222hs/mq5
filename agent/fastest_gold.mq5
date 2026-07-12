@@ -1421,6 +1421,25 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
    double commission = HistoryDealGetDouble(dealTicket, DEAL_COMMISSION);
    double net        = profit + swap + commission;
    g_dayPL += net;
+
+   // ── سبب الإغلاق لكل صفقة ─────────────────────────────────────────
+   long   reason = HistoryDealGetInteger(dealTicket, DEAL_REASON);
+   long   posTk  = HistoryDealGetInteger(dealTicket, DEAL_POSITION_ID);
+   string why;
+   switch((int)reason)
+     {
+      case DEAL_REASON_TP:       why="🎯 Take Profit (البروكر)";        break;
+      case DEAL_REASON_SL:       why="🛑 Stop Loss (البروكر)";          break;
+      case DEAL_REASON_SO:       why="☠ Stop Out (نداء هامش)";          break;
+      case DEAL_REASON_EXPERT:   why="🤖 قاعدة البوت (شوف السطر فوق)";   break;
+      case DEAL_REASON_CLIENT:
+      case DEAL_REASON_MOBILE:
+      case DEAL_REASON_WEB:      why="✋ إغلاق يدوي منك";                break;
+      case DEAL_REASON_ROLLOVER: why="🕒 Rollover";                     break;
+      default:                   why="سبب #"+IntegerToString((int)reason);
+     }
+   EALog("═ إغلاق #"+IntegerToString((int)posTk)+" | السبب: "+why+" | صافي "+(net>=0?"+":"")+"$"+DoubleToString(net,2)+" ═");
+
    // عدّاد الخسائر المتتالية — يوقف فتح صفقات جديدة عند بلوغ الحد
    if(net < 0.0)      g_consecLosses++;
    else if(net > 0.0) g_consecLosses = 0;
