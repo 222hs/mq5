@@ -94,7 +94,7 @@ const mergeKeepDirty = (server, dirty, prev) => {
   return m;
 };
 
-export default function StrategyConfig() {
+export default function StrategyConfig({ endpoint = '/api/settings', winning = WINNING, title = 'Strategy Config · GOLD' }) {
   const [draft, setDraft] = useState({});
   const [loaded, setLoaded] = useState(false);
   const [msg, setMsg] = useState('');
@@ -103,7 +103,7 @@ export default function StrategyConfig() {
 
   useEffect(() => {
     let alive = true;
-    fetch(`${API_URL}/api/settings`, { headers: AUTH })
+    fetch(`${API_URL}${endpoint}`, { headers: AUTH })
       .then((r) => (r.ok ? r.json() : null))
       .then((s) => { if (alive && s) { setDraft(s); setLoaded(true); } })
       .catch(() => {});
@@ -117,7 +117,7 @@ export default function StrategyConfig() {
     return p;
   };
   const post = async (body) => {
-    const r = await fetch(`${API_URL}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...AUTH }, body: JSON.stringify(body) });
+    const r = await fetch(`${API_URL}${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...AUTH }, body: JSON.stringify(body) });
     if (!r.ok) throw new Error('bad');
     return r.json();
   };
@@ -155,8 +155,8 @@ export default function StrategyConfig() {
 
   const resetWinning = async () => {
     setBusy(true); setMsg('APPLYING WINNING CONFIG…');
-    setDraft((d) => ({ ...d, ...WINNING }));
-    try { const d = await post(payload(WINNING)); dirty.current.clear(); if (d.settings) setDraft(d.settings); setMsg('✓ WINNING CONFIG APPLIED (PF 1.66)'); }
+    setDraft((d) => ({ ...d, ...winning }));
+    try { const d = await post(payload(winning)); dirty.current.clear(); if (d.settings) setDraft(d.settings); setMsg('✓ WINNING CONFIG APPLIED (PF 1.66)'); }
     catch { setMsg('✕ ERROR'); }
     setBusy(false); setTimeout(() => setMsg(''), 3500);
   };
@@ -194,7 +194,7 @@ export default function StrategyConfig() {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between mb-3">
-        <span className="panel-title">Strategy Config · GOLD</span>
+        <span className="panel-title">{title}</span>
         <span style={{ fontSize: 9, letterSpacing: 1, color: msg ? (msg.startsWith('✓') ? EMERALD : msg.startsWith('✕') ? CRIMSON : AMBER) : MUTED }}>
           {msg || '● SYNCED'}
         </span>

@@ -701,21 +701,13 @@ def sync_btc_settings():
             print(f"   Lot={settings.get('LotSize')}  TP$={settings.get('TP_USD')}  SL$={settings.get('SL_USD')}")
             print(f"   MaxSpread={settings.get('MaxSpread')}  MaxPos={settings.get('MaxPositions')}  CD={settings.get('CooldownSecs')}s")
             print(f"   OrderType={ot}  Bot={'ON' if settings.get('BotRunning') else 'OFF'}")
-            btc_keys = [
-                "LotSize", "TP_USD", "SL_USD", "MaxSpread", "MaxPositions",
-                "CooldownSecs", "MaxLossPerDay", "MaxProfitPerDay",
-                "TradeHoursStart", "TradeHoursEnd", "BotRunning",
-                "OrderType", "RiskMode", "RiskPercent",
-                "RSIBuyMax", "RSISellMin", "UseH1Filter",
-                "StrategyMode", "GridLevels", "GridStep",
-                "HedgeLotMult", "ScaleStep", "ScaleMult", "MaxScales",
-            ]
-            for k in btc_keys:
-                if k in settings:
+            # اكتب كل مفاتيح الإعدادات (كل ميزات fastest_btc) لـ BSX_*.txt
+            for k, v in settings.items():
+                if isinstance(v, (int, float, str)):
                     fpath = os.path.join(_MT5_COMMON, f"BSX_{k}.txt")
                     try:
                         with open(fpath, "w", encoding="ascii") as f:
-                            f.write(str(settings[k]))
+                            f.write(str(v))
                     except Exception:
                         pass
             print(f"   📝 BSX_*.txt ✓")
@@ -1182,9 +1174,7 @@ def main():
                 # لا تأثير له إذا كانت الداشبورد هي مصدر الحقيقة أصلاً (seed no-op).
                 push_local_settings()
                 sync_settings()          # الذهب دائماً — لا يُربط بكشف النشاط
-                _, btc_active = detect_active_bots()
-                if btc_active:
-                    sync_btc_settings()
+                sync_btc_settings()      # البتكوين دائماً (البوت المستقل يحتاجها من أول تشغيل)
                 sync_hedge_settings()    # Hedge settings — دائماً
                 sync_grx_settings()      # سحب إعدادات GRX من backend → GRX_Settings.json
                 last_settings_sync = now

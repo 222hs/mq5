@@ -4,12 +4,14 @@ import Nexus from "./nexus/Nexus.jsx";
 import Dashboard from "./Dashboard.jsx";
 import Settings from "./Settings.jsx";
 import Analysis from "./Analysis.jsx";
+import BtcConfig from "./BtcConfig.jsx";
 
 const TABS = [
   { id: "onyx",      label: "ONYX"     },
   { id: "nexus",     label: "NEXUS"    },
   { id: "analysis",  label: "ANALYSIS" },
-  { id: "settings",  label: "SETTINGS" },
+  { id: "settings",  label: "GOLD" },
+  { id: "btc",       label: "BTC ₿" },
   { id: "legacy",    label: "LEGACY"   },
 ];
 
@@ -45,7 +47,7 @@ export default function App() {
         ))}
       </div>
       <div style={{ width: "100%" }}>
-        {tab === "onyx" ? <Onyx /> : tab === "nexus" ? <Nexus /> : tab === "analysis" ? <Analysis /> : tab === "legacy" ? <Dashboard /> : <Settings />}
+        {tab === "onyx" ? <Onyx /> : tab === "nexus" ? <Nexus /> : tab === "analysis" ? <Analysis /> : tab === "legacy" ? <Dashboard /> : tab === "btc" ? <BtcConfig /> : <Settings />}
       </div>
     </div>
   );

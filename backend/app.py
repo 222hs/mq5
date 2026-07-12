@@ -145,32 +145,24 @@ DEFAULT_SETTINGS = {
     "PartialTP_Frac": 0.5,
 }
 
+# البتكوين: نفس كل مفاتيح الذهب + تعديلات خاصة بالبتكوين (ستوب أوسع 2.0xATR)
 BTC_DEFAULT_SETTINGS = {
+    **DEFAULT_SETTINGS,
     "LotSize":        0.01,
     "TP_USD":         20.0,
     "SL_USD":         10.0,
-    "MaxSpread":      2000,
+    "MaxSpread":      6000,
     "MaxPositions":   3,
-    "CooldownSecs":   90,
+    "CooldownSecs":   0,
     "MaxLossPerDay":  100.0,
     "MaxProfitPerDay":500.0,
-    "TradeHoursStart":0,
-    "TradeHoursEnd":  24,
-    "BotRunning":     1,
-    "OrderType":      0,
-    "RiskMode":       0,
-    "RiskPercent":    1.0,
-    "RSIBuyMax":      65.0,
-    "RSISellMin":     35.0,
-    "UseH1Filter":    1,
-    "StrategyMode":   0,
-    "GridLevels":     3,
-    "GridStep":       50,
-    "ClaudeGrid":     0,
-    "HedgeLotMult":   0.5,
-    "ScaleStep":      30,
-    "ScaleMult":      1.5,
-    "MaxScales":      3,
+    "AutoSLATR":      2.0,     # البتكوين يحتاج ستوب أوسع (مؤكّد بالباك-تيست)
+    "AutoTPRR":       2.0,
+    "RSIBuyMax":      75.0,
+    "RSISellMin":     25.0,
+    "TradeHoursStart":13,
+    "TradeHoursEnd":  18,
+    "MaxConsecLosses":3,
 }
 
 HEDGE_DEFAULT_SETTINGS = {
