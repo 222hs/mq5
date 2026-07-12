@@ -1,7 +1,7 @@
 //+------------------------------------------------------------------+
 //|                                                GoldScalperEA.mq5 |
 //|                                        GoldScalperX version 9.02 |
-//|  Gold scalper — bar-gated, closed-bar signals, smart filters     |
+//|  Gold scalper - bar-gated, closed-bar signals, smart filters     |
 //+------------------------------------------------------------------+
 #property copyright "GoldScalperX"
 #property version   "9.16"
@@ -50,8 +50,8 @@ CPositionInfo  posInfo;
 long     g_magic         = 0;
 int      hRSI = INVALID_HANDLE, hEMA9 = INVALID_HANDLE,
          hEMA21 = INVALID_HANDLE, hATR = INVALID_HANDLE,
-         hH1EMA = INVALID_HANDLE,   // H1 EMA21 — bias filter
-         hM15EMA = INVALID_HANDLE,  // M15 EMA21 — MTF filter (مؤكّد بالباك-تيست)
+         hH1EMA = INVALID_HANDLE,   // H1 EMA21 - bias filter
+         hM15EMA = INVALID_HANDLE,  // M15 EMA21 - MTF filter (مؤكّد بالباك-تيست)
          hM5EMA9 = INVALID_HANDLE, hM5EMA21 = INVALID_HANDLE; // M5 mid-trend filter
 datetime g_lastEntryTime = 0;
 datetime g_lastBar       = 0;
@@ -78,10 +78,10 @@ double   g_riskPct         = 1.0;  // نسبة الخطر % (لما riskMode=1)
 double   g_rsiBuyMax       = 65.0; // Claude auto-adjust: حد RSI لـ BUY
 double   g_rsiSellMin      = 35.0; // Claude auto-adjust: حد RSI لـ SELL
 bool     g_useH1Filter     = true;  // فلتر اتجاه H1 EMA21
-bool     g_useM15Filter    = true;  // فلتر اتجاه M15 (توافق التايمات — يرفع الأداء)
+bool     g_useM15Filter    = true;  // فلتر اتجاه M15 (توافق التايمات - يرفع الأداء)
 bool     g_useRSIFilter    = true;  // فلتر RSI
 
-// Strategy mode — bitmask: 1=Grid  2=Hedge  4=Scale
+// Strategy mode - bitmask: 1=Grid  2=Hedge  4=Scale
 int    g_strategyMode  = 0;
 int    g_gridLevels    = 3;    // عدد مستويات الشبكة
 int    g_gridStep      = 50;   // نقاط بين كل مستوى
@@ -93,7 +93,7 @@ int    g_scaleStep     = 30;   // نقاط خسارة قبل scale-in
 double g_scaleMult     = 1.5;  // مضاعف اللوت عند scale
 int    g_maxScales     = 3;    // أقصى scale-ins لكل صفقة
 
-// ── فلاتر السكالبينج (من سكِل XAUUSD) — كلها OFF افتراضياً ──────────
+// ── فلاتر السكالبينج (من سكِل XAUUSD) - كلها OFF افتراضياً ──────────
 bool   g_useATRFilter   = false; // فلتر تقلب: يمنع الدخول لو ATR عالي
 double g_maxATRPoints   = 80.0;  // أقصى ATR بالنقاط للسماح بالدخول
 bool   g_blockRollover  = false; // يمنع التداول وقت الرول-أوفر 21-22 GMT
@@ -124,12 +124,12 @@ bool   g_exitOnReverse  = false; // يقص الصفقة الخاسرة لو ال
 double g_quickTPUSD     = 0.0;   // 0=معطّل | يسكّر الصفقة كاملة عند ربح $ ثابت (بغضّ النظر عن AUTO)
 double g_trailStartUSD  = 0.0;   // 0=معطّل | يبدأ التريلينج بعد ربح $
 double g_trailGiveUSD   = 0.5;   // كم $ يسمح يرجع من الذروة قبل ما يقفل (أصغر=أسرع)
-double g_partialTP_R    = 0.0;   // 0=معطّل | جني جزئي عند ربح = R× الستوب
+double g_partialTP_R    = 0.0;   // 0=معطّل | جني جزئي عند ربح = Rx الستوب
 double g_partialTP_Frac = 0.5;   // نسبة الصفقة التي تُغلق عند الجني الجزئي
 bool   g_lkTp1[256];             // هل تم الجني الجزئي لهذه الصفقة؟
 const double AUTO_RISK_PCT = 1.0;  // نسبة المخاطرة من الرصيد لكل صفقة
 const double AUTO_SL_ATR   = 1.25; // مضاعف ATR للستوب (M1 مؤكّد بالباك-تيست)
-const double AUTO_TP_RR    = 2.8;  // نسبة الهدف للخطر R:R (M1: PF 1.36 · 40 صفقة/يوم)
+const double AUTO_TP_RR    = 2.8;  // نسبة الهدف للخطر R:R (M1: PF 1.36 - 40 صفقة/يوم)
 
 // Scale tracking
 ulong  g_scaledFrom[200];
@@ -152,7 +152,7 @@ long MagicFromSymbol(const string sym)
 //+------------------------------------------------------------------+
 double ReadSetting(const string name, const double fallback)
   {
-   // كل إعداد في ملف نصي منفصل — سطر واحد فقط يحتوي الرقم
+   // كل إعداد في ملف نصي منفصل - سطر واحد فقط يحتوي الرقم
    string fname = "GSX_" + name + ".txt";
    int fh = FileOpen(fname, FILE_READ|FILE_ANSI|FILE_COMMON);
    if(fh == INVALID_HANDLE) return fallback;
@@ -168,7 +168,7 @@ bool     g_botRunning = true;
 //+------------------------------------------------------------------+
 void WriteCurrentSettings()
   {
-   // يكتب الإعدادات الفعلية الشغّالة حالياً → الـ Agent يقرأها ويرفعها للداشبورد
+   // يكتب الإعدادات الفعلية الشغّالة حالياً -> الـ Agent يقرأها ويرفعها للداشبورد
    int fh = FileOpen(CURRENT_FILE, FILE_WRITE|FILE_TXT|FILE_COMMON);
    if(fh == INVALID_HANDLE) return;
    string j = "{\n";
@@ -260,7 +260,7 @@ void EALog(string msg)
   }
 
 //+------------------------------------------------------------------+
-// يكتب حالة البوت الحالية (سبب عدم الدخول) لملف يقرأه الأجنت → الشريط
+// يكتب حالة البوت الحالية (سبب عدم الدخول) لملف يقرأه الأجنت -> الشريط
 void WriteStatus(const string s)
   {
    int fh = FileOpen("GSX_Status.txt", FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
@@ -270,7 +270,7 @@ void WriteStatus(const string s)
   }
 
 //+------------------------------------------------------------------+
-// يحسب اللوت — ثابت أو ديناميكي حسب الإعداد
+// يحسب اللوت - ثابت أو ديناميكي حسب الإعداد
 //+------------------------------------------------------------------+
 // آخر قيمة ATR بالسعر (لحساب الوضع الآلي)
 double CurrentATRprice()
@@ -438,8 +438,8 @@ void LoadSettings()
      {
       string otStr = g_orderType==3?"BASKET":g_orderType==1?"LIMIT":g_orderType==2?"STOP":"MARKET";
       string lotStr = g_riskMode==1 ? ("DYNAMIC "+DoubleToString(g_riskPct,1)+"%="+DoubleToString(CalcLot(),2)) : DoubleToString(g_lot,2);
-      // طباعة كل الإعدادات المحمّلة من الداشبورد — للتأكد أن كل تعديل وصل للبوت
-      EALog("═══════ إعدادات محمّلة من الداشبورد ═══════");
+      // طباعة كل الإعدادات المحمّلة من الداشبورد - للتأكد أن كل تعديل وصل للبوت
+      EALog("===== settings loaded from dashboard =====");
       EALog("Lot="+lotStr+" | TP$="+DoubleToString(g_tpUSD,2)+" | SL$="+DoubleToString(g_slUSD,2)
             +" | RiskMode="+(g_riskMode==1?"DYNAMIC "+DoubleToString(g_riskPct,1)+"%":"FIXED"));
       EALog("MaxPos="+IntegerToString(g_maxPositions)+" | Spread="+DoubleToString(g_maxSpread,0)
@@ -454,25 +454,25 @@ void LoadSettings()
       EALog("Scalp: ATRFilter="+(g_useATRFilter?"ON max="+DoubleToString(g_maxATRPoints,0)+"pts":"OFF")
             +" | Rollover="+(g_blockRollover?"BLOCK 21-22GMT":"OFF")
             +" | MaxConsecLosses="+(g_maxConsecLosses>0?IntegerToString(g_maxConsecLosses):"OFF"));
-      EALog("AutoMode="+(g_autoTPSL?"ON — Lot+TP+SL ديناميكي (risk "+DoubleToString(AUTO_RISK_PCT,1)+"% · ATR×"+DoubleToString(AUTO_SL_ATR,1)+" · RR "+DoubleToString(AUTO_TP_RR,1)+")":"OFF — يدوي")
+      EALog("AutoMode="+(g_autoTPSL?"ON - dynamic Lot+TP+SL (risk "+DoubleToString(AUTO_RISK_PCT,1)+"% - ATRx"+DoubleToString(AUTO_SL_ATR,1)+" - RR "+DoubleToString(AUTO_TP_RR,1)+")":"OFF - manual")
             +" | SplitLot="+(g_splitLot?"ON ÷"+IntegerToString(g_maxPositions):"OFF")
-            +" | MaxHold="+(g_maxHoldMin>0?IntegerToString(g_maxHoldMin)+"د":"OFF")
+            +" | MaxHold="+(g_maxHoldMin>0?IntegerToString(g_maxHoldMin)+"m":"OFF")
             +" | LockProfit="+(g_lockProfitUSD>0?"$"+DoubleToString(g_lockProfitUSD,2)+"@"+IntegerToString(g_stallSecs)+"s":"OFF")
             +" | SyncTPSL="+(g_syncTPSL?"ON":"OFF")
             +" | ExitReverse="+(g_exitOnReverse?"ON":"OFF")
             +" | CashTP="+(g_quickTPUSD>0?"$"+DoubleToString(g_quickTPUSD,2):"OFF")
             +" | Trail="+(g_trailStartUSD>0?"start$"+DoubleToString(g_trailStartUSD,2)+" give$"+DoubleToString(g_trailGiveUSD,2):"OFF")
             +" | TrendReverse="+(g_trendReverse?"ON@"+IntegerToString(g_reverseAfterLosses):"OFF")
-            +" | PartialTP="+(g_partialTP_R>0?DoubleToString(g_partialTP_R,1)+"R×"+DoubleToString(g_partialTP_Frac*100,0)+"%":"OFF")
-            +" → lot/trade="+DoubleToString(CalcLot(),2));
-      EALog("═══════════════════════════════════════");
+            +" | PartialTP="+(g_partialTP_R>0?DoubleToString(g_partialTP_R,1)+"Rx"+DoubleToString(g_partialTP_Frac*100,0)+"%":"OFF")
+            +" -> lot/trade="+DoubleToString(CalcLot(),2));
+      EALog("=======================================");
      }
-   // heartbeat دائم — الـ Agent يعتمد على mtime هذا الملف لكشف أن البوت حي
+   // heartbeat دائم - الـ Agent يعتمد على mtime هذا الملف لكشف أن البوت حي
    WriteCurrentSettings();
   }
 
 //+------------------------------------------------------------------+
-// نافذة الرول-أوفر اليومي 21:00–22:00 GMT — وقت صيد الستوبات (من سكِل XAUUSD)
+// نافذة الرول-أوفر اليومي 21:00–22:00 GMT - وقت صيد الستوبات (من سكِل XAUUSD)
 bool InRolloverWindow()
   {
    MqlDateTime dt;
@@ -585,7 +585,7 @@ double MyFloatingPL()
   }
 
 //+------------------------------------------------------------------+
-//| Bull candle: minimal filter — closed up, not a doji, sane range  |
+//| Bull candle: minimal filter - closed up, not a doji, sane range  |
 //+------------------------------------------------------------------+
 bool StrongBull(double o, double c, double h, double l, double atr)
   {
@@ -597,7 +597,7 @@ bool StrongBull(double o, double c, double h, double l, double atr)
   }
 
 //+------------------------------------------------------------------+
-//| Bear candle: minimal filter — closed down, not a doji, sane range|
+//| Bear candle: minimal filter - closed down, not a doji, sane range|
 //+------------------------------------------------------------------+
 bool StrongBear(double o, double c, double h, double l, double atr)
   {
@@ -657,7 +657,7 @@ void OnTick()
    if(CopyBuffer(hH1EMA, 0, 0, 3, h1ema) >= 3)
       h1BullBias = (h1ema[1] >= h1ema[2]);
 
-   // ── M15 BIAS: توافق التايمات (MTF — مؤكّد بالباك-تيست) ──────────
+   // ── M15 BIAS: توافق التايمات (MTF - مؤكّد بالباك-تيست) ──────────
    double m15ema[];
    ArraySetAsSeries(m15ema, true);
    bool m15BullBias = true;
@@ -701,7 +701,7 @@ void OnTick()
       g_reverseActive = true;
       if(bullVotes == 3)      g_trendDir =  1;   // كل الفريمات صعود
       else if(bullVotes == 0) g_trendDir = -1;   // كل الفريمات هبوط
-      else                    g_trendDir =  0;   // مختلفة = رينج → إيقاف
+      else                    g_trendDir =  0;   // مختلفة = رينج -> إيقاف
       // طبّق: مع الترند فقط، وإلا أوقف الدخول
       if(g_trendDir == 0) signal = 0;
       else if(signal != 0 && signal != g_trendDir) signal = 0; // لا تدخل ضد الترند
@@ -761,7 +761,7 @@ void OnTick()
    else if(!coolOK)                         reason = "Cooldown between trades";
    else if(signal==0 && (bullBar||bearBar)) reason = "Signal rejected (H1/M15/RSI filter)";
    else if(signal==0)                       reason = "No momentum signal (waiting)";
-   // reason=="" → filters clear, trading
+   // reason=="" -> filters clear, trading
    if(reason != g_blockReason)
      {
       g_blockReason = reason;
@@ -770,7 +770,7 @@ void OnTick()
      }
    WriteStatus(reason=="" ? "OK|trading" : "BLOCK|"+reason);
 
-   // SCALE — يعمل كل شمعة بغض النظر عن الإشارة
+   // SCALE - يعمل كل شمعة بغض النظر عن الإشارة
    if((g_strategyMode & 4) != 0 && g_botRunning && !DayLimitHit())
       CheckScale();
 
@@ -783,7 +783,7 @@ void OnTick()
      {
       string why = "";
       if(!rsiBuyOK)            why = "RSI="+DoubleToString(rsi1,1)+" >"+DoubleToString(g_rsiBuyMax,1);
-      else if(!h1BuyOK)        why = "H1=↓ (filter ON)";
+      else if(!h1BuyOK)        why = "H1=DN (filter ON)";
       else                     why = "unknown";
       Print(EA_NAME,": BUY skipped ",why);
      }
@@ -791,7 +791,7 @@ void OnTick()
      {
       string why = "";
       if(!rsiSellOK)           why = "RSI="+DoubleToString(rsi1,1)+" <"+DoubleToString(g_rsiSellMin,1);
-      else if(!h1SellOK)       why = "H1=↑ (filter ON)";
+      else if(!h1SellOK)       why = "H1=UP (filter ON)";
       else                     why = "unknown";
       Print(EA_NAME,": SELL skipped ",why);
      }
@@ -896,8 +896,8 @@ void OpenGrid(int signal, double atrVal)
          extra++;
         }
       if(fired>0){g_lastEntryTime=TimeCurrent(); g_totalTrades+=fired;
-        EALog("🧮 AIGRID fired="+IntegerToString(fired)+" "+(isBuy?"BUY":"SELL")+" (مستويات كلود + تعبئة)");}
-      else EALog("🧮 AIGRID: ما فيه مستويات كلود بعد — انتظر");
+        EALog("AIGRID fired="+IntegerToString(fired)+" "+(isBuy?"BUY":"SELL")+" (Claude levels + fill)");}
+      else EALog("AIGRID: no Claude levels yet - waiting");
       return;
      }
 
@@ -905,12 +905,12 @@ void OpenGrid(int signal, double atrVal)
      {
       if(CountMyPositions()>=g_maxPositions) break;
       bool ok=false;
-      if(i==0) // [0] market — دخول فوري
+      if(i==0) // [0] market - دخول فوري
         {
          if(isBuy){double sl=NormalizeDouble(ask-slD,digs);double tp=NormalizeDouble(ask+tpD,digs);ok=trade.Buy(lot,_Symbol,ask,sl,tp,"GRID[0]");}
          else     {double sl=NormalizeDouble(bid+slD,digs);double tp=NormalizeDouble(bid-tpD,digs);ok=trade.Sell(lot,_Symbol,bid,sl,tp,"GRID[0]");}
         }
-      else // [i] limit — ينتظر السعر الأفضل
+      else // [i] limit - ينتظر السعر الأفضل
         {
          double off=i*stepD;
          if(isBuy){double e=NormalizeDouble(bid-off,digs);double sl=NormalizeDouble(e-slD,digs);double tp=NormalizeDouble(e+tpD,digs);ok=trade.BuyLimit(lot,e,_Symbol,sl,tp,ORDER_TIME_SPECIFIED,expiry,"GRID["+IntegerToString(i)+"]");}
@@ -923,7 +923,7 @@ void OpenGrid(int signal, double atrVal)
   }
 
 //+------------------------------------------------------------------+
-// HEDGE: يفتح BUY + SELL في نفس الوقت — كل واحد يربح بروحه
+// HEDGE: يفتح BUY + SELL في نفس الوقت - كل واحد يربح بروحه
 void OpenHedge(int signal, double atrVal)
   {
    double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
@@ -940,7 +940,7 @@ void OpenHedge(int signal, double atrVal)
    bool isBuy=(signal==1);
    int fired=0;
 
-   // الصفقة الرئيسية — اتجاه الإشارة
+   // الصفقة الرئيسية - اتجاه الإشارة
    double ptM=(tickSz>0&&mainLot>0)?(tickVal/tickSz)*mainLot:1.0;
    double slDM=MathMax(g_slUSD/ptM,safeMin); double tpDM=MathMax(g_tpUSD/ptM,safeMin);
    bool ok=false;
@@ -948,7 +948,7 @@ void OpenHedge(int signal, double atrVal)
    else     {double sl=NormalizeDouble(bid+slDM,digs);double tp=NormalizeDouble(bid-tpDM,digs);ok=trade.Sell(mainLot,_Symbol,bid,sl,tp,"HEDGE_MAIN");}
    if(ok){fired++;g_totalTrades++;}
 
-   // الصفقة المقابلة — الهيدج
+   // الصفقة المقابلة - الهيدج
    if(CountMyPositions()<g_maxPositions)
      {
       double ptH=(tickSz>0&&hedgeLot>0)?(tickVal/tickSz)*hedgeLot:1.0;
@@ -1009,10 +1009,10 @@ void CheckScale()
   }
 
 //+------------------------------------------------------------------+
-// سلة أوردرات — كل إشارة تطلق 3 أوردرات دفعة واحدة:
-//   [0] MARKET  → دخول فوري
-//   [1] STOP    → يصطاد كسر الـ high/low
-//   [2] LIMIT   → يصطاد الرجوع للـ close
+// سلة أوردرات - كل إشارة تطلق 3 أوردرات دفعة واحدة:
+//   [0] MARKET  -> دخول فوري
+//   [1] STOP    -> يصطاد كسر الـ high/low
+//   [2] LIMIT   -> يصطاد الرجوع للـ close
 // إذا السوق ما يقبل STOP أو LIMIT يسقط ذلك الجزء بهدوء
 //+------------------------------------------------------------------+
 void OpenBasket(const ENUM_ORDER_TYPE dir, const double atrVal,
@@ -1054,7 +1054,7 @@ void OpenBasket(const ENUM_ORDER_TYPE dir, const double atrVal,
    bool pendingOK = (execMode == SYMBOL_TRADE_EXECUTION_EXCHANGE ||
                      execMode == SYMBOL_TRADE_EXECUTION_MARKET);
 
-   // ── [0] MARKET — فوري دائماً ────────────────────────────────────
+   // ── [0] MARKET - فوري دائماً ────────────────────────────────────
    if(slots >= 1)
      {
       bool ok;
@@ -1069,7 +1069,7 @@ void OpenBasket(const ENUM_ORDER_TYPE dir, const double atrVal,
       else    Print(EA_NAME,": BASKET[0] MARKET FAIL ",trade.ResultRetcode());
      }
 
-   // ── [1] STOP — يصطاد الكسر فوق High / تحت Low ─────────────────
+   // ── [1] STOP - يصطاد الكسر فوق High / تحت Low ─────────────────
    if(effectiveSlots >= 2 && SymbolTradable() && pendingOK)
      {
       double buf = MathMax(tickSz * 5, minD);
@@ -1089,8 +1089,8 @@ void OpenBasket(const ENUM_ORDER_TYPE dir, const double atrVal,
       else    Print(EA_NAME,": BASKET[1] STOP SKIP (",trade.ResultRetcode(),")");
      }
 
-   // ── [2] LIMIT — يصطاد الرجوع لـ close الشمعة ───────────────────
-   if(false) // disabled — basket max 2
+   // ── [2] LIMIT - يصطاد الرجوع لـ close الشمعة ───────────────────
+   if(false) // disabled - basket max 2
      {
       bool ok;
       if(isBuy)
@@ -1131,7 +1131,7 @@ void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal,
    double tickVal  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
    double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    double pointVal = (tickSize > 0.0 && lot > 0.0) ? (tickVal / tickSize) * lot : 1.0;
-   // الحد الأدنى: أكبر قيمة من (minD) أو (ATR×1.5) — يضمن قبول الـ broker لأي رمز
+   // الحد الأدنى: أكبر قيمة من (minD) أو (ATRx1.5) - يضمن قبول الـ broker لأي رمز
    double safeMin  = MathMax(minD, atrVal * 1.5);
    double slD = MathMax(g_slUSD / pointVal, safeMin);
    double tpD = MathMax(g_tpUSD / pointVal, safeMin);
@@ -1145,7 +1145,7 @@ void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal,
                + " ATR=" + DoubleToString(g_snapATR,1)
                + " S="   + sess;
 
-   // انتهاء صلاحية الأوردر المعلق — 5 شمعات
+   // انتهاء صلاحية الأوردر المعلق - 5 شمعات
    datetime expiry = TimeCurrent() + PeriodSeconds(TF) * 5;
 
    double entry, sl, tp; bool ok = false;
@@ -1215,7 +1215,7 @@ void OpenTrade(const ENUM_ORDER_TYPE type, const double atrVal,
       // fallback للـ MARKET إذا رفض الـ broker الـ pending order
       if(g_orderType != 0 && (rc==10044||rc==10018||rc==10019||rc==10034))
         {
-         EALog("fallback → MARKET");
+         EALog("fallback -> MARKET");
          if(type==ORDER_TYPE_BUY)
            { double sl2=NormalizeDouble(ask-slD,digs); double tp2=NormalizeDouble(ask+tpD,digs);
              ok=trade.Buy(lot,_Symbol,ask,sl2,tp2,snap); }
@@ -1291,7 +1291,7 @@ void ManagePositions()
            }
         }
 
-      // Breakeven: إذا الربح وصل 1.5× SL → نقل الـ SL لنقطة التعادل
+      // Breakeven: إذا الربح وصل 1.5x SL -> نقل الـ SL لنقطة التعادل
       if(profit >= effSL * 1.5)
         {
          double openPrice = posInfo.PriceOpen();
@@ -1310,7 +1310,7 @@ void ManagePositions()
          if(needMove)
            {
             if(trade.PositionModify(tk, bePrice, posInfo.TakeProfit()))
-               EALog("BE نقطة تعادل #"+IntegerToString((int)tk)+" — profit=$"+DoubleToString(profit,2));
+               EALog("BE moved #"+IntegerToString((int)tk)+" - profit=$"+DoubleToString(profit,2));
            }
         }
 
@@ -1363,10 +1363,10 @@ void ManagePositions()
                  }
               }
 
-            // قفل الربح عند الركود: بربح ووقف يتقدّم مدة → احجز
+            // قفل الربح عند الركود: بربح ووقف يتقدّم مدة -> احجز
             if(g_lockProfitUSD > 0.0 && profit >= g_lockProfitUSD && (int)(now - g_lkTime[li]) >= g_stallSecs)
               { trade.PositionClose(tk);
-                EALog("🔒 LOCK #"+IntegerToString((int)tk)+" +$"+DoubleToString(profit,2)+" (ربح ثابت "+IntegerToString((int)(now-g_lkTime[li]))+"s)");
+                EALog("LOCK #"+IntegerToString((int)tk)+" +$"+DoubleToString(profit,2)+" (profit stalled "+IntegerToString((int)(now-g_lkTime[li]))+"s)");
                 LkRemove(tk); continue; }
            }
         }
@@ -1377,15 +1377,15 @@ void ManagePositions()
          int posDir = (posInfo.PositionType()==POSITION_TYPE_BUY) ? 1 : -1;
          if(posDir != g_trendDir)
            { trade.PositionClose(tk); LkRemove(tk);
-             EALog("🔃 REVERSE سكّر ضد الترند #"+IntegerToString((int)tk)+" $"+DoubleToString(profit,2)); continue; }
+             EALog("REVERSE closed counter-trend #"+IntegerToString((int)tk)+" $"+DoubleToString(profit,2)); continue; }
         }
 
       // هدف نقدي ثابت: يسكّر الصفقة كاملة عند ربح $ محدد (أبسط طريقة للربح البسيط)
       if(g_quickTPUSD > 0.0 && profit >= g_quickTPUSD)
         { trade.PositionClose(tk); LkRemove(tk);
-          EALog("💵 CASH TP #"+IntegerToString((int)tk)+" +$"+DoubleToString(profit,2)+" (هدف نقدي $"+DoubleToString(g_quickTPUSD,2)+")"); continue; }
+          EALog("CASH TP #"+IntegerToString((int)tk)+" +$"+DoubleToString(profit,2)+" (cash target $"+DoubleToString(g_quickTPUSD,2)+")"); continue; }
 
-      // جني جزئي: عند ربح = R× الستوب، أغلق جزءاً واحجز الباقي على التعادل
+      // جني جزئي: عند ربح = Rx الستوب، closed جزءاً واحجز الباقي على التعادل
       if(g_partialTP_R > 0.0 && profit >= g_partialTP_R * effSL)
         {
          int li = LkIdx(tk);
@@ -1401,14 +1401,14 @@ void ManagePositions()
                   g_lkTp1[li] = true;
                   double be = posInfo.PriceOpen();       // انقل الباقي للتعادل (بلا مخاطرة)
                   trade.PositionModify(tk, be, posInfo.TakeProfit());
-                  EALog("🎯 PARTIAL #"+IntegerToString((int)tk)+" أغلق "+DoubleToString(closeVol,2)+" +$"+DoubleToString(profit,2)+" → الباقي على التعادل");
+                  EALog("PARTIAL #"+IntegerToString((int)tk)+" closed "+DoubleToString(closeVol,2)+" +$"+DoubleToString(profit,2)+" -> rest to breakeven");
                  }
               }
             else
               {
-               // لوت صغير ما ينقسم (أو نسبة كاملة) → أغلق الصفقة كاملة عند الربح المبكر
+               // لوت صغير ما ينقسم (أو نسبة كاملة) -> closed الصفقة كاملة عند الربح المبكر
                trade.PositionClose(tk); LkRemove(tk);
-               EALog("🎯 QUICK TP #"+IntegerToString((int)tk)+" +$"+DoubleToString(profit,2)+" (ربح مبكر عند "+DoubleToString(g_partialTP_R,1)+"R)"); continue;
+               EALog("QUICK TP #"+IntegerToString((int)tk)+" +$"+DoubleToString(profit,2)+" (early TP at "+DoubleToString(g_partialTP_R,1)+"R)"); continue;
               }
            }
         }
@@ -1416,26 +1416,26 @@ void ManagePositions()
       // TP: check immediately
       if(profit >= effTP)
         { trade.PositionClose(tk); LkRemove(tk);
-          EALog("✅ TP #"+IntegerToString((int)tk)+" +$"+DoubleToString(profit,2)+" (هدف $"+DoubleToString(effTP,2)+") عمر="+IntegerToString(ageSeconds)+"s"); continue; }
+          EALog("TP #"+IntegerToString((int)tk)+" +$"+DoubleToString(profit,2)+" (target $"+DoubleToString(effTP,2)+") age="+IntegerToString(ageSeconds)+"s"); continue; }
 
       // SL: wait 60s first (spread cost needs time to recover)
       if(ageSeconds >= 60 && profit <= -effSL)
         { trade.PositionClose(tk); LkRemove(tk);
-          EALog("🛑 SL #"+IntegerToString((int)tk)+" $"+DoubleToString(profit,2)+" (حد $"+DoubleToString(effSL,2)+") عمر="+IntegerToString(ageSeconds)+"s"); continue; }
+          EALog("SL #"+IntegerToString((int)tk)+" $"+DoubleToString(profit,2)+" (limit $"+DoubleToString(effSL,2)+") age="+IntegerToString(ageSeconds)+"s"); continue; }
 
       // خروج بالوقت (اختياري، معطّل افتراضياً)
       if(g_maxHoldMin > 0 && ageSeconds >= g_maxHoldMin*60)
         { trade.PositionClose(tk); LkRemove(tk);
-          EALog("⏱ TIME #"+IntegerToString((int)tk)+" "+(profit>=0?"+":"")+"$"+DoubleToString(profit,2)+" (حد "+IntegerToString(g_maxHoldMin)+"د)"); continue; }
+          EALog("TIME #"+IntegerToString((int)tk)+" "+(profit>=0?"+":"")+"$"+DoubleToString(profit,2)+" (limit "+IntegerToString(g_maxHoldMin)+"m)"); continue; }
 
-      // قص الخسارة عند انعكاس الشمعة — فقط لو الخسارة حقيقية (≥40% من الستوب)
+      // قص الخسارة عند انعكاس الشمعة - فقط لو الخسارة حقيقية (≥40% من الستوب)
       // حتى لا يخنق الصفقات الجديدة عند ضجيج الشموع
       if(g_exitOnReverse && profit <= -0.40*effSL && ageSeconds >= 30)
         {
          bool isBuy = (posInfo.PositionType()==POSITION_TYPE_BUY);
          if((isBuy && candleBear) || (!isBuy && candleBull))
            { trade.PositionClose(tk); LkRemove(tk);
-             EALog("🔄 REVERSE cut #"+IntegerToString((int)tk)+" $"+DoubleToString(profit,2)+" (خسارة+انعكاس)"); continue; }
+             EALog("REVERSE cut #"+IntegerToString((int)tk)+" $"+DoubleToString(profit,2)+" (loss+reverse)"); continue; }
         }
      }
   }
@@ -1463,23 +1463,23 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
    string why;
    switch((int)reason)
      {
-      case DEAL_REASON_TP:       why="🎯 Take Profit (البروكر)";        break;
-      case DEAL_REASON_SL:       why="🛑 Stop Loss (البروكر)";          break;
-      case DEAL_REASON_SO:       why="☠ Stop Out (نداء هامش)";          break;
-      case DEAL_REASON_EXPERT:   why="🤖 قاعدة البوت (شوف السطر فوق)";   break;
+      case DEAL_REASON_TP:       why="Take Profit (broker)";        break;
+      case DEAL_REASON_SL:       why="Stop Loss (broker)";          break;
+      case DEAL_REASON_SO:       why="Stop Out (margin call)";          break;
+      case DEAL_REASON_EXPERT:   why="Bot rule (see line above)";   break;
       case DEAL_REASON_CLIENT:
       case DEAL_REASON_MOBILE:
-      case DEAL_REASON_WEB:      why="✋ إغلاق يدوي منك";                break;
-      case DEAL_REASON_ROLLOVER: why="🕒 Rollover";                     break;
-      default:                   why="سبب #"+IntegerToString((int)reason);
+      case DEAL_REASON_WEB:      why="Manual close";                break;
+      case DEAL_REASON_ROLLOVER: why="Rollover";                     break;
+      default:                   why="reason #"+IntegerToString((int)reason);
      }
-   EALog("═ إغلاق #"+IntegerToString((int)posTk)+" | السبب: "+why+" | صافي "+(net>=0?"+":"")+"$"+DoubleToString(net,2)+" ═");
+   EALog("= CLOSE #"+IntegerToString((int)posTk)+" | reason: "+why+" | net "+(net>=0?"+":"")+"$"+DoubleToString(net,2)+" =");
 
-   // عدّاد الخسائر المتتالية — يوقف فتح صفقات جديدة عند بلوغ الحد
+   // عدّاد الخسائر المتتالية - يوقف فتح صفقات جديدة عند بلوغ الحد
    if(net < 0.0)      g_consecLosses++;
    else if(net > 0.0) g_consecLosses = 0;
    if(g_maxConsecLosses > 0 && g_consecLosses == g_maxConsecLosses)
-      EALog("⛔ توقّف الجلسة: "+IntegerToString(g_consecLosses)+" خسائر متتالية (الحد "+IntegerToString(g_maxConsecLosses)+")");
+      EALog("Session halted: "+IntegerToString(g_consecLosses)+" consecutive losses (limit "+IntegerToString(g_maxConsecLosses)+")");
   }
 
 //+------------------------------------------------------------------+
@@ -1656,7 +1656,7 @@ void UpdateDashboard(const int trend,const double rsi,
    else if(CopyBuffer(hH1EMA,0,0,3,h1e)>=3)
      {
       bool up = h1e[1]>=h1e[2];
-      h1Txt = up ? "H1 BIAS: ↑ BUY" : "H1 BIAS: ↓ SELL";
+      h1Txt = up ? "H1 BIAS: UP BUY" : "H1 BIAS: DN SELL";
       h1Clr = up ? CLR_GOOD : CLR_BAD;
      }
    DLabel("V_H1BIAS",h1Txt,xV,y,h1Clr); y+=ROW_H;
