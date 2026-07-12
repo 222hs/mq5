@@ -46,6 +46,7 @@ export const useTradingStore = create((set) => ({
   latencyMs: null,
   isOnline: false,
   botRunning: false,
+  blockReason: null,
   connections: { mt5: 'connecting', binance: 'offline', firebase: 'offline' },
   logs: [],
 
@@ -75,6 +76,7 @@ export const useTradingStore = create((set) => ({
       stats: d.stats || s.stats,
       isOnline: !!d.is_online,
       botRunning: !!d.bot_running,
+      blockReason: d.block_reason ?? s.blockReason,
       rsi: d.last_rsi ?? s.rsi,
       candles,
       sessions: d.sessions || s.sessions,

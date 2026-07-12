@@ -618,6 +618,7 @@ def build_dashboard_payload():
             "news_filter":    latest_data["news_filter"],
             "h1_bias_up":     latest_data["h1_bias_up"],
             "last_rsi":       latest_data["last_rsi"],
+            "block_reason":   latest_data.get("block_reason"),
             "history":        closed_trades[:200],
             "is_online":    is_online,
             "last_update":  latest_data["last_update"],
@@ -943,6 +944,8 @@ def update_data():
             latest_data["h1_bias_up"] = payload.get("h1_bias_up")
         if payload.get("last_rsi") is not None:
             latest_data["last_rsi"]   = payload.get("last_rsi")
+        if payload.get("block_reason") is not None:
+            latest_data["block_reason"] = payload.get("block_reason")
         latest_data["last_update"]    = now
 
         if latest_data["account"]:

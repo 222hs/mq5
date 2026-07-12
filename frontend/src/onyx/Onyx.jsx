@@ -97,6 +97,7 @@ export default function Onyx() {
   const pair = useTradingStore((s) => s.pair);
   const price = useTradingStore((s) => s.price);
   const connections = useTradingStore((s) => s.connections);
+  const blockReason = useTradingStore((s) => s.blockReason);
 
   const totalPnl = stats.total_profit ?? 0;
   const winRate = stats.win_rate ?? 0;
@@ -141,6 +142,23 @@ export default function Onyx() {
           </div>
         </motion.header>
         <div className="hair-h" />
+
+        {/* Z2b — bot status strip: why no trades right now (updates only on change) */}
+        {(() => {
+          const raw = blockReason || '';
+          const ok = raw.startsWith('OK') || raw === '';
+          const txt = raw.includes('|') ? raw.split('|').slice(1).join('|') : raw;
+          const color = ok ? EMERALD : AMBER;
+          return (
+            <div className="flex items-center gap-3 px-6 md:px-10" style={{ height: 30, background: `${color}14`, borderBottom: `1px solid ${color}33` }}>
+              <span style={{ width: 6, height: 6, borderRadius: 6, background: color, boxShadow: `0 0 8px ${color}` }} />
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color }}>{ok ? 'يتداول' : 'موقوف'}</span>
+              <span style={{ fontSize: 12, color: '#cdd3dc' }} dir="rtl">
+                {ok ? 'الفلاتر سليمة — البوت يفتح صفقات' : (txt || '—')}
+              </span>
+            </div>
+          );
+        })()}
 
         {/* Z3 — the monument (full width) */}
         <motion.div style={{ x: px, y: py }} className="relative">

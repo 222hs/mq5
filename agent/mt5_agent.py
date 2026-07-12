@@ -441,6 +441,18 @@ def sync_grid_levels():
         pass
 
 
+def read_bot_status():
+    """يقرأ حالة البوت (سبب عدم الدخول) من GSX_Status.txt — للشريط في الداشبورد."""
+    try:
+        p = os.path.join(_MT5_COMMON, "GSX_Status.txt")
+        if not os.path.exists(p):
+            return None
+        with open(p, "r", encoding="ascii", errors="replace") as f:
+            return f.read().strip()
+    except Exception:
+        return None
+
+
 def read_local_settings():
     """يقرأ الإعدادات الحالية من ملف البوت"""
     if not os.path.exists(SETTINGS_FILE):
@@ -1276,6 +1288,7 @@ def main():
                 "news_filter":    news_status,
                 "h1_bias_up":     h1_bias,
                 "last_rsi":       last_rsi,
+                "block_reason":   read_bot_status(),
                 "history":        history if history else None,
                 "timestamp":      datetime.now().isoformat(),
             })

@@ -102,6 +102,7 @@ int    g_consecLosses   = 0;     // عدّاد الخسائر المتتالية
 int    g_maxHoldMin     = 0;     // 0=معطّل | يسكّر الصفقة بعد X دقيقة (خروج بالوقت)
 
 // ── الانعكاس بتصويت الترند: بعد خسائر متتالية، اتبع اتجاه الفريمات ──
+string g_blockReason       = "?";   // سبب عدم فتح صفقات حالياً (للشريط)
 bool   g_trendReverse      = false; // فعّل الانعكاس الذكي
 int    g_reverseAfterLosses= 3;     // بعد كم خسارة متتالية يتفعّل
 bool   g_reverseActive     = false; // حالة: مفعّل الآن؟
@@ -256,6 +257,16 @@ void EALog(string msg)
       FileWriteString(fh, TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS) + "|" + msg + "\n");
       FileClose(fh);
      }
+  }
+
+//+------------------------------------------------------------------+
+// يكتب حالة البوت الحالية (سبب عدم الدخول) لملف يقرأه الأجنت → الشريط
+void WriteStatus(const string s)
+  {
+   int fh = FileOpen("GSX_Status.txt", FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
+   if(fh == INVALID_HANDLE) return;
+   FileWriteString(fh, s);
+   FileClose(fh);
   }
 
 //+------------------------------------------------------------------+
@@ -734,6 +745,30 @@ void OnTick()
            }
         }
      }
+
+   // ── سبب عدم فتح الصفقات (يُذكر مرة عند التغيّر + يُكتب للشريط) ─────
+   string reason = "";
+   if(!g_botRunning)                        reason = "البوت متوقّف (زر الإيقاف)";
+   else if(!spreadOK)                       reason = "السبريد عالي (>"+DoubleToString(g_maxSpread,0)+")";
+   else if(!sessOK)                         reason = "خارج ساعات التداول ("+IntegerToString(g_tradeHoursStart)+"-"+IntegerToString(g_tradeHoursEnd)+" GMT)";
+   else if(!dayOK)                          reason = "بلغ الحد اليومي (ربح/خسارة)";
+   else if(!newsOK)                         reason = "فلتر الأخبار: "+g_newsTitle;
+   else if(!rolloverOK)                     reason = "وقت الرول-أوفر (21-22 GMT)";
+   else if(!consecOK)                       reason = "توقّف: خسائر متتالية بلغت الحد";
+   else if(!slotsOK)                        reason = "امتلأت الصفقات (Max Positions)";
+   else if(!atrOK)                          reason = "فلتر ATR: التقلب عالي";
+   else if(g_reverseActive && g_trendDir==0)reason = "Trend-Reverse: رينج (لا ترند)";
+   else if(!coolOK)                         reason = "انتظار بين الصفقات (Cooldown)";
+   else if(signal==0 && (bullBar||bearBar)) reason = "إشارة مرفوضة (فلتر H1/M15/RSI)";
+   else if(signal==0)                       reason = "لا توجد إشارة زخم (انتظار شمعة)";
+   // reason=="" → الفلاتر سليمة ويتداول
+   if(reason != g_blockReason)
+     {
+      g_blockReason = reason;
+      if(reason=="") EALog("✅ الفلاتر سليمة — البوت يتداول");
+      else           EALog("🚫 سبب عدم الدخول: "+reason);
+     }
+   WriteStatus(reason=="" ? "OK|يتداول" : "BLOCK|"+reason);
 
    // SCALE — يعمل كل شمعة بغض النظر عن الإشارة
    if((g_strategyMode & 4) != 0 && g_botRunning && !DayLimitHit())
