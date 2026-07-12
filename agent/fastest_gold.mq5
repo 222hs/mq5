@@ -748,27 +748,27 @@ void OnTick()
 
    // ── سبب عدم فتح الصفقات (يُذكر مرة عند التغيّر + يُكتب للشريط) ─────
    string reason = "";
-   if(!g_botRunning)                        reason = "البوت متوقّف (زر الإيقاف)";
-   else if(!spreadOK)                       reason = "السبريد عالي (>"+DoubleToString(g_maxSpread,0)+")";
-   else if(!sessOK)                         reason = "خارج ساعات التداول ("+IntegerToString(g_tradeHoursStart)+"-"+IntegerToString(g_tradeHoursEnd)+" GMT)";
-   else if(!dayOK)                          reason = "بلغ الحد اليومي (ربح/خسارة)";
-   else if(!newsOK)                         reason = "فلتر الأخبار: "+g_newsTitle;
-   else if(!rolloverOK)                     reason = "وقت الرول-أوفر (21-22 GMT)";
-   else if(!consecOK)                       reason = "توقّف: خسائر متتالية بلغت الحد";
-   else if(!slotsOK)                        reason = "امتلأت الصفقات (Max Positions)";
-   else if(!atrOK)                          reason = "فلتر ATR: التقلب عالي";
-   else if(g_reverseActive && g_trendDir==0)reason = "Trend-Reverse: رينج (لا ترند)";
-   else if(!coolOK)                         reason = "انتظار بين الصفقات (Cooldown)";
-   else if(signal==0 && (bullBar||bearBar)) reason = "إشارة مرفوضة (فلتر H1/M15/RSI)";
-   else if(signal==0)                       reason = "لا توجد إشارة زخم (انتظار شمعة)";
-   // reason=="" → الفلاتر سليمة ويتداول
+   if(!g_botRunning)                        reason = "Bot stopped (halt button)";
+   else if(!spreadOK)                       reason = "Spread too high (>"+DoubleToString(g_maxSpread,0)+")";
+   else if(!sessOK)                         reason = "Outside trading hours ("+IntegerToString(g_tradeHoursStart)+"-"+IntegerToString(g_tradeHoursEnd)+" GMT)";
+   else if(!dayOK)                          reason = "Daily limit reached (profit/loss)";
+   else if(!newsOK)                         reason = "News filter: "+g_newsTitle;
+   else if(!rolloverOK)                     reason = "Rollover window (21-22 GMT)";
+   else if(!consecOK)                       reason = "Halted: consecutive losses limit";
+   else if(!slotsOK)                        reason = "Max positions reached";
+   else if(!atrOK)                          reason = "ATR filter: volatility too high";
+   else if(g_reverseActive && g_trendDir==0)reason = "Trend-Reverse: ranging (no trend)";
+   else if(!coolOK)                         reason = "Cooldown between trades";
+   else if(signal==0 && (bullBar||bearBar)) reason = "Signal rejected (H1/M15/RSI filter)";
+   else if(signal==0)                       reason = "No momentum signal (waiting)";
+   // reason=="" → filters clear, trading
    if(reason != g_blockReason)
      {
       g_blockReason = reason;
-      if(reason=="") EALog("✅ الفلاتر سليمة — البوت يتداول");
-      else           EALog("🚫 سبب عدم الدخول: "+reason);
+      if(reason=="") EALog("Filters clear - bot is trading");
+      else           EALog("No-entry reason: "+reason);
      }
-   WriteStatus(reason=="" ? "OK|يتداول" : "BLOCK|"+reason);
+   WriteStatus(reason=="" ? "OK|trading" : "BLOCK|"+reason);
 
    // SCALE — يعمل كل شمعة بغض النظر عن الإشارة
    if((g_strategyMode & 4) != 0 && g_botRunning && !DayLimitHit())

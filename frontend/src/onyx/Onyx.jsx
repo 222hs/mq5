@@ -152,9 +152,9 @@ export default function Onyx() {
           return (
             <div className="flex items-center gap-3 px-6 md:px-10" style={{ height: 30, background: `${color}14`, borderBottom: `1px solid ${color}33` }}>
               <span style={{ width: 6, height: 6, borderRadius: 6, background: color, boxShadow: `0 0 8px ${color}` }} />
-              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color }}>{ok ? 'يتداول' : 'موقوف'}</span>
-              <span style={{ fontSize: 12, color: '#cdd3dc' }} dir="rtl">
-                {ok ? 'الفلاتر سليمة — البوت يفتح صفقات' : (txt || '—')}
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color }}>{ok ? 'TRADING' : 'BLOCKED'}</span>
+              <span style={{ fontSize: 12, color: '#cdd3dc' }}>
+                {ok ? 'filters clear — bot is opening trades' : (txt || '—')}
               </span>
             </div>
           );
