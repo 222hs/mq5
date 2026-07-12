@@ -12,7 +12,7 @@
 
 //--- inputs
 input double          LotSize      = 0.5;      // Lot size
-input ENUM_TIMEFRAMES TF           = PERIOD_M1;// Working timeframe
+input ENUM_TIMEFRAMES TF           = PERIOD_M5;// Working timeframe
 input int             MaxPositions = 10;       // Max open positions
 input int             CooldownSecs = 60;       // Cooldown between entries (sec)
 input int             MaxSpread    = 350;      // Max spread in points
@@ -129,8 +129,8 @@ double g_partialTP_R    = 0.0;   // 0=معطّل | جني جزئي عند ربح
 double g_partialTP_Frac = 0.5;   // نسبة الصفقة التي تُغلق عند الجني الجزئي
 bool   g_lkTp1[256];             // هل تم الجني الجزئي لهذه الصفقة؟
 const double AUTO_RISK_PCT = 1.0;  // نسبة المخاطرة من الرصيد لكل صفقة
-const double AUTO_SL_ATR   = 1.25; // مضاعف ATR للستوب (M1 مؤكّد بالباك-تيست)
-const double AUTO_TP_RR    = 2.8;  // نسبة الهدف للخطر R:R (M1: PF 1.36 - 40 صفقة/يوم)
+const double AUTO_SL_ATR   = 1.0;  // مضاعف ATR للستوب (M5 مؤكّد بالباك-تيست)
+const double AUTO_TP_RR    = 2.0;  // نسبة الهدف للخطر R:R (M5: PF 1.66 مؤكّد عبر النصفين)
 
 // Scale tracking
 ulong  g_scaledFrom[200];
