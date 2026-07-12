@@ -262,7 +262,7 @@ export default function Onyx() {
 // الوضع الرابح للبتكوين (ستوب 2.0×ATR)
 const BTC_WINNING = {
   AutoTPSL: 1, UseM15Filter: 1, UseH1Filter: 1, UseRSIFilter: 1,
-  RSIBuyMax: 75, RSISellMin: 25, AutoSLATR: 2.0, AutoTPRR: 2.0,
+  RSIBuyMax: 75, RSISellMin: 25, AutoSLATR: 2.0, AutoTPRR: 2.5,
   EarlyEntry: 0, StrategyMode: 0, MarginUsePct: 0, SplitLot: 0,
   ExitOnReverse: 0, TrendReverse: 0, SyncTPSL: 1,
   QuickTPUSD: 0, PartialTP_R: 0, TrailStartUSD: 0, LockProfitUSD: 0, MaxHoldMin: 0,

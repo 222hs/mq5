@@ -128,7 +128,7 @@ DEFAULT_SETTINGS = {
     "SplitLot":       0,
     "MarginUsePct":   0.0,
     "AutoSLATR":      1.0,
-    "AutoTPRR":       2.0,
+    "AutoTPRR":       2.5,
     "MaxHoldMin":     0,
     "LockProfitUSD":  0.0,
     "StallSecs":      60,
@@ -157,7 +157,7 @@ BTC_DEFAULT_SETTINGS = {
     "MaxLossPerDay":  100.0,
     "MaxProfitPerDay":500.0,
     "AutoSLATR":      2.0,     # البتكوين يحتاج ستوب أوسع (مؤكّد بالباك-تيست)
-    "AutoTPRR":       2.0,
+    "AutoTPRR":       2.5,
     "RSIBuyMax":      75.0,
     "RSISellMin":     25.0,
     "TradeHoursStart":13,
