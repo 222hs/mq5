@@ -74,6 +74,18 @@ const INT = new Set(
   SECTIONS.flatMap((s) => s.items).filter((i) => i.int || i.t === 't').map((i) => i.k)
 );
 
+// الوضع الرابح المؤكّد بالباك-تيست (M5, PF 1.66) — زر الاسترجاع
+const WINNING = {
+  AutoTPSL: 1, UseM15Filter: 1, UseH1Filter: 1, UseRSIFilter: 1,
+  RSIBuyMax: 78, RSISellMin: 22,
+  EarlyEntry: 0, StrategyMode: 0, MarginUsePct: 0, SplitLot: 0,
+  ExitOnReverse: 0, TrendReverse: 0, SyncTPSL: 1,
+  QuickTPUSD: 0, PartialTP_R: 0, TrailStartUSD: 0, LockProfitUSD: 0, MaxHoldMin: 0,
+  UseATRFilter: 0, BlockRollover: 0, ClaudeGrid: 0,
+  TradeHoursStart: 13, TradeHoursEnd: 18,
+  MaxConsecLosses: 3, MaxPositions: 4, MaxSpread: 400, CooldownSecs: 0,
+};
+
 const mergeKeepDirty = (server, dirty, prev) => {
   const m = { ...server };
   dirty.forEach((k) => { if (prev && Object.prototype.hasOwnProperty.call(prev, k)) m[k] = prev[k]; });
@@ -139,6 +151,14 @@ export default function StrategyConfig() {
     setBusy(false); setTimeout(() => setMsg(''), 3000);
   };
 
+  const resetWinning = async () => {
+    setBusy(true); setMsg('APPLYING WINNING CONFIG…');
+    setDraft((d) => ({ ...d, ...WINNING }));
+    try { const d = await post(payload(WINNING)); dirty.current.clear(); if (d.settings) setDraft(d.settings); setMsg('✓ WINNING CONFIG APPLIED (PF 1.66)'); }
+    catch { setMsg('✕ ERROR'); }
+    setBusy(false); setTimeout(() => setMsg(''), 3500);
+  };
+
   const numField = (f) => (
     <label key={f.k} className="grx-field">
       <span className="micro">{f.label}</span>
@@ -178,6 +198,10 @@ export default function StrategyConfig() {
         </span>
       </div>
 
+      <button onClick={resetWinning} disabled={busy} style={S.winBtn}>
+        ★ RESET TO WINNING CONFIG (M5 · PF 1.66)
+      </button>
+
       {auto && (
         <div style={S.autoNote}>✅ AUTO — bot manages Lot · TP · SL
           <span style={S.autoSub}>auto-split · 80% margin cap · SL 1.0×ATR · R:R 2.0 (M5)</span>
@@ -216,4 +240,7 @@ const S = {
   sw: { border: 'none', borderRadius: 6, padding: '5px 16px', fontSize: 11, fontWeight: 700, letterSpacing: 1, cursor: 'pointer', minWidth: 52 },
   swOn: { background: EMERALD, color: '#04140a' },
   swOff: { background: 'rgba(255,255,255,0.08)', color: MUTED },
+  winBtn: { width: '100%', marginBottom: 14, padding: '11px', borderRadius: 10, border: '1px solid ' + EMERALD,
+            background: 'rgba(0,230,118,0.12)', color: EMERALD, fontSize: 12, fontWeight: 800,
+            letterSpacing: 1, cursor: 'pointer' },
 };
