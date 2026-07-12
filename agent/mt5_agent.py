@@ -838,7 +838,7 @@ def sync_settings():
                 "StrategyMode", "GridLevels", "GridStep", "ClaudeGrid",
                 "HedgeLotMult", "ScaleStep", "ScaleMult", "MaxScales",
                 "UseATRFilter", "MaxATRPoints", "BlockRollover", "MaxConsecLosses",
-                "AutoTPSL", "SplitLot", "MarginUsePct", "MaxHoldMin", "LockProfitUSD", "StallSecs", "SyncTPSL",
+                "AutoTPSL", "SplitLot", "MarginUsePct", "AutoSLATR", "AutoTPRR", "MaxHoldMin", "LockProfitUSD", "StallSecs", "SyncTPSL",
                 "ExitOnReverse", "QuickTPUSD", "TrailStartUSD", "TrailGiveUSD",
                 "TrendReverse", "ReverseAfterLosses", "EarlyEntry", "EarlyMomATR",
                 "PartialTP_R", "PartialTP_Frac",

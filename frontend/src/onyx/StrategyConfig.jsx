@@ -13,6 +13,8 @@ const AUTO_KEYS = ['LotSize', 'TP_USD', 'SL_USD']; // hidden while AUTO is ON
 const SECTIONS = [
   { title: '⚙️ أساسي', items: [
     { k: 'AutoTPSL', t: 't', label: 'AUTO · Lot+TP+SL', hint: 'bot sizes lot/TP/SL from ATR + 1% risk' },
+    { k: 'AutoSLATR', t: 'n', label: 'Auto SL ×ATR (gold 1.0 · BTC 2.0)', step: 0.1 },
+    { k: 'AutoTPRR', t: 'n', label: 'Auto TP R:R', step: 0.1 },
     { k: 'LotSize', t: 'n', label: 'Lot Size', step: 0.01, auto: true },
     { k: 'TP_USD', t: 'n', label: 'Take Profit $', step: 0.5, auto: true },
     { k: 'SL_USD', t: 'n', label: 'Stop Loss $', step: 0.5, auto: true },
@@ -77,7 +79,7 @@ const INT = new Set(
 // الوضع الرابح المؤكّد بالباك-تيست (M5, PF 1.66) — زر الاسترجاع
 const WINNING = {
   AutoTPSL: 1, UseM15Filter: 1, UseH1Filter: 1, UseRSIFilter: 1,
-  RSIBuyMax: 78, RSISellMin: 22,
+  RSIBuyMax: 78, RSISellMin: 22, AutoSLATR: 1.0, AutoTPRR: 2.0,
   EarlyEntry: 0, StrategyMode: 0, MarginUsePct: 0, SplitLot: 0,
   ExitOnReverse: 0, TrendReverse: 0, SyncTPSL: 1,
   QuickTPUSD: 0, PartialTP_R: 0, TrailStartUSD: 0, LockProfitUSD: 0, MaxHoldMin: 0,

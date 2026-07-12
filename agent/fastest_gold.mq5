@@ -131,8 +131,8 @@ double g_partialTP_R    = 0.0;   // 0=معطّل | جني جزئي عند ربح
 double g_partialTP_Frac = 0.5;   // نسبة الصفقة التي تُغلق عند الجني الجزئي
 bool   g_lkTp1[256];             // هل تم الجني الجزئي لهذه الصفقة؟
 const double AUTO_RISK_PCT = 1.0;  // نسبة المخاطرة من الرصيد لكل صفقة
-const double AUTO_SL_ATR   = 1.0;  // مضاعف ATR للستوب (M5 مؤكّد بالباك-تيست)
-const double AUTO_TP_RR    = 2.0;  // نسبة الهدف للخطر R:R (M5: PF 1.66 مؤكّد عبر النصفين)
+double g_autoSLATR = 1.0;  // مضاعف ATR للستوب (ذهب 1.0 · بتكوين 2.0) — قابل للتعديل
+double g_autoTPRR  = 2.0;  // نسبة الهدف للخطر R:R — قابل للتعديل
 
 // Scale tracking
 ulong  g_scaledFrom[200];
@@ -209,6 +209,8 @@ void WriteCurrentSettings()
    j += "  \"AutoTPSL\": "     + (g_autoTPSL ? "1" : "0")            + ",\n";
    j += "  \"SplitLot\": "     + (g_splitLot ? "1" : "0")            + ",\n";
    j += "  \"MarginUsePct\": " + DoubleToString(g_marginUsePct,1)    + ",\n";
+   j += "  \"AutoSLATR\": "    + DoubleToString(g_autoSLATR,2)       + ",\n";
+   j += "  \"AutoTPRR\": "     + DoubleToString(g_autoTPRR,2)        + ",\n";
    j += "  \"MaxHoldMin\": "   + IntegerToString(g_maxHoldMin)       + ",\n";
    j += "  \"LockProfitUSD\": "+ DoubleToString(g_lockProfitUSD,2)   + ",\n";
    j += "  \"StallSecs\": "    + IntegerToString(g_stallSecs)        + ",\n";
@@ -325,7 +327,7 @@ double CalcLot()
      {
       double atrP   = CurrentATRprice();
       double vpl    = ValuePerPricePerLot();
-      double slDist = AUTO_SL_ATR * atrP;
+      double slDist = g_autoSLATR * atrP;
       if(atrP > 0.0 && vpl > 0.0 && slDist > 0.0)
         {
          double balance = AccountInfoDouble(ACCOUNT_BALANCE);
@@ -404,6 +406,8 @@ void LoadSettings()
    bool   autoTS = (ReadSetting("AutoTPSL",       0.0) > 0.5);
    bool   splitL = (ReadSetting("SplitLot",       0.0) > 0.5);
    double marPct = ReadSetting("MarginUsePct",     0.0);
+   double aSLatr = ReadSetting("AutoSLATR",         1.0);
+   double aTPrr  = ReadSetting("AutoTPRR",          2.0);
    bool   syncTS = (ReadSetting("SyncTPSL",        0.0) > 0.5);
    bool   exitRv = (ReadSetting("ExitOnReverse",   0.0) > 0.5);
    double qtp    = ReadSetting("QuickTPUSD",        0.0);
@@ -434,7 +438,7 @@ void LoadSettings()
                + (useATR?"1":"0")+DoubleToString(maxATR,0)
                + (blkRO?"1":"0")+IntegerToString(maxCL)
                + (autoTS?"1":"0")+(splitL?"1":"0")+IntegerToString(maxHold)
-               + DoubleToString(marPct,1)
+               + DoubleToString(marPct,1)+DoubleToString(aSLatr,2)+DoubleToString(aTPrr,2)
                + DoubleToString(lockUSD,2)+IntegerToString(stallS)+(syncTS?"1":"0")+(exitRv?"1":"0")
                + DoubleToString(ptpR,2)+DoubleToString(ptpF,2)+DoubleToString(qtp,2)
                + DoubleToString(trStart,2)+DoubleToString(trGive,2)
@@ -458,6 +462,7 @@ void LoadSettings()
    g_blockRollover=blkRO; g_maxConsecLosses=MathMax(0,maxCL);
    g_autoTPSL=autoTS; g_splitLot=splitL; g_maxHoldMin=MathMax(0,maxHold);
    g_marginUsePct=MathMax(0.0,MathMin(95.0,marPct));
+   g_autoSLATR=MathMax(0.2,aSLatr); g_autoTPRR=MathMax(0.5,aTPrr);
    g_lockProfitUSD=MathMax(0.0,lockUSD); g_stallSecs=MathMax(5,stallS);
    g_syncTPSL=syncTS; g_exitOnReverse=exitRv;
    g_quickTPUSD=MathMax(0.0,qtp);
@@ -487,7 +492,7 @@ void LoadSettings()
       EALog("Scalp: ATRFilter="+(g_useATRFilter?"ON max="+DoubleToString(g_maxATRPoints,0)+"pts":"OFF")
             +" | Rollover="+(g_blockRollover?"BLOCK 21-22GMT":"OFF")
             +" | MaxConsecLosses="+(g_maxConsecLosses>0?IntegerToString(g_maxConsecLosses):"OFF"));
-      EALog("AutoMode="+(g_autoTPSL?"ON - dynamic Lot+TP+SL (risk "+DoubleToString(AUTO_RISK_PCT,1)+"% - ATRx"+DoubleToString(AUTO_SL_ATR,1)+" - RR "+DoubleToString(AUTO_TP_RR,1)+")":"OFF - manual")
+      EALog("AutoMode="+(g_autoTPSL?"ON - dynamic Lot+TP+SL (risk "+DoubleToString(AUTO_RISK_PCT,1)+"% - ATRx"+DoubleToString(g_autoSLATR,1)+" - RR "+DoubleToString(g_autoTPRR,1)+")":"OFF - manual")
             +" | SplitLot="+(g_splitLot?"ON /"+IntegerToString(g_maxPositions):"OFF")
             +" | MarginUse="+(g_marginUsePct>0?DoubleToString(g_marginUsePct,0)+"%":"OFF")
             +" | MaxHold="+(g_maxHoldMin>0?IntegerToString(g_maxHoldMin)+"m":"OFF")
@@ -1327,11 +1332,11 @@ void ManagePositions()
         {
          double atrP   = CurrentATRprice();
          double vpl    = ValuePerPricePerLot();
-         double slDist = AUTO_SL_ATR * atrP;
+         double slDist = g_autoSLATR * atrP;
          if(atrP > 0.0 && vpl > 0.0 && slDist > 0.0)
            {
             effSL = slDist * vpl * posLot;
-            effTP = effSL * AUTO_TP_RR;
+            effTP = effSL * g_autoTPRR;
            }
         }
 

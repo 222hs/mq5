@@ -127,6 +127,8 @@ DEFAULT_SETTINGS = {
     "AutoTPSL":       0,
     "SplitLot":       0,
     "MarginUsePct":   0.0,
+    "AutoSLATR":      1.0,
+    "AutoTPRR":       2.0,
     "MaxHoldMin":     0,
     "LockProfitUSD":  0.0,
     "StallSecs":      60,
