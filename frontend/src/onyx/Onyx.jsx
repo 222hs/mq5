@@ -105,6 +105,7 @@ export default function Onyx() {
   const todayNet = history.filter((t) => new Date(t.time).toDateString() === todayStr).reduce((a, t) => a + netOf(t), 0);
 
   const [drawer, setDrawer] = useState(false);
+  const [btcDrawer, setBtcDrawer] = useState(false);
   const shake = useAnimationControls();
   const px = useMotionValue(0), py = useMotionValue(0);
   const onMove = (e) => { px.set((e.clientX / window.innerWidth - 0.5) * 10); py.set((e.clientY / window.innerHeight - 0.5) * 10); };
@@ -223,21 +224,49 @@ export default function Onyx() {
         </div>
       </motion.div>
 
-      {/* Z7 — GRX strategy drawer */}
-      <button className="grx-tab" onClick={() => setDrawer(true)}>GRX · STRATEGY</button>
+      {/* Z7 — strategy drawers: GOLD + BTC side by side */}
+      <button className="grx-tab" onClick={() => setDrawer(true)}>GOLD · STRATEGY</button>
+      <button className="grx-tab" style={{ bottom: 68 }} onClick={() => setBtcDrawer(true)}>BTC · STRATEGY</button>
+
       {drawer && (
         <>
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setDrawer(false)}
             style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'rgba(0,0,0,.5)' }} />
           <motion.div initial={{ x: 440 }} animate={{ x: 0 }} transition={{ type: 'spring', stiffness: 260, damping: 30 }} className="grx-drawer">
             <div className="flex items-center justify-between mb-6">
-              <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: 3, color: AMBER }}>GRX PARAMETERS</span>
+              <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: 3, color: AMBER }}>GOLD PARAMETERS</span>
               <button onClick={() => setDrawer(false)} style={{ background: 'transparent', border: '1px solid rgba(255,61,0,.5)', color: CRIMSON, padding: '4px 12px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>✕</button>
             </div>
             <StrategyConfig />
           </motion.div>
         </>
       )}
+
+      {btcDrawer && (
+        <>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setBtcDrawer(false)}
+            style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'rgba(0,0,0,.5)' }} />
+          <motion.div initial={{ x: 440 }} animate={{ x: 0 }} transition={{ type: 'spring', stiffness: 260, damping: 30 }} className="grx-drawer">
+            <div className="flex items-center justify-between mb-6">
+              <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: 3, color: '#F7931A' }}>BTC ₿ PARAMETERS</span>
+              <button onClick={() => setBtcDrawer(false)} style={{ background: 'transparent', border: '1px solid rgba(255,61,0,.5)', color: CRIMSON, padding: '4px 12px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>✕</button>
+            </div>
+            <StrategyConfig endpoint="/api/settings/btc" winning={BTC_WINNING} title="Strategy Config · BTC ₿" />
+          </motion.div>
+        </>
+      )}
     </div>
   );
 }
+
+// الوضع الرابح للبتكوين (ستوب 2.0×ATR)
+const BTC_WINNING = {
+  AutoTPSL: 1, UseM15Filter: 1, UseH1Filter: 1, UseRSIFilter: 1,
+  RSIBuyMax: 75, RSISellMin: 25, AutoSLATR: 2.0, AutoTPRR: 2.0,
+  EarlyEntry: 0, StrategyMode: 0, MarginUsePct: 0, SplitLot: 0,
+  ExitOnReverse: 0, TrendReverse: 0, SyncTPSL: 1,
+  QuickTPUSD: 0, PartialTP_R: 0, TrailStartUSD: 0, LockProfitUSD: 0, MaxHoldMin: 0,
+  UseATRFilter: 0, BlockRollover: 0, ClaudeGrid: 0,
+  TradeHoursStart: 13, TradeHoursEnd: 18,
+  MaxConsecLosses: 3, MaxPositions: 3, MaxSpread: 6000, CooldownSecs: 0,
+};
