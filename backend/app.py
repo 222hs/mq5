@@ -137,6 +137,8 @@ DEFAULT_SETTINGS = {
     "TrailGiveUSD":   0.5,
     "TrendReverse":   0,
     "ReverseAfterLosses": 3,
+    "EarlyEntry":     0,
+    "EarlyMomATR":    0.3,
     "PartialTP_R":    0.0,
     "PartialTP_Frac": 0.5,
 }

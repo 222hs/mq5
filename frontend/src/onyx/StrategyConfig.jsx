@@ -37,6 +37,8 @@ const SECTIONS = [
     { k: 'ExitOnReverse', t: 't', label: 'Cut Loss on Candle Reverse', hint: 'close a losing trade when the candle flips (≥40% of SL)' },
   ]},
   { title: '🔍 الفلاتر', items: [
+    { k: 'EarlyEntry', t: 't', label: 'Early Entry (ride forming candle)', hint: 'enter as the current candle moves, not after it closes' },
+    { k: 'EarlyMomATR', t: 'n', label: 'Early Momentum ×ATR', step: 0.05 },
     { k: 'UseM15Filter', t: 't', label: 'MTF Filter (15m + 1h)', hint: 'backtested edge — both trends aligned' },
     { k: 'UseH1Filter', t: 't', label: 'H1 Trend Filter', hint: 'trade only with the 1h trend' },
     { k: 'UseRSIFilter', t: 't', label: 'RSI Filter', hint: 'block entries at RSI extremes' },
