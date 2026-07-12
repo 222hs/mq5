@@ -119,6 +119,7 @@ int      g_lkCount = 0;
 // ── الوضع الآلي الكامل (Auto): لوت + TP + SL ديناميكية من ATR ──────
 bool   g_autoTPSL       = false; // زر واحد: يخلي اللوت والـ TP/SL تلقائية
 bool   g_splitLot       = false; // يوزّع اللوت على أقصى عدد صفقات
+double g_marginUsePct   = 0.0;   // 0=معطّل | يحسب اللوت لاستغلال % من الهامش عبر كل الصفقات
 bool   g_syncTPSL       = false; // يكتب TP/SL الحقيقية على الصفقات ويحدّثها مع الإعدادات
 bool   g_exitOnReverse  = false; // يقص الصفقة الخاسرة لو الشمعة انعكست ضد اتجاهها
 double g_quickTPUSD     = 0.0;   // 0=معطّل | يسكّر الصفقة كاملة عند ربح $ ثابت (بغضّ النظر عن AUTO)
@@ -205,6 +206,7 @@ void WriteCurrentSettings()
    j += "  \"MaxConsecLosses\": "+ IntegerToString(g_maxConsecLosses)+ ",\n";
    j += "  \"AutoTPSL\": "     + (g_autoTPSL ? "1" : "0")            + ",\n";
    j += "  \"SplitLot\": "     + (g_splitLot ? "1" : "0")            + ",\n";
+   j += "  \"MarginUsePct\": " + DoubleToString(g_marginUsePct,1)    + ",\n";
    j += "  \"MaxHoldMin\": "   + IntegerToString(g_maxHoldMin)       + ",\n";
    j += "  \"LockProfitUSD\": "+ DoubleToString(g_lockProfitUSD,2)   + ",\n";
    j += "  \"StallSecs\": "    + IntegerToString(g_stallSecs)        + ",\n";
@@ -294,6 +296,26 @@ double ValuePerPricePerLot()
 double CalcLot()
   {
    double raw;
+
+   // ── سايزنق على أساس الهامش: يرفع اللوت ليستغل % من الرصيد عبر كل الصفقات ──
+   if(g_marginUsePct > 0.0)
+     {
+      double price = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      double mpl   = 0.0;
+      if(price > 0.0 && OrderCalcMargin(ORDER_TYPE_BUY, _Symbol, 1.0, price, mpl) && mpl > 0.0)
+        {
+         double freeM = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+         int    n     = MathMax(1, g_maxPositions);
+         double lot   = (freeM * (g_marginUsePct/100.0)) / (n * mpl);
+         double step  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+         double minL  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+         double maxL  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+         if(step > 0.0) lot = MathFloor(lot/step)*step;
+         lot = MathMax(minL, MathMin(MathMin(maxL, 5.0), lot)); // سقف 5 لوت أمان
+         return NormalizeLot(lot);
+        }
+     }
+
    // ── اللوت الأساسي حسب الوضع ──────────────────────────────────────
    if(g_autoTPSL)
      {
@@ -377,6 +399,7 @@ void LoadSettings()
    int    maxCL  = (int)ReadSetting("MaxConsecLosses", 0.0);
    bool   autoTS = (ReadSetting("AutoTPSL",       0.0) > 0.5);
    bool   splitL = (ReadSetting("SplitLot",       0.0) > 0.5);
+   double marPct = ReadSetting("MarginUsePct",     0.0);
    bool   syncTS = (ReadSetting("SyncTPSL",        0.0) > 0.5);
    bool   exitRv = (ReadSetting("ExitOnReverse",   0.0) > 0.5);
    double qtp    = ReadSetting("QuickTPUSD",        0.0);
@@ -405,6 +428,7 @@ void LoadSettings()
                + (useATR?"1":"0")+DoubleToString(maxATR,0)
                + (blkRO?"1":"0")+IntegerToString(maxCL)
                + (autoTS?"1":"0")+(splitL?"1":"0")+IntegerToString(maxHold)
+               + DoubleToString(marPct,1)
                + DoubleToString(lockUSD,2)+IntegerToString(stallS)+(syncTS?"1":"0")+(exitRv?"1":"0")
                + DoubleToString(ptpR,2)+DoubleToString(ptpF,2)+DoubleToString(qtp,2)
                + DoubleToString(trStart,2)+DoubleToString(trGive,2)
@@ -426,6 +450,7 @@ void LoadSettings()
    g_useATRFilter=useATR; g_maxATRPoints=MathMax(0.0,maxATR);
    g_blockRollover=blkRO; g_maxConsecLosses=MathMax(0,maxCL);
    g_autoTPSL=autoTS; g_splitLot=splitL; g_maxHoldMin=MathMax(0,maxHold);
+   g_marginUsePct=MathMax(0.0,MathMin(95.0,marPct));
    g_lockProfitUSD=MathMax(0.0,lockUSD); g_stallSecs=MathMax(5,stallS);
    g_syncTPSL=syncTS; g_exitOnReverse=exitRv;
    g_quickTPUSD=MathMax(0.0,qtp);
@@ -455,7 +480,8 @@ void LoadSettings()
             +" | Rollover="+(g_blockRollover?"BLOCK 21-22GMT":"OFF")
             +" | MaxConsecLosses="+(g_maxConsecLosses>0?IntegerToString(g_maxConsecLosses):"OFF"));
       EALog("AutoMode="+(g_autoTPSL?"ON - dynamic Lot+TP+SL (risk "+DoubleToString(AUTO_RISK_PCT,1)+"% - ATRx"+DoubleToString(AUTO_SL_ATR,1)+" - RR "+DoubleToString(AUTO_TP_RR,1)+")":"OFF - manual")
-            +" | SplitLot="+(g_splitLot?"ON ÷"+IntegerToString(g_maxPositions):"OFF")
+            +" | SplitLot="+(g_splitLot?"ON /"+IntegerToString(g_maxPositions):"OFF")
+            +" | MarginUse="+(g_marginUsePct>0?DoubleToString(g_marginUsePct,0)+"%":"OFF")
             +" | MaxHold="+(g_maxHoldMin>0?IntegerToString(g_maxHoldMin)+"m":"OFF")
             +" | LockProfit="+(g_lockProfitUSD>0?"$"+DoubleToString(g_lockProfitUSD,2)+"@"+IntegerToString(g_stallSecs)+"s":"OFF")
             +" | SyncTPSL="+(g_syncTPSL?"ON":"OFF")

@@ -126,6 +126,7 @@ DEFAULT_SETTINGS = {
     "MaxConsecLosses":0,
     "AutoTPSL":       0,
     "SplitLot":       0,
+    "MarginUsePct":   0.0,
     "MaxHoldMin":     0,
     "LockProfitUSD":  0.0,
     "StallSecs":      60,

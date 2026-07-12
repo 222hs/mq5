@@ -22,6 +22,7 @@ const SECTIONS = [
     { k: 'OrderType', t: 'n', label: 'Order Type (0=Mkt·1=Lim·2=Stp·3=Basket)', step: 1, int: true },
     { k: 'RiskMode', t: 'n', label: 'Risk Mode (0=fixed lot·1=% risk)', step: 1, int: true },
     { k: 'RiskPercent', t: 'n', label: 'Risk % (when Risk Mode=1)', step: 0.1 },
+    { k: 'MarginUsePct', t: 'n', label: 'Margin Use % (0=off · bigger lots)', step: 5 },
   ]},
   { title: '🎯 الخروج (TP / SL)', items: [
     { k: 'QuickTPUSD', t: 'n', label: 'Quick TP $ — close at profit', step: 0.5 },
