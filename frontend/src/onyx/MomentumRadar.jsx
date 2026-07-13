@@ -10,6 +10,8 @@ export default function MomentumRadar() {
   const candleSeries = useRef(null);
   const volSeries = useRef(null);
   const candles = useTradingStore((s) => s.candles);
+  const positions = useTradingStore((s) => s.positions);
+  const priceLines = useRef([]);
 
   useEffect(() => {
     if (!el.current) return undefined;
@@ -60,6 +62,31 @@ export default function MomentumRadar() {
       ? candles.map((c, i) => ({ time: times[i], value: +(c.v ?? c.tick_volume ?? c.volume ?? 0), color: (+c.c >= +c.o) ? 'rgba(0,230,118,0.35)' : 'rgba(255,61,0,0.35)' }))
       : []);
   }, [candles]);
+
+  // ── رسم الصفقات المفتوحة كخطوط عند سعر الدخول (تُفلتر لتطابق الشارت) ──
+  useEffect(() => {
+    if (!candleSeries.current) return;
+    priceLines.current.forEach((pl) => { try { candleSeries.current.removePriceLine(pl); } catch { /* noop */ } });
+    priceLines.current = [];
+    const last = candles.length ? +candles[candles.length - 1].c : null;
+    positions.forEach((p) => {
+      const price = +(p.price_open ?? p.open ?? 0);
+      if (!price) return;
+      // اعرض فقط الصفقات القريبة من سعر الشارت (يستبعد رمز آخر مثل BTC على شارت الذهب)
+      if (last && Math.abs(price - last) / last > 0.25) return;
+      const isBuy = String(p.type || '').toUpperCase() === 'BUY';
+      const prof = +(p.profit || 0);
+      const pl = candleSeries.current.createPriceLine({
+        price,
+        color: isBuy ? '#00E676' : '#FF3D00',
+        lineWidth: 1,
+        lineStyle: 2,
+        axisLabelVisible: true,
+        title: `${isBuy ? 'BUY' : 'SELL'} ${prof >= 0 ? '+' : ''}${prof.toFixed(2)}`,
+      });
+      priceLines.current.push(pl);
+    });
+  }, [positions, candles]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 300 }}>
