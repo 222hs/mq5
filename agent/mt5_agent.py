@@ -831,7 +831,7 @@ def sync_settings():
                 "HedgeLotMult", "ScaleStep", "ScaleMult", "MaxScales",
                 "UseATRFilter", "MaxATRPoints", "BlockRollover", "MaxConsecLosses",
                 "AutoTPSL", "SplitLot", "MarginUsePct", "AutoSLATR", "AutoTPRR", "MaxHoldMin", "LockProfitUSD", "StallSecs", "SyncTPSL",
-                "ExitOnReverse", "QuickTPUSD", "TrailStartUSD", "TrailGiveUSD",
+                "ExitOnReverse", "ExitRevProfit", "QuickTPUSD", "TrailStartUSD", "TrailGiveUSD",
                 "TrendReverse", "ReverseAfterLosses", "EarlyEntry", "EarlyMomATR",
                 "PartialTP_R", "PartialTP_Frac",
             ]

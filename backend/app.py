@@ -134,6 +134,7 @@ DEFAULT_SETTINGS = {
     "StallSecs":      60,
     "SyncTPSL":       0,
     "ExitOnReverse":  0,
+    "ExitRevProfit":  0,
     "QuickTPUSD":     0.0,
     "TrailStartUSD":  0.0,
     "TrailGiveUSD":   0.5,

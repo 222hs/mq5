@@ -124,6 +124,7 @@ bool   g_splitLot       = false; // يوزّع اللوت على أقصى عدد
 double g_marginUsePct   = 0.0;   // 0=معطّل | يحسب اللوت لاستغلال % من الهامش عبر كل الصفقات
 bool   g_syncTPSL       = false; // يكتب TP/SL الحقيقية على الصفقات ويحدّثها مع الإعدادات
 bool   g_exitOnReverse  = false; // يقص الصفقة الخاسرة لو الشمعة انعكست ضد اتجاهها
+bool   g_exitRevProfit  = false; // يجني الربح: يقفل الصفقة الرابحة لو الشمعة انعكست
 double g_quickTPUSD     = 0.0;   // 0=معطّل | يسكّر الصفقة كاملة عند ربح $ ثابت (بغضّ النظر عن AUTO)
 double g_trailStartUSD  = 0.0;   // 0=معطّل | يبدأ التريلينج بعد ربح $
 double g_trailGiveUSD   = 0.5;   // كم $ يسمح يرجع من الذروة قبل ما يقفل (أصغر=أسرع)
@@ -216,6 +217,7 @@ void WriteCurrentSettings()
    j += "  \"StallSecs\": "    + IntegerToString(g_stallSecs)        + ",\n";
    j += "  \"SyncTPSL\": "     + (g_syncTPSL ? "1" : "0")            + ",\n";
    j += "  \"ExitOnReverse\": "+ (g_exitOnReverse ? "1" : "0")       + ",\n";
+   j += "  \"ExitRevProfit\": "+ (g_exitRevProfit ? "1" : "0")       + ",\n";
    j += "  \"QuickTPUSD\": "   + DoubleToString(g_quickTPUSD,2)      + ",\n";
    j += "  \"TrailStartUSD\": "+ DoubleToString(g_trailStartUSD,2)   + ",\n";
    j += "  \"TrailGiveUSD\": " + DoubleToString(g_trailGiveUSD,2)    + ",\n";
@@ -410,6 +412,7 @@ void LoadSettings()
    double aTPrr  = ReadSetting("AutoTPRR",          2.0);
    bool   syncTS = (ReadSetting("SyncTPSL",        0.0) > 0.5);
    bool   exitRv = (ReadSetting("ExitOnReverse",   0.0) > 0.5);
+   bool   exitRp = (ReadSetting("ExitRevProfit",   0.0) > 0.5);
    double qtp    = ReadSetting("QuickTPUSD",        0.0);
    double trStart= ReadSetting("TrailStartUSD",     0.0);
    double trGive = ReadSetting("TrailGiveUSD",      0.5);
@@ -443,7 +446,7 @@ void LoadSettings()
                + DoubleToString(ptpR,2)+DoubleToString(ptpF,2)+DoubleToString(qtp,2)
                + DoubleToString(trStart,2)+DoubleToString(trGive,2)
                + (trRev?"1":"0")+IntegerToString(revAft)
-               + (early?"1":"0")+DoubleToString(earlyM,2);
+               + (early?"1":"0")+DoubleToString(earlyM,2)+(exitRp?"1":"0");
    bool changed = (hash != g_lastSettingsHash);
    g_lastSettingsHash = hash;
 
@@ -464,7 +467,7 @@ void LoadSettings()
    g_marginUsePct=MathMax(0.0,MathMin(95.0,marPct));
    g_autoSLATR=MathMax(0.2,aSLatr); g_autoTPRR=MathMax(0.5,aTPrr);
    g_lockProfitUSD=MathMax(0.0,lockUSD); g_stallSecs=MathMax(5,stallS);
-   g_syncTPSL=syncTS; g_exitOnReverse=exitRv;
+   g_syncTPSL=syncTS; g_exitOnReverse=exitRv; g_exitRevProfit=exitRp;
    g_quickTPUSD=MathMax(0.0,qtp);
    g_trailStartUSD=MathMax(0.0,trStart); g_trailGiveUSD=MathMax(0.05,trGive);
    g_trendReverse=trRev; g_reverseAfterLosses=MathMax(1,revAft);
@@ -503,6 +506,7 @@ void LoadSettings()
             +" | Trail="+(g_trailStartUSD>0?"start$"+DoubleToString(g_trailStartUSD,2)+" give$"+DoubleToString(g_trailGiveUSD,2):"OFF")
             +" | TrendReverse="+(g_trendReverse?"ON@"+IntegerToString(g_reverseAfterLosses):"OFF")
             +" | EarlyEntry="+(g_earlyEntry?"ON x"+DoubleToString(g_earlyMomATR,2):"OFF")
+            +" | ExitRevProfit="+(g_exitRevProfit?"ON":"OFF")
             +" | PartialTP="+(g_partialTP_R>0?DoubleToString(g_partialTP_R,1)+"Rx"+DoubleToString(g_partialTP_Frac*100,0)+"%":"OFF")
             +" -> lot/trade="+DoubleToString(CalcLot(),2));
       EALog("=======================================");
@@ -1308,7 +1312,7 @@ void ManagePositions()
 
    // اتجاه الشمعة الحالية (لقص الخسارة عند الانعكاس)
    bool candleBull=false, candleBear=false;
-   if(g_exitOnReverse)
+   if(g_exitOnReverse || g_exitRevProfit)
      {
       double co[1], cc[1];
       if(CopyOpen(_Symbol,TF,0,1,co)==1 && CopyClose(_Symbol,TF,0,1,cc)==1)
@@ -1485,6 +1489,15 @@ void ManagePositions()
          if((isBuy && candleBear) || (!isBuy && candleBull))
            { trade.PositionClose(tk); LkRemove(tk);
              EALog("REVERSE cut #"+IntegerToString((int)tk)+" $"+DoubleToString(profit,2)+" (loss+reverse)"); continue; }
+        }
+
+      // جني الربح عند انعكاس الشمعة - فقط لو الصفقة رابحة (تحجز الربح قبل ما ينقلب)
+      if(g_exitRevProfit && profit > 0.0 && ageSeconds >= 20)
+        {
+         bool isBuy = (posInfo.PositionType()==POSITION_TYPE_BUY);
+         if((isBuy && candleBear) || (!isBuy && candleBull))
+           { trade.PositionClose(tk); LkRemove(tk);
+             EALog("REVERSE profit-lock #"+IntegerToString((int)tk)+" +$"+DoubleToString(profit,2)+" (candle flipped)"); continue; }
         }
      }
   }

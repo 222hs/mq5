@@ -37,6 +37,7 @@ const SECTIONS = [
     { k: 'StallSecs', t: 'n', label: 'Stall Seconds', step: 5, int: true },
     { k: 'SyncTPSL', t: 't', label: 'Write TP/SL on Trades', hint: 'real TP/SL on open positions, updated live' },
     { k: 'ExitOnReverse', t: 't', label: 'Cut Loss on Candle Reverse', hint: 'close a losing trade when the candle flips (≥40% of SL)' },
+    { k: 'ExitRevProfit', t: 't', label: 'Lock Profit on Candle Reverse', hint: 'close a WINNING trade when the candle flips against it' },
   ]},
   { title: '🔍 الفلاتر', items: [
     { k: 'EarlyEntry', t: 't', label: 'Early Entry (ride forming candle)', hint: 'enter as the current candle moves, not after it closes' },
