@@ -225,8 +225,8 @@ export default function Onyx() {
       </motion.div>
 
       {/* Z7 — strategy drawers: GOLD + BTC side by side */}
-      <button className="grx-tab" onClick={() => setDrawer(true)}>GOLD · STRATEGY</button>
-      <button className="grx-tab" style={{ bottom: 68 }} onClick={() => setBtcDrawer(true)}>BTC · STRATEGY</button>
+      <button className="grx-tab" style={{ top: '26%' }} onClick={() => setDrawer(true)}>GOLD · STRATEGY</button>
+      <button className="grx-tab" style={{ top: '52%', borderColor: 'rgba(247,147,26,.6)', color: '#F7931A' }} onClick={() => setBtcDrawer(true)}>BTC ₿ · STRATEGY</button>
 
       {drawer && (
         <>
