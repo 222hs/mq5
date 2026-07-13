@@ -11,6 +11,7 @@ export default function MomentumRadar() {
   const volSeries = useRef(null);
   const candles = useTradingStore((s) => s.candles);
   const positions = useTradingStore((s) => s.positions);
+  const history = useTradingStore((s) => s.history);
   const priceLines = useRef([]);
 
   useEffect(() => {
@@ -87,6 +88,38 @@ export default function MomentumRadar() {
       priceLines.current.push(pl);
     });
   }, [positions, candles]);
+
+  // ── علامات (أسهم) على الشموع عند صفقات التاريخ ──────────────────
+  useEffect(() => {
+    if (!candleSeries.current || !candles.length) return;
+    const last = +candles[candles.length - 1].c;
+    const toSec = (raw) => {
+      if (raw == null) return null;
+      if (typeof raw === 'number') return raw > 1e12 ? Math.floor(raw / 1000) : Math.floor(raw);
+      const ms = new Date(raw).getTime();
+      return isNaN(ms) ? null : Math.floor(ms / 1000);
+    };
+    const tMin = toSec(candles[0].t ?? candles[0].time);
+    const tMax = toSec(candles[candles.length - 1].t ?? candles[candles.length - 1].time);
+    const markers = [];
+    (history || []).slice(0, 60).forEach((t) => {
+      const price = +(t.price || 0);
+      if (last && price && Math.abs(price - last) / last > 0.25) return; // فلتر الرمز
+      const sec = toSec(t.time);
+      if (sec == null || (tMin && sec < tMin) || (tMax && sec > tMax)) return;
+      const isBuy = String(t.type || '').toUpperCase() === 'BUY';
+      const prof = +(t.profit || 0);
+      markers.push({
+        time: sec,
+        position: isBuy ? 'belowBar' : 'aboveBar',
+        color: prof >= 0 ? '#00E676' : '#FF3D00',
+        shape: isBuy ? 'arrowUp' : 'arrowDown',
+        text: `${prof >= 0 ? '+' : ''}${prof.toFixed(1)}`,
+      });
+    });
+    markers.sort((a, b) => a.time - b.time);
+    try { candleSeries.current.setMarkers(markers); } catch { /* noop */ }
+  }, [history, candles]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 300 }}>
