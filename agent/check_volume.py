@@ -50,4 +50,8 @@ def main():
     mt5.shutdown()
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print("خطأ:", e)
+    input("\n--- اضغط Enter للإغلاق ---")  # يبقي النافذة مفتوحة
