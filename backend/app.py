@@ -146,6 +146,30 @@ DEFAULT_SETTINGS = {
     "PartialTP_Frac": 0.5,
 }
 
+# أول نتيجة مرجعية من اختبار XAUUSDm M5 على 100,000 شمعة. تُعرض حتى يرفع
+# OpenClaw/Windows نتيجة أحدث عبر /api/backtest/result.
+DEFAULT_BACKTEST_RESULT = {
+    "strategy": "fastest_gold",
+    "symbol": "XAUUSDm",
+    "timeframe": "M5",
+    "status": "unsafe",
+    "generated_at": "2026-07-23T00:27:00+04:00",
+    "data": {"bars": 100000, "start": "2025-02-20", "end": "2026-07-22"},
+    "baseline": {
+        "trades": 221, "net_usd": 10.14, "return_pct": 0.10,
+        "win_rate": 46.15, "profit_factor": 1.00,
+        "max_drawdown_pct": -104.54, "sharpe": -0.28,
+    },
+    "candidate": {
+        "params": {"rsi_buy_max": 55, "rsi_sell_min": 30, "atr_mult": 1.0, "use_mtf": True},
+        "trades": 173, "net_usd": -4481.76, "return_pct": -44.82,
+        "win_rate": 43.93, "profit_factor": 0.84,
+        "max_drawdown_pct": -78.86, "sharpe": -0.29,
+    },
+    "decision": "rejected",
+    "reason": "Candidate failed out-of-sample validation; automatic promotion is blocked.",
+}
+
 # البتكوين: نفس كل مفاتيح الذهب + تعديلات خاصة بالبتكوين (ستوب أوسع 2.0xATR)
 BTC_DEFAULT_SETTINGS = {
     **DEFAULT_SETTINGS,
@@ -245,6 +269,13 @@ def init_db():
                 entry_price REAL,
                 data        TEXT,
                 time        TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS backtest_results (
+                id         INTEGER PRIMARY KEY CHECK (id = 1),
+                data       TEXT NOT NULL,
+                created_at TEXT NOT NULL
             )
         """)
         conn.execute("""
@@ -1517,6 +1548,49 @@ def api_snapshots_count():
         row = conn.execute("SELECT COUNT(*) as n FROM trade_snapshots").fetchone()
         n = row["n"] if row else 0
     return jsonify({"count": n})
+
+
+@app.route("/api/backtest/latest", methods=["GET"])
+def api_backtest_latest():
+    """آخر نتيجة باك تست مرفوعة من جهاز MT5/OpenClaw."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT data, created_at FROM backtest_results WHERE id = 1"
+        ).fetchone()
+    if not row:
+        return jsonify(DEFAULT_BACKTEST_RESULT)
+    try:
+        payload = json.loads(row["data"])
+    except (TypeError, json.JSONDecodeError):
+        payload = DEFAULT_BACKTEST_RESULT.copy()
+    payload["stored_at"] = row["created_at"]
+    return jsonify(payload)
+
+
+@app.route("/api/backtest/result", methods=["POST"])
+def api_backtest_result():
+    """يحفظ نتيجة فقط؛ لا يطبّق إعدادات على البوت تلقائياً."""
+    if not check_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "JSON object required"}), 400
+    required = {"strategy", "symbol", "timeframe", "baseline", "candidate", "decision"}
+    missing = sorted(required - payload.keys())
+    if missing:
+        return jsonify({"error": "Missing fields", "fields": missing}), 400
+    if len(json.dumps(payload)) > 250_000:
+        return jsonify({"error": "Payload too large"}), 413
+    now = datetime.now().isoformat()
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO backtest_results (id, data, created_at) VALUES (1, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET data=excluded.data, created_at=excluded.created_at""",
+            (json.dumps(payload), now),
+        )
+        conn.commit()
+    socketio.emit("backtest_result", payload)
+    return jsonify({"status": "ok", "stored_at": now})
 
 
 @app.route("/api/health", methods=["GET"])
