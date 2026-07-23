@@ -48,13 +48,28 @@ def export():
     if not info.visible:
         mt5.symbol_select(SYMBOL, True)
 
-    print(f"سحب {BARS:,} شمعة M5 لـ {SYMBOL} ...")
-    rates = mt5.copy_rates_from_pos(SYMBOL, mt5.TIMEFRAME_M5, 0, BARS)
-    mt5.shutdown()
+    # نطلب كمية كبيرة، ولو ما رجّعش (التاريخ المخزّن أقل) نقلّل تلقائياً.
+    rates = None
+    for want in (BARS, 150_000, 100_000, 75_000, 50_000, 30_000, 20_000, 10_000, 5_000):
+        print(f"محاولة سحب {want:,} شمعة M5 لـ {SYMBOL} ...")
+        rates = mt5.copy_rates_from_pos(SYMBOL, mt5.TIMEFRAME_M5, 0, want)
+        if rates is not None and len(rates) > 0:
+            print(f"   ✓ رجع {len(rates):,} شمعة")
+            break
+        # محاولة بديلة بنطاق زمني من الآن للخلف
+        rates = mt5.copy_rates_from(SYMBOL, mt5.TIMEFRAME_M5, datetime.now(timezone.utc), want)
+        if rates is not None and len(rates) > 0:
+            print(f"   ✓ رجع {len(rates):,} شمعة (بالنطاق الزمني)")
+            break
 
     if rates is None or len(rates) == 0:
-        print(f"❌ لم تُرجَع بيانات: {mt5.last_error()}")
+        err = mt5.last_error()
+        mt5.shutdown()
+        print(f"❌ لم تُرجَع بيانات حتى بأقل كمية. الخطأ: {err}")
+        print("   الحل غالباً: افتح شارت XAUUSDm M5 في MT5، اسحب للخلف لتحميل التاريخ،")
+        print("   ثم شغّل RUN_GOLD.bat من جديد.")
         sys.exit(1)
+    mt5.shutdown()
 
     df = pd.DataFrame(rates)
     df["time"] = pd.to_datetime(df["time"], unit="s", utc=True)
