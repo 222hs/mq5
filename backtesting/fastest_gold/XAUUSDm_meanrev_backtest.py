@@ -64,7 +64,7 @@ def load_data() -> pd.DataFrame:
         out = pd.DataFrame({
             "open": df["bid_open"], "high": df["bid_high"], "low": df["bid_low"],
             "close": df["bid_close"], "volume": df["bid_volume"],
-            "spread": (df["ask_close"] - df["bid_close"]) / POINT,
+            "spread": (df["ask_close"] - df["bid_close"]),   # بالدولار مباشرة
         })
     else:
         # صيغة تصدير MT5 القياسية: time, open, high, low, close, volume, spread
@@ -126,7 +126,7 @@ def simulate(df: pd.DataFrame, p: Params):
         d = days[i]
         if d != cur_day:
             cur_day, day_pnl = d, 0.0
-        spx = sp[i] * POINT; surv = []
+        spx = sp[i]; surv = []   # عمود spread صار بالدولار مباشرة
         for pos in active:
             side = pos["side"]; ex = None; reason = None
             if side == 1:
@@ -146,7 +146,7 @@ def simulate(df: pd.DataFrame, p: Params):
         ok = (ps != 0 and sp[i] <= MAX_SPREAD_POINTS and len(active) < MAX_POSITIONS
               and -MAX_DAILY_LOSS < day_pnl < MAX_DAILY_PROFIT)
         if ok:
-            dist = max(atr[i - 1] * p.atr_mult, 10 * POINT)
+            dist = max(atr[i - 1] * p.atr_mult, 0.10)   # حد أدنى $0.10 للمسافة
             if ps == 1:
                 entry = o[i] + spx; sl = entry - dist; tp = entry + dist * p.tp_rr
             else:
@@ -155,7 +155,7 @@ def simulate(df: pd.DataFrame, p: Params):
                            "risk_usd": dist * upp})
         curve[i] = equity
     for pos in active:
-        ex = c[-1] if pos["side"] == 1 else c[-1] + sp[-1] * POINT
+        ex = c[-1] if pos["side"] == 1 else c[-1] + sp[-1]
         pnl = (ex - pos["entry"]) * pos["side"] * upp; equity += pnl
         trades.append({"side": pos["side"], "pnl_usd": pnl, "risk_usd": pos["risk_usd"],
                        "r": pnl / pos["risk_usd"], "reason": "END"})
@@ -211,7 +211,7 @@ def main():
     train, test = df.iloc[:split], df.iloc[split:]
     print(f"بيانات {DATA_FILE.name} [{TIMEFRAME}]: {n:,} شمعة  "
           f"({df.index[0].date()} → {df.index[-1].date()})  train={len(train):,} test={len(test):,}")
-    print(f"السبريد: وسيط={df['spread'].median():.0f} نقطة  متوسط={df['spread'].mean():.0f}\n")
+    print(f"السبريد: وسيط=${df['spread'].median():.3f}  متوسط=${df['spread'].mean():.3f}\n")
 
     # 1) شبكة بحث على train فقط
     grid = [Params(rsi_os=os_, rsi_ob=ob, atr_mult=am, tp_rr=rr, trend_filter=tf)

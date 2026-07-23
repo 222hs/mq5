@@ -84,11 +84,14 @@ def export():
         print("   الحل غالباً: افتح شارت XAUUSDm M5 في MT5، اسحب للخلف لتحميل التاريخ،")
         print("   ثم شغّل RUN_GOLD.bat من جديد.")
         sys.exit(1)
+    # قيمة النقطة الحقيقية للرمز (ذهب Exness 3 خانات → 0.001) — لتحويل السبريد لدولار
+    point_val = mt5.symbol_info(SYMBOL).point
+    digits = mt5.symbol_info(SYMBOL).digits
     mt5.shutdown()
 
     df = pd.DataFrame(rates)
     df["time"] = pd.to_datetime(df["time"], unit="s", utc=True)
-    # MT5 يوفّر عمود spread بالنقاط لكل شمعة — نستخدمه مباشرة (سبريد بروكرك الحقيقي)
+    # نحوّل السبريد من نقاط البروكر إلى دولار (نقاط × قيمة النقطة) — يمنع خطأ الوحدات
     out = pd.DataFrame({
         "time":   df["time"],
         "open":   df["open"],
@@ -96,14 +99,15 @@ def export():
         "low":    df["low"],
         "close":  df["close"],
         "volume": df["tick_volume"],
-        "spread": df["spread"],          # نقاط
+        "spread": df["spread"] * point_val,   # بالدولار
     })
     out = out.dropna().drop_duplicates("time").sort_values("time")
     out.to_csv(OUT, index=False)
     print(f"✅ اتكتب {len(out):,} شمعة في {OUT}")
     print(f"   الفترة: {out['time'].iloc[0].date()} → {out['time'].iloc[-1].date()}")
-    print(f"   السبريد الحقيقي: وسيط={out['spread'].median():.0f} نقطة  "
-          f"متوسط={out['spread'].mean():.0f}  (min={out['spread'].min():.0f} max={out['spread'].max():.0f})")
+    print(f"   الرمز {digits} خانات، قيمة النقطة {point_val}")
+    print(f"   السبريد الحقيقي: وسيط=${out['spread'].median():.3f}  "
+          f"متوسط=${out['spread'].mean():.3f}  (min=${out['spread'].min():.3f} max=${out['spread'].max():.3f})")
     return out
 
 
