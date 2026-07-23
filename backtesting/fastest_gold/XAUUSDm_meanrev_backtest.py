@@ -18,7 +18,7 @@ XAUUSDm_meanrev_backtest.py — استراتيجية العودة للمتوسط
 التشغيل (على OpenClaw/Windows بعد تصدير XAUUSDm M5 من MT5):
     set BACKEND_URL=https://mq5-production.up.railway.app
     set API_KEY=<نفس مفتاح Railway>
-    set BACKTEST_DATA=data\XAUUSDm_M5.csv
+    set BACKTEST_DATA=data\\XAUUSDm_M5.csv
     python XAUUSDm_meanrev_backtest.py
 """
 import os, json, math, itertools, urllib.request

@@ -39,13 +39,28 @@ def export():
         print("   تأكد أن MetaTrader 5 مفتوح ومسجّل دخول.")
         sys.exit(1)
 
-    # نتأكد أن الرمز متاح ونفعّله في Market Watch لو مخفي
-    info = mt5.symbol_info(SYMBOL)
-    if info is None:
-        print(f"❌ الرمز {SYMBOL} غير موجود عند البروكر.")
-        print(f"   الرموز المتاحة القريبة:", [s.name for s in mt5.symbols_get("*XAU*")][:10])
+    # نلاقي رمز الذهب لوحده مهما كان اسمه (Standard=XAUUSDm, Raw/Zero=XAUUSD ...)
+    global SYMBOL
+    candidates = [SYMBOL, "XAUUSD", "XAUUSDm", "GOLD", "GOLDm",
+                  "XAUUSD.raw", "XAUUSDz", "XAUUSD_z"]
+    # نضيف أي رمز فيه XAU من قائمة البروكر
+    for s in (mt5.symbols_get("*XAU*") or []):
+        if s.name not in candidates:
+            candidates.append(s.name)
+    found = None
+    for name in candidates:
+        info = mt5.symbol_info(name)
+        if info is not None:
+            found = name
+            break
+    if found is None:
+        print(f"❌ لم أجد رمز ذهب. الرموز المتاحة القريبة:",
+              [s.name for s in (mt5.symbols_get("*XAU*") or [])][:10])
         mt5.shutdown(); sys.exit(1)
-    if not info.visible:
+    if found != SYMBOL:
+        print(f"ℹ️ رمز الذهب على هذا الحساب: {found} (بدل {SYMBOL})")
+    SYMBOL = found
+    if not mt5.symbol_info(SYMBOL).visible:
         mt5.symbol_select(SYMBOL, True)
 
     # نطلب كمية كبيرة، ولو ما رجّعش (التاريخ المخزّن أقل) نقلّل تلقائياً.
