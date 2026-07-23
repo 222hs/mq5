@@ -309,6 +309,9 @@ def main() -> None:
         "strategy": "fastest_gold",
         "symbol": "XAUUSDm",
         "timeframe": "M5",
+        # التقييم على مجموعة test منفصلة (train/test split أعلى) = خارج العينة.
+        # بوابة الترقية في الـ backend ترفض احترازياً أي رفع بدون هذا الحقل.
+        "validation": "walk_forward",
         "status": "candidate" if approved else "unsafe",
         "generated_at": pd.Timestamp.now(tz="UTC").isoformat(),
         "data": {
