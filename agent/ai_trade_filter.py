@@ -16,7 +16,7 @@ from datetime import datetime
 from anthropic import Anthropic
 
 # ============== الإعدادات ==============
-ANTHROPIC_API_KEY = "ضع-مفتاح-Anthropic-API-هنا"
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "ضع-مفتاح-Anthropic-API-هنا")
 SIGNAL_FILE = os.path.join(
     os.environ.get("APPDATA", ""), "MetaQuotes", "Terminal", "Common", "Files", "signals.json"
 )
@@ -77,7 +77,7 @@ def ask_claude(signal):
 
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-sonnet-5",
             max_tokens=200,
             messages=[{"role": "user", "content": prompt}],
         )
