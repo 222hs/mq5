@@ -12,6 +12,13 @@ import sqlite3
 from datetime import datetime
 from threading import Lock
 import urllib.request
+import promotion_gate
+
+# علم تفعيل التعديل الذاتي الحي من الخسائر المتتالية (auto_adjust_settings).
+# افتراضياً OFF: التعديل من 10 صفقات خاسرة بدون تحقّق out-of-sample يطارد الضوضاء
+# ويخسر فلوس. التعديلات الآمنة تمرّ عبر promotion_gate فقط. فعّله بوعي عبر:
+#   LIVE_AUTOTUNE_ENABLED=1
+LIVE_AUTOTUNE_ENABLED = os.environ.get("LIVE_AUTOTUNE_ENABLED", "0") == "1"
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -293,6 +300,20 @@ def init_db():
                 id         INTEGER PRIMARY KEY CHECK (id = 1),
                 data       TEXT NOT NULL,
                 created_at TEXT NOT NULL
+            )
+        """)
+        # سجل تدقيق دائم لكل قرار ترقية: مقبول أو مرفوض، مع الأسباب والباراميترات.
+        # لا يُمسح مع redeploy لو DB_FILE على volume — عشان نراجع تاريخ التعلّم.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS promotions (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                approved   INTEGER NOT NULL,
+                strategy   TEXT,
+                symbol     TEXT,
+                reasons    TEXT,
+                applied    TEXT,
+                checks     TEXT
             )
         """)
         conn.execute("""
@@ -973,6 +994,12 @@ def auto_adjust_settings(losing_snaps, account):
     Claude يحلل snapshots الخسائر ويقترح تعديلات — لكن الاقتراح لا يُطبَّق
     إلا بعد اجتياز بوابات التحقق: cooldown + عينة كافية + replay يثبت تحسناً.
     """
+    if not LIVE_AUTOTUNE_ENABLED:
+        # المسار ده بيغيّر باراميترات حية من 10 صفقات خاسرة بدون تحقّق out-of-sample
+        # = مطاردة ضوضاء في قاع الـ drawdown. معطّل افتراضياً. التعلّم الآمن يمرّ
+        # عبر promotion_gate (نتيجة باك-تست موثّقة). فعّله بـ LIVE_AUTOTUNE_ENABLED=1.
+        push_log("info", "🛡️ AUTO-ADJ معطّل (LIVE_AUTOTUNE_ENABLED=0) — التعلّم عبر بوابة الترقية فقط.")
+        return
     if not ANTHROPIC_API_KEY:
         return
     if not losing_snaps:
@@ -1915,7 +1942,12 @@ def api_backtest_latest():
 
 @app.route("/api/backtest/result", methods=["POST"])
 def api_backtest_result():
-    """يحفظ نتيجة فقط؛ لا يطبّق إعدادات على البوت تلقائياً."""
+    """
+    يستقبل نتيجة باك-تست من OpenClaw/Windows، يمرّرها على بوابة الترقية،
+    وإذا اجتازت كل فحوصات الأمان (out-of-sample + عتبات + تفوّق على الحالي)
+    يطبّق الباراميترات على البوت أوتوماتيك. غير ذلك: يخزّن ويرفض بدون لمس البوت.
+    كل قرار يُسجَّل في جدول promotions للتدقيق.
+    """
     if not check_api_key():
         return jsonify({"error": "Unauthorized"}), 401
     payload = request.get_json(silent=True)
@@ -1927,6 +1959,22 @@ def api_backtest_result():
         return jsonify({"error": "Missing fields", "fields": missing}), 400
     if len(json.dumps(payload)) > 250_000:
         return jsonify({"error": "Payload too large"}), 413
+
+    # التحقّق المستقل — لا نثق في حقل decision القادم من المُرسِل، نحكم بأنفسنا.
+    verdict = promotion_gate.evaluate(payload)
+    payload["gate_decision"] = "approved" if verdict["approved"] else "rejected"
+    payload["gate_reasons"]  = verdict["reasons"]
+
+    applied_params = {}
+    if verdict["approved"]:
+        applied_params = verdict["applied_params"]
+        save_settings(applied_params, mark_user_saved=True)   # يلتقطه الـ agent الدورة القادمة
+        socketio.emit("settings", get_settings())
+        push_log("ok", f"🎯 PROMOTION: تم تطبيق {len(applied_params)} إعداد بعد اجتياز التحقّق — "
+                       + "، ".join(f"{k}={v}" for k, v in applied_params.items()))
+    else:
+        push_log("warn", "🛡️ PROMOTION: مرشّح مرفوض — " + " | ".join(verdict["reasons"][:2]))
+
     now = datetime.now().isoformat()
     with get_db() as conn:
         conn.execute(
@@ -1934,9 +1982,44 @@ def api_backtest_result():
                ON CONFLICT(id) DO UPDATE SET data=excluded.data, created_at=excluded.created_at""",
             (json.dumps(payload), now),
         )
+        conn.execute(
+            """INSERT INTO promotions (created_at, approved, strategy, symbol, reasons, applied, checks)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (now, 1 if verdict["approved"] else 0,
+             payload.get("strategy"), payload.get("symbol"),
+             json.dumps(verdict["reasons"], ensure_ascii=False),
+             json.dumps(applied_params), json.dumps(verdict["checks"], ensure_ascii=False)),
+        )
         conn.commit()
+
     socketio.emit("backtest_result", payload)
-    return jsonify({"status": "ok", "stored_at": now})
+    return jsonify({
+        "status": "ok", "stored_at": now,
+        "approved": verdict["approved"],
+        "applied_params": applied_params,
+        "reasons": verdict["reasons"],
+    })
+
+
+@app.route("/api/backtest/promotions", methods=["GET"])
+def api_backtest_promotions():
+    """سجل تدقيق آخر 50 قرار ترقية/رفض — للمراجعة من الداشبورد."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT created_at, approved, strategy, symbol, reasons, applied "
+            "FROM promotions ORDER BY id DESC LIMIT 50"
+        ).fetchall()
+    out = []
+    for r in rows:
+        out.append({
+            "created_at": r["created_at"],
+            "approved":   bool(r["approved"]),
+            "strategy":   r["strategy"],
+            "symbol":     r["symbol"],
+            "reasons":    json.loads(r["reasons"] or "[]"),
+            "applied":    json.loads(r["applied"] or "{}"),
+        })
+    return jsonify({"promotions": out})
 
 
 @app.route("/api/health", methods=["GET"])
