@@ -516,6 +516,30 @@ _last_btc_settings_hash = None
 _known_positions    = {}    # ticket -> position — لكشف الصفقات الجديدة
 _snapped_tickets    = set() # tickets مفتوحة أُرسل لها snapshot
 _snapped_history    = set() # tickets مغلقة أُرسل لها snapshot من history
+_excursions         = {}    # ticket -> [mfe, mae] أقصى ربح/خسارة عائمة $ (عينات كل UPDATE_INTERVAL)
+_LOCAL_EXCURSIONS   = os.path.join(_LOCAL_DIR, "local_excursions.json")
+
+
+def _send_excursions_bg(closed_items):
+    """يرسل MFE/MAE للصفقات المغلقة — تبقى محفوظة محلياً حتى ينجح الإرسال"""
+    pending = _load_local_json(_LOCAL_EXCURSIONS)
+    for it in closed_items:
+        pending[str(it["ticket"])] = it
+    _save_local_json(_LOCAL_EXCURSIONS, pending)
+    if not pending:
+        return
+    try:
+        r = _session.post(
+            f"{BACKEND_URL}/api/trade_excursion",
+            json={"excursions": list(pending.values())}, timeout=(5, 10),
+        )
+        if r.status_code == 200:
+            _save_local_json(_LOCAL_EXCURSIONS, {})
+            for it in closed_items:
+                print(f"📐 {datetime.now().strftime('%H:%M:%S')} - excursion #{it['ticket']} "
+                      f"MFE=${it['mfe']} MAE=${it['mae']}")
+    except Exception:
+        pass  # يبقى محفوظاً محلياً — يُعاد مع الإغلاق القادم
 _news_cache         = []    # آخر قائمة أخبار مجلوبة
 _news_cache_time    = 0     # وقت آخر تحديث للأخبار
 
@@ -1148,6 +1172,10 @@ def main():
     push_local_settings()
     push_grx_settings()   # يُعيد آخر إعدادات GRX حفظها المستخدم
 
+    # ارفع MFE/MAE المعلّقة من جلسة سابقة (لو فشل إرسالها قبل الإغلاق)
+    if _load_local_json(_LOCAL_EXCURSIONS):
+        threading.Thread(target=_send_excursions_bg, args=([],), daemon=True).start()
+
     # بناء snapshots من MT5 history مباشرة ثم رفعها
     threading.Thread(target=bootstrap_snapshots, daemon=True).start()
 
@@ -1209,6 +1237,12 @@ def main():
                 closes_m1 = [float(r["close"]) for r in m1_rates]
                 last_rsi  = _calc_rsi(closes_m1)
 
+            # تتبع MFE/MAE — أقصى ربح/خسارة عائمة لكل صفقة مفتوحة
+            for p in positions:
+                ex = _excursions.setdefault(p['ticket'], [p['profit'], p['profit']])
+                if p['profit'] > ex[0]: ex[0] = p['profit']
+                if p['profit'] < ex[1]: ex[1] = p['profit']
+
             # كشف الصفقات الجديدة وإرسال snapshot فوري
             cur_tickets = {p['ticket'] for p in positions}
             prev_tickets = set(_known_positions.keys())
@@ -1216,6 +1250,13 @@ def main():
             if closed_now and prev_tickets:  # prev_tickets check: تجنب أول loop
                 print(f"🔔 {datetime.now().strftime('%H:%M:%S')} - صفقة أُغلقت: {closed_now} — هستوري فوري")
                 last_history_sync = 0  # force immediate history sync
+                closed_ex = []
+                for tk in closed_now:
+                    if tk in _excursions:
+                        mfe, mae = _excursions.pop(tk)
+                        closed_ex.append({"ticket": int(tk), "mfe": round(mfe, 2), "mae": round(mae, 2)})
+                if closed_ex:
+                    threading.Thread(target=_send_excursions_bg, args=(closed_ex,), daemon=True).start()
             for pos in positions:
                 if pos['ticket'] not in _known_positions and pos['ticket'] not in _snapped_tickets:
                     sym      = pos.get('symbol', detect_gold_symbol())

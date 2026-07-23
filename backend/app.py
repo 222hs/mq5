@@ -241,11 +241,28 @@ def init_db():
             )
         """)
         # migration: أضف الأعمدة الجديدة لو DB قديمة
-        for col in ("price_open REAL", "price_close REAL"):
+        # settings_version: نسخة الإعدادات التي جرت تحتها الصفقة (سجل التعلم)
+        # mfe/mae: أقصى ربح/خسارة عائمة بالدولار خلال عمر الصفقة (من الـ agent)
+        for col in ("price_open REAL", "price_close REAL",
+                    "settings_version INTEGER", "mfe REAL", "mae REAL"):
             try:
                 conn.execute(f"ALTER TABLE trade_history ADD COLUMN {col}")
             except Exception:
                 pass
+        # سجل نسخ الإعدادات — كل تغيير فعلي للإعدادات يُسجَّل كنسخة مرقّمة،
+        # والصفقات تُربط بالنسخة النشطة وقتها، فيمكن قياس أثر كل تعديل والتراجع عنه
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS settings_versions (
+                version    INTEGER PRIMARY KEY AUTOINCREMENT,
+                params     TEXT NOT NULL,
+                source     TEXT NOT NULL,
+                reason     TEXT,
+                applied_at TEXT NOT NULL,
+                evaluated  INTEGER DEFAULT 0,
+                reverted   INTEGER DEFAULT 0,
+                outcome    TEXT
+            )
+        """)
         # لا نحذف التاريخ — يتراكم عبر الأيام؛ يُستعاد محلياً من الويندوز بعد أي Railway redeploy
         conn.commit()
         conn.execute("""
@@ -408,30 +425,61 @@ def save_account(account, last_update):
         conn.commit()
 
 
+def _version_for_time(versions, trade_time):
+    """آخر نسخة إعدادات كانت نشطة وقت الصفقة — حتى لا تُنسب صفقات قديمة
+    (مستعادة بعد redeploy) للنسخة الحالية خطأً. تقريبي لو اختلفت المناطق الزمنية."""
+    if not versions or not trade_time:
+        return None
+    ver = None
+    for v, applied_at in versions:  # مرتبة تصاعدياً
+        if applied_at <= trade_time:
+            ver = v
+        else:
+            break
+    return ver
+
+
 def upsert_history(trades):
     if not trades:
         return
-    rows = [{
-        'ticket':      t.get('ticket'),
-        'symbol':      t.get('symbol'),
-        'type':        t.get('type'),
-        'volume':      t.get('volume'),
-        'price':       t.get('price_close') or t.get('price'),
-        'price_open':  t.get('price_open'),
-        'price_close': t.get('price_close') or t.get('price'),
-        'profit':      t.get('profit'),
-        'swap':        t.get('swap'),
-        'commission':  t.get('commission'),
-        'time':        t.get('time'),
-        'comment':     t.get('comment'),
-    } for t in trades]
     with get_db() as conn:
+        versions = [
+            (r["version"], r["applied_at"])
+            for r in conn.execute(
+                "SELECT version, applied_at FROM settings_versions ORDER BY version ASC"
+            ).fetchall()
+        ]
+        rows = [{
+            'ticket':      t.get('ticket'),
+            'symbol':      t.get('symbol'),
+            'type':        t.get('type'),
+            'volume':      t.get('volume'),
+            'price':       t.get('price_close') or t.get('price'),
+            'price_open':  t.get('price_open'),
+            'price_close': t.get('price_close') or t.get('price'),
+            'profit':      t.get('profit'),
+            'swap':        t.get('swap'),
+            'commission':  t.get('commission'),
+            'time':        t.get('time'),
+            'comment':     t.get('comment'),
+            'settings_version': _version_for_time(versions, t.get('time')),
+        } for t in trades]
+        # ON CONFLICT بدل REPLACE — حتى لا تُدهس settings_version/mfe/mae
+        # المسجّلة سابقاً مع كل full-sync من الـ agent
         conn.executemany("""
-            INSERT OR REPLACE INTO trade_history
-                (ticket, symbol, type, volume, price, price_open, price_close, profit, swap, commission, time, comment)
+            INSERT INTO trade_history
+                (ticket, symbol, type, volume, price, price_open, price_close,
+                 profit, swap, commission, time, comment, settings_version)
             VALUES
                 (:ticket, :symbol, :type, :volume, :price, :price_open, :price_close,
-                 :profit, :swap, :commission, :time, :comment)
+                 :profit, :swap, :commission, :time, :comment, :settings_version)
+            ON CONFLICT(ticket) DO UPDATE SET
+                symbol=excluded.symbol, type=excluded.type, volume=excluded.volume,
+                price=excluded.price, price_open=excluded.price_open,
+                price_close=excluded.price_close, profit=excluded.profit,
+                swap=excluded.swap, commission=excluded.commission,
+                time=excluded.time, comment=excluded.comment,
+                settings_version=COALESCE(trade_history.settings_version, excluded.settings_version)
         """, rows)
         conn.commit()
 
@@ -507,7 +555,7 @@ def get_settings():
         return result
 
 
-def save_settings(new_settings, mark_user_saved=True):
+def save_settings(new_settings, mark_user_saved=True, source="user", reason=""):
     with get_db() as conn:
         for k, v in new_settings.items():
             if k in DEFAULT_SETTINGS:
@@ -523,6 +571,40 @@ def save_settings(new_settings, mark_user_saved=True):
             )
         conn.commit()
     _write_settings_backup()
+    _record_settings_version(source, reason)
+
+
+# مفاتيح لا تدخل سجل نسخ التعلم: تشغيل/إيقاف البوت ليس تغيير استراتيجية،
+# ولا يجوز أن يشتّت عينات التقييم أو أن يعيده التراجع التلقائي
+_VERSION_IGNORED_KEYS = {"BotRunning"}
+
+
+def _record_settings_version(source, reason=""):
+    """يسجّل نسخة جديدة في سجل التعلم — فقط إذا تغيّرت القيم فعلياً"""
+    try:
+        cur = {k: v for k, v in get_settings().items() if k not in _VERSION_IGNORED_KEYS}
+        cur_json = json.dumps(cur, sort_keys=True)
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT params FROM settings_versions ORDER BY version DESC LIMIT 1"
+            ).fetchone()
+            if row and row["params"] == cur_json:
+                return
+            conn.execute(
+                "INSERT INTO settings_versions (params, source, reason, applied_at) VALUES (?, ?, ?, ?)",
+                (cur_json, source, (reason or "")[:300], datetime.now().isoformat())
+            )
+            conn.commit()
+    except Exception:
+        pass
+
+
+def get_active_settings_version():
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT version FROM settings_versions ORDER BY version DESC LIMIT 1"
+        ).fetchone()
+        return row["version"] if row else None
 
 
 def is_user_saved():
@@ -709,15 +791,195 @@ def call_claude(consecutive_losses, recent_trades, account):
         return f"Claude error: {str(e)[:60]}"
 
 
+# ============== نظام التعلم من الخسائر ==============
+# المبدأ: الخسائر الأخيرة لا تعدّل الإعدادات الحية مباشرة أبداً.
+# أي اقتراح تعديل يمر بثلاث بوابات: عينة كافية → تحقق replay على الصفقات
+# التاريخية → تطبيق مُوثَّق كنسخة. وبعد عدد كافٍ من الصفقات تُقيَّم النسخة
+# ويُتراجع عنها تلقائياً إذا كانت أسوأ من سابقتها.
+REPLAY_MIN_SAMPLE    = 30    # أقل عدد صفقات بسنابشوت قبل قبول أي تعديل تلقائي
+AUTO_ADJUST_COOLDOWN = 3600  # ثانية بين تعديل تلقائي وآخر
+EVAL_MIN_TRADES      = 20    # صفقات مطلوبة تحت النسخة قبل تقييمها
+_last_auto_adjust_ts = [0.0]
+
+
+def _trades_with_context(limit=200):
+    """التاريخ + snapshot لكل صفقة إن وُجد — أساس الـ replay والتقارير"""
+    trades = [t for t in get_history(limit) if t.get("profit") is not None]
+    snap_map = {s.get("ticket"): s for s in get_snapshots(limit)}
+    for t in trades:
+        t["snap"] = snap_map.get(t.get("ticket"))
+    return trades
+
+
+def replay_candidate(cand, trades):
+    """
+    يعيد تشغيل الصفقات التاريخية تحت الإعدادات المرشحة (تقريبياً):
+    - فلتر RSI: صفقة كانت سترفض تحت الحد الجديد تُحسب صفراً
+    - SL/TP بالدولار: عبر MFE/MAE — لو الخسارة العائمة وصلت SL الجديد
+      فالنتيجة -SL، ولو الربح العائم وصل TP الجديد فالنتيجة +TP
+    تقريب معلن: لو الهدفان تحققا معاً، نفترض أن نتيجة الصفقة الفعلية
+    تدل على أيهما ضُرب أولاً.
+    """
+    sl = float(cand["SL_USD"])
+    tp = float(cand["TP_USD"])
+    rsi_buy_max  = float(cand["RSIBuyMax"])
+    rsi_sell_min = float(cand["RSISellMin"])
+    actual_pnl = sim_pnl = 0.0
+    blocked = sample = 0
+    for t in trades:
+        profit = float(t.get("profit") or 0)
+        actual_pnl += profit
+        sample += 1
+        snap = t.get("snap")
+        if snap:
+            rsi = float(snap.get("rsi", 50))
+            d   = (t.get("type") or snap.get("direction") or "").upper()
+            if (d == "BUY" and rsi > rsi_buy_max) or (d == "SELL" and rsi < rsi_sell_min):
+                blocked += 1
+                continue  # الصفقة كانت سترفض — لا تضيف شيئاً للمحاكاة
+        mfe = t.get("mfe")
+        mae = t.get("mae")
+        hit_tp = mfe is not None and float(mfe) >= tp
+        hit_sl = mae is not None and float(mae) <= -sl
+        if hit_tp and hit_sl:
+            sim_pnl += tp if profit > 0 else -sl
+        elif hit_tp:
+            sim_pnl += tp
+        elif hit_sl:
+            sim_pnl += -sl
+        else:
+            sim_pnl += profit  # ما وصل لأي هدف جديد — النتيجة الفعلية أقرب تقدير
+    return {
+        "sample":     sample,
+        "blocked":    blocked,
+        "actual_pnl": round(actual_pnl, 2),
+        "sim_pnl":    round(sim_pnl, 2),
+    }
+
+
+def loss_attribution(limit=200):
+    """
+    يصنّف كل خسارة قبل أي علاج — لأن العلاج يختلف جذرياً حسب النوع:
+    دخول خاطئ → فلاتر دخول | انعكاس بعد ربح → خروج/trailing |
+    بدون MFE → نحتاج بيانات أكثر قبل الحكم
+    """
+    settings = get_settings()
+    tp = float(settings.get("TP_USD", 4))
+    trades = _trades_with_context(limit)
+    losers = [t for t in trades if float(t.get("profit") or 0) < 0]
+    classes = {"bad_entry": 0, "reversal_after_profit": 0, "mixed": 0, "no_mfe_data": 0}
+    by_session = {}
+    by_hour = {}
+    detail = []
+    for t in losers:
+        mfe = t.get("mfe")
+        if mfe is None:
+            cls = "no_mfe_data"
+        elif float(mfe) >= 0.6 * tp:
+            cls = "reversal_after_profit"
+        elif float(mfe) <= max(0.5, 0.15 * tp):
+            cls = "bad_entry"
+        else:
+            cls = "mixed"
+        classes[cls] += 1
+        snap = t.get("snap") or {}
+        sess = snap.get("session", "?")
+        by_session[sess] = by_session.get(sess, 0) + 1
+        tm = t.get("time") or ""
+        hour = tm[11:13] if len(tm) >= 13 else "?"
+        by_hour[hour] = by_hour.get(hour, 0) + 1
+        detail.append({
+            "ticket": t.get("ticket"), "profit": t.get("profit"),
+            "mfe": mfe, "mae": t.get("mae"), "class": cls,
+            "rsi": snap.get("rsi"), "session": sess,
+            "settings_version": t.get("settings_version"),
+        })
+    return {
+        "sample":       len(trades),
+        "losses":       len(losers),
+        "classes":      classes,
+        "by_session":   by_session,
+        "by_hour":      dict(sorted(by_hour.items())),
+        "detail":       detail[:50],
+    }
+
+
+def evaluate_settings_versions():
+    """
+    التعلم الحقيقي: تقييم أثر كل تعديل تلقائي بعد EVAL_MIN_TRADES صفقة.
+    متوسط ربح الصفقة تحت النسخة الجديدة يُقارن بمتوسط آخر 50 صفقة قبلها —
+    لو أسوأ، يُتراجع تلقائياً للنسخة السابقة وتُوسم reverted.
+    """
+    revert_params = None
+    try:
+        with get_db() as conn:
+            v = conn.execute(
+                "SELECT * FROM settings_versions WHERE source='auto' AND evaluated=0 "
+                "ORDER BY version DESC LIMIT 1"
+            ).fetchone()
+            if not v:
+                return
+            cur = conn.execute(
+                "SELECT COUNT(*) c, COALESCE(AVG(profit),0) a, COALESCE(SUM(profit),0) s "
+                "FROM trade_history WHERE settings_version=? AND profit IS NOT NULL",
+                (v["version"],)
+            ).fetchone()
+            if cur["c"] < EVAL_MIN_TRADES:
+                return
+            prev = conn.execute(
+                "SELECT COUNT(*) c, COALESCE(AVG(profit),0) a FROM ("
+                "  SELECT profit FROM trade_history"
+                "  WHERE settings_version < ? AND profit IS NOT NULL"
+                "  ORDER BY time DESC LIMIT 50)",
+                (v["version"],)
+            ).fetchone()
+            worse = prev["c"] >= EVAL_MIN_TRADES and cur["a"] < prev["a"]
+            outcome = {
+                "trades": cur["c"], "avg_pnl": round(cur["a"], 2),
+                "net_pnl": round(cur["s"], 2),
+                "prev_avg_pnl": round(prev["a"], 2), "prev_sample": prev["c"],
+                "verdict": "worse-reverted" if worse else "kept",
+            }
+            conn.execute(
+                "UPDATE settings_versions SET evaluated=1, reverted=?, outcome=? WHERE version=?",
+                (1 if worse else 0, json.dumps(outcome), v["version"])
+            )
+            conn.commit()
+            if worse:
+                pv = conn.execute(
+                    "SELECT params FROM settings_versions WHERE version < ? "
+                    "ORDER BY version DESC LIMIT 1", (v["version"],)
+                ).fetchone()
+                if pv:
+                    revert_params = json.loads(pv["params"])
+        if revert_params:
+            save_settings(
+                {k: v2 for k, v2 in revert_params.items() if k in DEFAULT_SETTINGS},
+                source="revert",
+                reason=f"v{v['version']} أسوأ: avg ${outcome['avg_pnl']} مقابل ${outcome['prev_avg_pnl']}",
+            )
+            push_log("warn", f"↩️ LEARN: تعديل v{v['version']} فشل بالتقييم "
+                             f"(avg ${outcome['avg_pnl']} < ${outcome['prev_avg_pnl']}) — رجعنا للإعدادات السابقة")
+            socketio.emit("settings", get_settings())
+        else:
+            push_log("ok", f"📈 LEARN: تعديل v{v['version']} نجح بالتقييم "
+                           f"(avg ${outcome['avg_pnl']} على {outcome['trades']} صفقة) — يثبت")
+    except Exception as e:
+        push_log("err", f"LEARN eval: {str(e)[:60]}")
+
+
 def auto_adjust_settings(losing_snaps, account):
     """
-    Claude يحلل snapshots الخسائر ويقترح تعديلات محددة على الإعدادات.
-    يكتب القيم الجديدة مباشرة في DB فيلتقطها الـ Agent في الدورة القادمة.
+    Claude يحلل snapshots الخسائر ويقترح تعديلات — لكن الاقتراح لا يُطبَّق
+    إلا بعد اجتياز بوابات التحقق: cooldown + عينة كافية + replay يثبت تحسناً.
     """
     if not ANTHROPIC_API_KEY:
         return
     if not losing_snaps:
         return
+    import time as _time
+    if _time.time() - _last_auto_adjust_ts[0] < AUTO_ADJUST_COOLDOWN:
+        return  # تعديل واحد كحد أقصى بالساعة — يمنع التذبذب
 
     samples = []
     for s in losing_snaps[:10]:
@@ -771,14 +1033,29 @@ def auto_adjust_settings(losing_snaps, account):
         sl_usd   = max(1.0,  min(20.0, float(adj.get("SL_USD",     current.get("SL_USD",      2)))))
         tp_usd   = max(1.0,  min(40.0, float(adj.get("TP_USD",     current.get("TP_USD",      4)))))
         reason   = adj.get("reason", "")[:100]
-        save_settings({
-            "RSIBuyMax":  rsi_buy,
-            "RSISellMin": rsi_sell,
-            "SL_USD":     sl_usd,
-            "TP_USD":     tp_usd,
-        })
+
+        # ── بوابة التحقق: الاقتراح لا يُطبَّق إلا إذا أثبت الـ replay تحسناً ──
+        cand = {"RSIBuyMax": rsi_buy, "RSISellMin": rsi_sell,
+                "SL_USD": sl_usd, "TP_USD": tp_usd}
+        trades = _trades_with_context(200)
+        with_snap = [t for t in trades if t.get("snap")]
+        if len(with_snap) < REPLAY_MIN_SAMPLE:
+            push_log("warn", f"🧪 AUTO-ADJ: عينة غير كافية ({len(with_snap)}/{REPLAY_MIN_SAMPLE} "
+                             f"صفقة بسنابشوت) — الاقتراح مرفوض: {reason}")
+            return
+        rep = replay_candidate(cand, trades)
+        if rep["sim_pnl"] <= rep["actual_pnl"]:
+            push_log("warn", f"🧪 AUTO-ADJ: الـ replay رفض الاقتراح — محاكاة ${rep['sim_pnl']} "
+                             f"≤ فعلي ${rep['actual_pnl']} على {rep['sample']} صفقة | {reason}")
+            return
+
+        _last_auto_adjust_ts[0] = __import__("time").time()
+        save_settings(cand, source="auto",
+                      reason=f"{reason} | replay {rep['sample']} صفقة: "
+                             f"${rep['actual_pnl']} → ${rep['sim_pnl']} (حظر {rep['blocked']})")
         msg = (f"🤖 AUTO-ADJ: RSI {current.get('RSIBuyMax',65):.0f}/{current.get('RSISellMin',35):.0f}"
-               f" → {rsi_buy:.0f}/{rsi_sell:.0f}  SL ${sl_usd:.1f}  TP ${tp_usd:.1f} | {reason}")
+               f" → {rsi_buy:.0f}/{rsi_sell:.0f}  SL ${sl_usd:.1f}  TP ${tp_usd:.1f}"
+               f" | replay: ${rep['actual_pnl']}→${rep['sim_pnl']} | {reason}")
         push_log("ok", msg)
         socketio.emit("settings", get_settings())
     except Exception as e:
@@ -1005,6 +1282,10 @@ def update_data():
                 socketio.emit("history", get_history(200))
             except Exception:
                 pass
+            # تقييم آخر تعديل تلقائي (وتراجع إن كان أسوأ) — يعمل دائماً،
+            # no-op إذا لا توجد نسخ auto غير مقيّمة
+            import threading
+            threading.Thread(target=evaluate_settings_versions, daemon=True).start()
 
     # Claude checks
     settings = get_settings()
@@ -1144,7 +1425,7 @@ def api_seed_settings():
     if is_user_saved():
         return jsonify({"status": "ok", "applied": False, "settings": get_settings()})
     try:
-        save_settings(body, mark_user_saved=False)
+        save_settings(body, mark_user_saved=False, source="seed", reason="agent seed after redeploy")
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     try:
@@ -1311,6 +1592,71 @@ def api_save_snapshot():
         return jsonify({"error": "No data"}), 400
     save_snapshot(snap)
     return jsonify({"status": "ok"})
+
+
+@app.route("/api/trade_excursion", methods=["POST"])
+def api_trade_excursion():
+    """MFE/MAE من الـ agent عند إغلاق كل صفقة — يقبل صفقة واحدة أو دفعة"""
+    if not check_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    items = body.get("excursions") or ([body] if body.get("ticket") else [])
+    updated = 0
+    with get_db() as conn:
+        for it in items:
+            try:
+                tk = int(it["ticket"])
+                mfe = float(it.get("mfe", 0))
+                mae = float(it.get("mae", 0))
+            except (KeyError, TypeError, ValueError):
+                continue
+            # لو الصفقة لم تصل بعد عبر history sync، يُنشأ صف ناقص
+            # يكتمل لاحقاً بالـ upsert (الذي لا يدهس mfe/mae)
+            conn.execute("""
+                INSERT INTO trade_history (ticket, mfe, mae) VALUES (?, ?, ?)
+                ON CONFLICT(ticket) DO UPDATE SET mfe=excluded.mfe, mae=excluded.mae
+            """, (tk, mfe, mae))
+            updated += 1
+        conn.commit()
+    return jsonify({"status": "ok", "updated": updated})
+
+
+@app.route("/api/learning/journal", methods=["GET"])
+def api_learning_journal():
+    """سجل التعلم: كل نسخة إعدادات مع عدد صفقاتها ونتيجتها الصافية"""
+    limit = int(request.args.get("limit", 50))
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM settings_versions ORDER BY version DESC LIMIT ?", (limit,)
+        ).fetchall()
+        out = []
+        for r in rows:
+            stats = conn.execute(
+                "SELECT COUNT(*) c, COALESCE(SUM(profit),0) s, COALESCE(AVG(profit),0) a "
+                "FROM trade_history WHERE settings_version=? AND profit IS NOT NULL",
+                (r["version"],)
+            ).fetchone()
+            out.append({
+                "version":    r["version"],
+                "source":     r["source"],
+                "reason":     r["reason"],
+                "applied_at": r["applied_at"],
+                "evaluated":  r["evaluated"],
+                "reverted":   r["reverted"],
+                "outcome":    json.loads(r["outcome"]) if r["outcome"] else None,
+                "params":     json.loads(r["params"]),
+                "trades":     stats["c"],
+                "net_pnl":    round(stats["s"], 2),
+                "avg_pnl":    round(stats["a"], 2),
+            })
+    return jsonify(out)
+
+
+@app.route("/api/learning/report", methods=["GET"])
+def api_learning_report():
+    """تقرير تصنيف الخسائر (attribution) على آخر N صفقة"""
+    limit = int(request.args.get("limit", 200))
+    return jsonify(loss_attribution(limit))
 
 
 @app.route("/api/trade_snapshot/<int:ticket>", methods=["GET"])
